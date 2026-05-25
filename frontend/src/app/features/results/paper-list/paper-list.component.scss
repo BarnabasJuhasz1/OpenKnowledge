@@ -1,0 +1,12 @@
+.paper-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+
+  &__empty {
+    color: #9ca3af;
+    font-size: 0.9rem;
+    text-align: center;
+    padding: 2rem 0;
+  }
+}

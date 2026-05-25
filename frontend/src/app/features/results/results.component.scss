@@ -1,0 +1,230 @@
+.results-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+
+  &__header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #fff;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 0.75rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+  }
+
+  &__logo {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #111827;
+    text-decoration: none;
+    white-space: nowrap;
+    flex-shrink: 0;
+
+    &:hover { color: #2563eb; }
+  }
+
+  &__search {
+    flex: 1;
+    max-width: 720px;
+  }
+
+  &__main {
+    max-width: 860px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 1rem 1.5rem 3rem;
+  }
+
+  &__error {
+    margin-top: 2rem;
+    padding: 1rem 1.25rem;
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+    border-radius: 8px;
+    color: #92400e;
+    font-size: 0.9rem;
+  }
+
+  &__empty {
+    margin-top: 3rem;
+    text-align: center;
+    color: #9ca3af;
+    font-size: 0.95rem;
+  }
+}
+
+// Stream progress banner
+.stream-progress {
+  position: relative;
+  margin-bottom: 1rem;
+  padding: 0.7rem 1rem;
+  background: #eff6ff;
+  border: 1px solid #93c5fd;
+  border-radius: 8px;
+  overflow: hidden;
+
+  &__bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 3px;
+    width: 40%;
+    background: #2563eb;
+    border-radius: 3px;
+    animation: progress-slide 1.5s ease-in-out infinite;
+  }
+
+  &__text {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #1e40af;
+  }
+}
+
+@keyframes progress-slide {
+  0% { left: -40%; }
+  100% { left: 100%; }
+}
+
+// Filter buttons
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 0 1rem;
+
+  &__btn {
+    padding: 0.35rem 0.85rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 9999px;
+    background: #f9fafb;
+    color: #374151;
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+
+    &:hover {
+      background: #e5e7eb;
+    }
+
+    &--active {
+      background: #2563eb;
+      color: #fff;
+      border-color: #2563eb;
+
+      &:hover {
+        background: #1d4ed8;
+      }
+    }
+  }
+
+  &__loading {
+    align-self: center;
+    font-size: 0.78rem;
+    color: #6b7280;
+    font-style: italic;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+// Filter info
+.filter-info {
+  margin-bottom: 1rem;
+  padding: 0.65rem 1rem;
+  background: #f0f7ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  font-size: 0.85rem;
+
+  &__count {
+    font-weight: 600;
+    color: #1e40af;
+  }
+
+  &__query {
+    margin-top: 0.4rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.4rem;
+  }
+
+  &__query-label {
+    color: #6b7280;
+  }
+
+  &__query-value {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    padding: 0.2rem 0.5rem;
+    font-family: monospace;
+    font-size: 0.82rem;
+    color: #374151;
+    word-break: break-all;
+  }
+
+  &__error {
+    margin-top: 0.5rem;
+    padding: 0.4rem 0.7rem;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 4px;
+    color: #991b1b;
+    font-size: 0.82rem;
+  }
+}
+
+// Skeleton shimmer
+.skeletons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.skeleton {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 1.1rem 1.25rem;
+
+  &__title,
+  &__authors,
+  &__toggle {
+    border-radius: 4px;
+    background: linear-gradient(90deg, #f3f4f6 25%, #e9eaec 50%, #f3f4f6 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s infinite;
+  }
+
+  &__title {
+    height: 16px;
+    width: 80%;
+    margin-bottom: 0.6rem;
+  }
+
+  &__authors {
+    height: 12px;
+    width: 55%;
+    margin-bottom: 0.6rem;
+  }
+
+  &__toggle {
+    height: 12px;
+    width: 80px;
+  }
+}
+
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}

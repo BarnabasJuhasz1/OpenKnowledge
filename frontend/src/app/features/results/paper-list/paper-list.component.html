@@ -1,0 +1,7 @@
+<div class="paper-list">
+  @for (paper of pagePapers; track paper.doi ?? paper.title) {
+    <app-paper-card [paper]="paper" />
+  } @empty {
+    <p class="paper-list__empty">No papers to display.</p>
+  }
+</div>

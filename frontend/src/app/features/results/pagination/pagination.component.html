@@ -1,0 +1,26 @@
+@if (totalPages > 1) {
+  <nav class="pagination" aria-label="Page navigation">
+    <button class="pagination__btn" [disabled]="currentPage === 1" (click)="prev()" aria-label="Previous page">
+      &#8592;
+    </button>
+
+    @for (page of pages; track $index) {
+      @if (page === '...') {
+        <span class="pagination__ellipsis">…</span>
+      } @else {
+        <button
+          class="pagination__btn"
+          [class.pagination__btn--active]="page === currentPage"
+          (click)="go(page)"
+          [attr.aria-current]="page === currentPage ? 'page' : null"
+        >
+          {{ page }}
+        </button>
+      }
+    }
+
+    <button class="pagination__btn" [disabled]="currentPage === totalPages" (click)="next()" aria-label="Next page">
+      &#8594;
+    </button>
+  </nav>
+}

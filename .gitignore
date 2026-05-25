@@ -1,0 +1,31 @@
+
+# SQLite Databases
+*.sqlite
+*.sqlite3
+*.db
+*.db3
+
+# Database Dumps and Backups
+*.sql
+*.dump
+*.bak
+
+# Local Database Data Folders
+/database/
+/data/
+/db/
+/pgdata/
+
+# Environment variables
+.env
+.env.*
+
+# Python Virtual Environments
+.venv/
+venv/
+
+# Python bytecode cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd

@@ -1,0 +1,17 @@
+<div class="meta">
+  <span class="meta__count">{{ totalFound }} papers found</span>
+  @if (!activeFilter && deduplicatesRemoved > 0) {
+    <span class="meta__sep">·</span>
+    <span class="meta__dedup">{{ totalRaw }} total across sources, {{ deduplicatesRemoved }} duplicates not shown</span>
+  }
+  @if (sourcesLabel) {
+    <span class="meta__sep">·</span>
+    <span class="meta__sources">{{ sourcesLabel }}</span>
+  }
+  @if (sourcesFailed.length > 0) {
+    <span class="meta__sep">·</span>
+    <span class="meta__failed">
+      {{ failedLabel }} failed
+    </span>
+  }
+</div>

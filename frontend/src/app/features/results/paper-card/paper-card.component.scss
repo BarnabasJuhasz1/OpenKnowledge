@@ -1,0 +1,133 @@
+.card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 1.1rem 1.25rem;
+  transition: box-shadow 0.15s;
+
+  &:hover {
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.07);
+  }
+
+  &__top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  &__title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #111827;
+    margin: 0;
+    line-height: 1.4;
+    flex: 1;
+  }
+
+  &__meta {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-shrink: 0;
+    padding-top: 1px;
+  }
+
+  &__year {
+    font-size: 0.82rem;
+    color: #6b7280;
+    white-space: nowrap;
+    margin-right: 0.25rem;
+  }
+
+  &__btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border: 1px solid #e5e7eb;
+    border-radius: 5px;
+    background: #f9fafb;
+    color: #4b5563;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+
+    &:hover:not(:disabled) {
+      background: #eff6ff;
+      border-color: #bfdbfe;
+      color: #2563eb;
+    }
+
+    &:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    &--copied {
+      background: #ecfdf5 !important;
+      border-color: #6ee7b7 !important;
+      color: #059669 !important;
+    }
+  }
+
+  &__authors {
+    font-style: italic;
+    font-size: 0.87rem;
+    color: #4b5563;
+    margin: 0.45rem 0 0;
+    line-height: 1.4;
+  }
+
+  &__venue {
+    font-size: 0.82rem;
+    color: #9ca3af;
+    margin: 0.2rem 0 0;
+  }
+
+  &__abstract-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 0.65rem;
+    padding: 0;
+    background: none;
+    border: none;
+    font-size: 0.83rem;
+    font-weight: 500;
+    color: #6b7280;
+    cursor: pointer;
+    transition: color 0.12s;
+
+    &:hover {
+      color: #2563eb;
+    }
+  }
+
+  &__chevron {
+    transition: transform 0.2s ease;
+
+    &--open {
+      transform: rotate(180deg);
+    }
+  }
+
+  &__abstract-body {
+    overflow: hidden;
+    max-height: 0;
+    transition: max-height 0.3s ease-out, opacity 0.2s ease-out;
+    opacity: 0;
+
+    &--open {
+      max-height: 800px;
+      opacity: 1;
+      transition: max-height 0.4s ease-in, opacity 0.25s ease-in;
+    }
+  }
+
+  &__abstract-text {
+    font-size: 0.87rem;
+    color: #374151;
+    line-height: 1.65;
+    margin: 0.6rem 0 0.1rem;
+  }
+}

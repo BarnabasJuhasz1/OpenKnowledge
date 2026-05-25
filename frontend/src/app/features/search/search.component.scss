@@ -1,0 +1,28 @@
+.landing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 2rem;
+
+  &__inner {
+    width: 100%;
+    max-width: 720px;
+    text-align: center;
+  }
+
+  &__title {
+    font-size: 2.75rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    margin: 0 0 0.75rem;
+    color: #111827;
+  }
+
+  &__subtitle {
+    font-size: 1rem;
+    color: #6b7280;
+    margin: 0 0 2.5rem;
+    line-height: 1.6;
+  }
+}

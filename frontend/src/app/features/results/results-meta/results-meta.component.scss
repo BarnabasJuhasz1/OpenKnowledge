@@ -1,0 +1,22 @@
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.83rem;
+  color: #6b7280;
+  padding: 0.5rem 0 1rem;
+
+  &__count {
+    font-weight: 600;
+    color: #374151;
+  }
+
+  &__sep {
+    color: #d1d5db;
+  }
+
+  &__failed {
+    color: #b45309;
+  }
+}

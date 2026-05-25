@@ -1,0 +1,108 @@
+<div class="results-page">
+  <header class="results-page__header">
+    <a class="results-page__logo" routerLink="/">OpenResearch</a>
+    <div class="results-page__search">
+      <app-query-input
+        [initialQuery]="rawQuery()"
+        [loading]="loading()"
+        (search)="onSearch($event)"
+      />
+    </div>
+  </header>
+
+  <main class="results-page__main">
+    <!-- Loading skeletons (only shown before any results arrive) -->
+    @if (loading() && totalRaw() === 0) {
+      <div class="skeletons">
+        @for (i of [1,2,3,4,5,6,7,8,9,10]; track i) {
+          <div class="skeleton">
+            <div class="skeleton__title"></div>
+            <div class="skeleton__authors"></div>
+            <div class="skeleton__toggle"></div>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- Error state -->
+    @if (!loading() && error()) {
+      <div class="results-page__error">
+        {{ error() }}
+      </div>
+    }
+
+    <!-- Progress banner while streaming -->
+    @if (loading() && totalRaw() > 0) {
+      <div class="stream-progress">
+        <div class="stream-progress__bar"></div>
+        <div class="stream-progress__text">
+          Fetching results — {{ sourcesQueried().length }} source(s) done, more incoming...
+        </div>
+      </div>
+    }
+
+    <!-- Results (show as soon as papers start arriving) -->
+    @if (!error() && totalRaw() > 0) {
+      <app-results-meta
+        [totalFound]="totalFound()"
+        [totalRaw]="totalRaw()"
+        [deduplicatesRemoved]="deduplicatesRemoved()"
+        [activeFilter]="activeFilter()"
+        [sourcesQueried]="sourcesQueried()"
+        [sourcesFailed]="sourcesFailed()"
+        [sourceErrors]="sourceErrors()"
+      />
+
+      <div class="filters">
+        <button
+          class="filters__btn"
+          [class.filters__btn--active]="activeFilter() === null"
+          (click)="onFilterChange(null)"
+        >All</button>
+        @for (source of sourcesQueried(); track source) {
+          <button
+            class="filters__btn"
+            [class.filters__btn--active]="activeFilter() === source"
+            (click)="onFilterChange(source)"
+          >{{ source }}</button>
+        }
+        @if (loading()) {
+          <span class="filters__loading">...</span>
+        }
+      </div>
+
+      @if (activeFilter()) {
+        <div class="filter-info">
+          <span class="filter-info__count">
+            {{ filteredPapers().length }} papers from {{ activeFilter() }}
+          </span>
+          <div class="filter-info__query">
+            <span class="filter-info__query-label">Query used:</span>
+            <code class="filter-info__query-value">{{ activeQuery() }}</code>
+          </div>
+          @if (activeError()) {
+            <div class="filter-info__error">
+              {{ activeFilter() }} failed: {{ activeError() }}
+            </div>
+          }
+        </div>
+      }
+
+      <app-paper-list [papers]="filteredPapers()" [page]="currentPage()" />
+
+      <app-pagination
+        [totalItems]="filteredPapers().length"
+        [pageSize]="pageSize"
+        [currentPage]="currentPage()"
+        (pageChange)="onPageChange($event)"
+      />
+    }
+
+    <!-- Empty state -->
+    @if (!loading() && !error() && totalRaw() === 0 && rawQuery()) {
+      <div class="results-page__empty">
+        No papers found for this query. Try broadening your keywords.
+      </div>
+    }
+  </main>
+</div>

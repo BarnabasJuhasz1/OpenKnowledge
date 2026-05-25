@@ -1,0 +1,26 @@
+<div class="query-input">
+  <textarea
+    class="query-input__textarea"
+    [value]="query()"
+    (input)="query.set($any($event.target).value)"
+    (keydown)="onKeydown($event)"
+    placeholder="e.g. &quot;large language model&quot; AND quantization AND pruning"
+    rows="3"
+    [disabled]="loading"
+  ></textarea>
+  <div class="query-input__footer">
+    <span class="query-input__hint">Ctrl+Enter to search</span>
+    <button
+      class="query-input__btn"
+      [class.query-input__btn--loading]="loading"
+      [disabled]="loading || !query().trim()"
+      (click)="submit()"
+    >
+      @if (loading) {
+        <span class="spinner"></span> Searching…
+      } @else {
+        Search
+      }
+    </button>
+  </div>
+</div>
