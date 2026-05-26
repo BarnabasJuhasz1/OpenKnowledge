@@ -11,5 +11,11 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./features/results/results.component').then(m => m.ResultsComponent),
   },
+  {
+    path: 'relevancy',
+    loadComponent: () =>
+      import('./features/relevancy/relevancy.component').then(m => m.RelevancyComponent),
+  },
   { path: '**', redirectTo: '' },
 ];
+

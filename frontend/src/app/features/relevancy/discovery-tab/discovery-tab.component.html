@@ -1,0 +1,94 @@
+<div class="discovery">
+  <section class="discovery__controls">
+    <h2 class="discovery__heading">Weight Configuration</h2>
+    <p class="discovery__subtitle">Adjust weights to customize relevancy scoring</p>
+
+    <div class="discovery__sliders">
+      @for (slider of sliders; track slider.key) {
+        <div class="slider-group">
+          <div class="slider-group__header">
+            <span class="slider-group__dot" [style.background]="slider.color"></span>
+            <label class="slider-group__label">{{ slider.label }}</label>
+            <span class="slider-group__value">{{ localWeights[slider.key] | number:'1.1-1' }}</span>
+          </div>
+          <input
+            type="range"
+            class="slider-group__input"
+            [min]="0"
+            [max]="5"
+            [step]="0.1"
+            [value]="localWeights[slider.key]"
+            [style.--slider-color]="slider.color"
+            (input)="onSliderChange(slider.key, $event)"
+          />
+          <div class="slider-group__range">
+            <span>0.0</span>
+            <span>5.0</span>
+          </div>
+        </div>
+      }
+    </div>
+  </section>
+
+  <section class="discovery__results">
+    @if (loading()) {
+      <div class="discovery__loader">
+        <div class="discovery__loader-bar"></div>
+        <span class="discovery__loader-text">Scoring papers…</span>
+      </div>
+    }
+
+    @if (!loading() && !hasSearched()) {
+      <div class="discovery__empty">
+        <div class="discovery__empty-icon">⊘</div>
+        <p class="discovery__empty-title">No scored papers yet</p>
+        <p class="discovery__empty-hint">Run a search first to populate papers, then adjust weights here</p>
+      </div>
+    }
+
+    @if (!loading() && hasSearched() && papers().length === 0) {
+      <div class="discovery__empty">
+        <div class="discovery__empty-icon">⊘</div>
+        <p class="discovery__empty-title">No papers found</p>
+        <p class="discovery__empty-hint">Run a search first to populate papers, then adjust weights here</p>
+      </div>
+    }
+
+    @if (!loading() && papers().length > 0) {
+      <div class="discovery__meta">
+        <span class="discovery__meta-count">{{ totalScored() }} papers scored</span>
+      </div>
+
+      <div class="discovery__table-wrap">
+        <table class="discovery__table">
+          <thead>
+            <tr>
+              <th class="discovery__th">Title</th>
+              <th class="discovery__th">Authors</th>
+              <th class="discovery__th discovery__th--center">Year</th>
+              <th class="discovery__th discovery__th--right">Score</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (paper of papers(); track paper.title) {
+              <tr class="discovery__row">
+                <td class="discovery__td discovery__td--title">{{ truncateTitle(paper.title) }}</td>
+                <td class="discovery__td discovery__td--authors">{{ formatAuthors(paper.authors) }}</td>
+                <td class="discovery__td discovery__td--year">{{ paper.year ?? '—' }}</td>
+                <td class="discovery__td discovery__td--score">
+                  <span
+                    class="score-badge"
+                    [style.color]="getScoreColor(paper.relevancy_score)"
+                    [style.background]="getScoreBackground(paper.relevancy_score)"
+                  >
+                    {{ paper.relevancy_score | number:'1.2-2' }}
+                  </span>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </section>
+</div>

@@ -3,6 +3,14 @@
   <div class="card__top">
     <h2 class="card__title">{{ paper.title }}</h2>
     <div class="card__meta">
+      @if (paper.relevancy_score !== undefined) {
+        <span
+          class="card__score"
+          [style.color]="scoreColor"
+          [style.background]="scoreBackground"
+          title="Relevancy score"
+        >{{ paper.relevancy_score.toFixed(2) }}</span>
+      }
       <span class="card__year">{{ displayYear }}</span>
       <button
         class="card__btn"

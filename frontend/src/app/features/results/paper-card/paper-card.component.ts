@@ -53,4 +53,18 @@ export class PaperCardComponent {
       .map(s => s.replace('_', ' '))
       .join(', ');
   }
+
+  get scoreColor(): string {
+    const s = this.paper.relevancy_score ?? 0;
+    if (s >= 0.7) return '#059669';
+    if (s >= 0.4) return '#d97706';
+    return '#dc2626';
+  }
+
+  get scoreBackground(): string {
+    const s = this.paper.relevancy_score ?? 0;
+    if (s >= 0.7) return 'rgba(5, 150, 105, 0.1)';
+    if (s >= 0.4) return 'rgba(217, 119, 6, 0.1)';
+    return 'rgba(220, 38, 38, 0.1)';
+  }
 }

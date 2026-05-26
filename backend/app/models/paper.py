@@ -66,6 +66,8 @@ class Paper(BaseModel):
     is_peer_reviewed: bool | None = None
     has_public_code: bool | None = None
     code_url: str | None = None
+    has_dataset: bool = False
+    repo_stars: int = 0
 
     # Versioning (arXiv only)
     versions: list[PaperVersion] | None = None
@@ -99,3 +101,49 @@ class SearchResponse(BaseModel):
     queries_used: dict[str, str] = {}
     deduplication_removed: int
     retrieved_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ScoreWeights(BaseModel):
+    w_c: float = 1.0
+    w_code: float = 1.0
+    w_peer: float = 1.0
+    w_data: float = 1.0
+    w_stars: float = 1.0
+
+
+class ScorePapersRequest(BaseModel):
+    weights: ScoreWeights = Field(default_factory=ScoreWeights)
+    limit: int = 50
+
+
+class ScoredPaper(BaseModel):
+    title: str
+    authors: list[Author] = []
+    year: int | None = None
+    journal: str | None = None
+    venue: str | None = None
+    citation_count: int | None = None
+    has_public_code: bool | None = None
+    is_peer_reviewed: bool | None = None
+    has_dataset: bool = False
+    repo_stars: int = 0
+    relevancy_score: float
+
+
+class ScorePapersResponse(BaseModel):
+    papers: list[ScoredPaper]
+    total_scored: int
+
+
+class ScoreBreakdown(BaseModel):
+    citations_contribution: float
+    code_contribution: float
+    peer_review_contribution: float
+    dataset_contribution: float
+    stars_contribution: float
+
+
+class PaperScoreResponse(BaseModel):
+    title: str
+    total_score: float
+    breakdown: ScoreBreakdown

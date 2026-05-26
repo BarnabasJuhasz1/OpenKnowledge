@@ -62,6 +62,21 @@ def merge_group(group: list[Paper]) -> Paper:
         if p.is_peer_reviewed is False:
             peer_reviewed = False
 
+    # has_public_code: True wins
+    has_code: bool | None = None
+    for p in group:
+        if p.has_public_code is True:
+            has_code = True
+            break
+        if p.has_public_code is False:
+            has_code = False
+
+    # has_dataset: True wins
+    has_dataset = any(p.has_dataset for p in group)
+
+    # repo_stars: take maximum
+    repo_stars = max((p.repo_stars for p in group), default=0)
+
     return Paper(
         # Identifiers — take any available
         doi=_any("doi"),
@@ -109,8 +124,10 @@ def merge_group(group: list[Paper]) -> Paper:
 
         # Quality
         is_peer_reviewed=peer_reviewed,
-        has_public_code=_any("has_public_code"),
+        has_public_code=has_code,
         code_url=_any("code_url"),
+        has_dataset=has_dataset,
+        repo_stars=repo_stars,
 
         # Versioning
         versions=versions,

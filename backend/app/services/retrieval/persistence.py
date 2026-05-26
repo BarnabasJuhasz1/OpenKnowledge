@@ -77,6 +77,14 @@ async def _upsert_paper(session: AsyncSession, paper: Paper) -> DBPaper:
     _set_if_empty("is_peer_reviewed", paper.is_peer_reviewed)
     _set_if_empty("has_public_code", paper.has_public_code)
     _set_if_empty("code_url", paper.code_url)
+
+    # has_dataset: True wins
+    if paper.has_dataset:
+        db_paper.has_dataset = True
+
+    # repo_stars: take the max
+    if paper.repo_stars > (db_paper.repo_stars or 0):
+        db_paper.repo_stars = paper.repo_stars
     _set_if_empty("bibtex", paper.bibtex)
 
     # is_open_access: True wins

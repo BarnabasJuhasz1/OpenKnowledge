@@ -1,0 +1,78 @@
+<div class="analysis">
+  <section class="analysis__input-section">
+    <h2 class="analysis__heading">Paper Analysis</h2>
+    <p class="analysis__subtitle">Enter a paper title to see its score breakdown</p>
+
+    <div class="analysis__search-row">
+      <input
+        type="text"
+        class="analysis__input"
+        placeholder="Enter exact paper title…"
+        [(ngModel)]="titleInput"
+        (keydown)="onKeydown($event)"
+      />
+      <button
+        class="analysis__btn"
+        [disabled]="loading() || !titleInput.trim()"
+        (click)="analyze()"
+      >
+        @if (loading()) {
+          <span class="analysis__btn-spinner"></span>
+        }
+        Analyze
+      </button>
+    </div>
+  </section>
+
+  @if (loading()) {
+    <div class="analysis__loader">
+      <div class="analysis__loader-bar"></div>
+      <span class="analysis__loader-text">Analyzing paper…</span>
+    </div>
+  }
+
+  @if (error()) {
+    <div class="analysis__error">
+      <span class="analysis__error-icon">⚠</span>
+      {{ error() }}
+    </div>
+  }
+
+  @if (result(); as r) {
+    <section class="analysis__result">
+      <div class="analysis__result-header">
+        <h3 class="analysis__result-title">{{ r.title }}</h3>
+        <div
+          class="analysis__total-score"
+          [style.color]="getScoreColor(r.total_score)"
+          [style.background]="getScoreBackground(r.total_score)"
+        >
+          <span class="analysis__total-score-label">Total Score</span>
+          <span class="analysis__total-score-value">{{ r.total_score | number:'1.3-3' }}</span>
+        </div>
+      </div>
+
+      <div class="analysis__breakdown">
+        <h4 class="analysis__breakdown-title">Score Breakdown</h4>
+        <div class="analysis__bars">
+          @for (item of breakdownItems; track item.key) {
+            <div class="bar-row">
+              <div class="bar-row__label">
+                <span class="bar-row__dot" [style.background]="item.color"></span>
+                {{ item.label }}
+              </div>
+              <div class="bar-row__track">
+                <div
+                  class="bar-row__fill"
+                  [style.width.%]="getBarWidth(r.breakdown[item.key])"
+                  [style.background]="item.color"
+                ></div>
+              </div>
+              <span class="bar-row__value">{{ r.breakdown[item.key] | number:'1.3-3' }}</span>
+            </div>
+          }
+        </div>
+      </div>
+    </section>
+  }
+</div>

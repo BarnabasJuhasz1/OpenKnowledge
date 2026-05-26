@@ -46,6 +46,8 @@ class DBPaper(Base):
     is_peer_reviewed: Mapped[bool | None] = mapped_column(Boolean)
     has_public_code: Mapped[bool | None] = mapped_column(Boolean)
     code_url: Mapped[str | None] = mapped_column(String)
+    has_dataset: Mapped[bool] = mapped_column(Boolean, default=False)
+    repo_stars: Mapped[int] = mapped_column(Integer, default=0)
 
     bibtex: Mapped[str | None] = mapped_column(Text)
     sources: Mapped[str | None] = mapped_column(String)  # comma-separated

@@ -9,6 +9,7 @@ from ..retrieval.query_builder import build_query
 from ..retrieval.deduplicator import deduplicate
 from ..retrieval.merger import merge_group
 from ..retrieval.bibtex import attach_bibtex
+from ..retrieval.code_enrichment import enrich_papers
 from ..retrieval.cache import cache
 
 
@@ -93,6 +94,9 @@ async def search(request: SearchRequest) -> SearchResponse:
     # Attach BibTeX to every paper
     attach_bibtex(merged)
 
+    # Enrich with code URLs, repo stars, and dataset detection
+    await enrich_papers(merged)
+
     return SearchResponse(
         papers=merged,
         total_found=len(merged),
@@ -158,6 +162,7 @@ async def search_stream(request: SearchRequest) -> AsyncGenerator[StreamEvent, N
                 timeout=300.0,
             )
             attach_bibtex(papers)
+            await enrich_papers(papers)
             await queue.put(StreamEvent(
                 source=adapter.name,
                 papers=papers,

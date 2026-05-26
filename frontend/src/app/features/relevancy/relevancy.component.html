@@ -1,0 +1,35 @@
+<div class="relevancy">
+  <header class="relevancy__header">
+    <a class="relevancy__logo" routerLink="/">OpenKnowledge</a>
+    <nav class="relevancy__nav">
+      <button
+        class="relevancy__tab"
+        [class.relevancy__tab--active]="activeTab() === 'discovery'"
+        (click)="setTab('discovery')"
+      >
+        <span class="relevancy__tab-icon">◈</span>
+        Discovery
+      </button>
+      <button
+        class="relevancy__tab"
+        [class.relevancy__tab--active]="activeTab() === 'analysis'"
+        (click)="setTab('analysis')"
+      >
+        <span class="relevancy__tab-icon">◉</span>
+        Analysis
+      </button>
+    </nav>
+  </header>
+
+  <main class="relevancy__body">
+    @if (activeTab() === 'discovery') {
+      <app-discovery-tab
+        [weights]="weights()"
+        (weightsChange)="onWeightsChange($event)"
+      />
+    }
+    @if (activeTab() === 'analysis') {
+      <app-analysis-tab [weights]="weights()" />
+    }
+  </main>
+</div>

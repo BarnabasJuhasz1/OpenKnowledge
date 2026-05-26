@@ -44,6 +44,7 @@ export interface Paper {
   bibtex: string | null;
   sources: string[];
   versions: PaperVersion[] | null;
+  relevancy_score?: number;
 }
 
 export interface StreamEvent {
@@ -68,4 +69,45 @@ export interface SearchResponse {
   sources_failed: string[];
   queries_used: Record<string, string>;
   deduplication_removed: number;
+}
+
+export interface ScoreWeights {
+  w_c: number;
+  w_code: number;
+  w_peer: number;
+  w_data: number;
+  w_stars: number;
+}
+
+export interface ScoredPaper {
+  title: string;
+  authors: Author[];
+  year: number | null;
+  journal: string | null;
+  venue: string | null;
+  citation_count: number | null;
+  has_public_code: boolean | null;
+  is_peer_reviewed: boolean | null;
+  has_dataset: boolean;
+  repo_stars: number;
+  relevancy_score: number;
+}
+
+export interface ScoreBreakdown {
+  citations_contribution: number;
+  code_contribution: number;
+  peer_review_contribution: number;
+  dataset_contribution: number;
+  stars_contribution: number;
+}
+
+export interface PaperScoreResponse {
+  title: string;
+  total_score: number;
+  breakdown: ScoreBreakdown;
+}
+
+export interface ScorePapersResponse {
+  papers: ScoredPaper[];
+  total_scored: number;
 }

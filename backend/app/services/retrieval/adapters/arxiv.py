@@ -1,4 +1,9 @@
 from __future__ import annotations
+import os
+import json
+import re
+import asyncio
+from email.utils import parsedate_to_datetime
 import xml.etree.ElementTree as ET
 from ....models.paper import Paper, Author, PaperVersion
 from .base import DatabaseAdapter
@@ -12,98 +17,206 @@ _NS = {
 _PAGE_SIZE = 100  # arXiv max_results per request
 
 
+def _tokenize(query: str) -> list[str]:
+    token_pattern = re.compile(r'"[^"]*"|\(|\)|AND|OR|NOT|[^\s()]+', re.IGNORECASE)
+    tokens = []
+    for match in token_pattern.finditer(query):
+        t = match.group(0)
+        if t.startswith('"') and t.endswith('"'):
+            tokens.append(t)
+        elif t.upper() in ("AND", "OR", "NOT", "(", ")"):
+            tokens.append(t.upper())
+        else:
+            tokens.append(t.lower())
+    return tokens
+
+
+def _make_evaluator(query: str):
+    tokens = _tokenize(query)
+    if not tokens:
+        return lambda doc: True
+
+    operators = {'AND', 'OR', 'NOT', '(', ')'}
+    terms = []
+    expr_tokens = []
+    prev_was_operand_like = False
+
+    for t in tokens:
+        is_operand = t not in operators
+        if prev_was_operand_like:
+            if is_operand or t in ('(', 'NOT'):
+                expr_tokens.append('and')
+
+        if t == '(':
+            expr_tokens.append('(')
+            prev_was_operand_like = False
+        elif t == ')':
+            expr_tokens.append(')')
+            prev_was_operand_like = True
+        elif t == 'AND':
+            expr_tokens.append('and')
+            prev_was_operand_like = False
+        elif t == 'OR':
+            expr_tokens.append('or')
+            prev_was_operand_like = False
+        elif t == 'NOT':
+            expr_tokens.append('not')
+            prev_was_operand_like = False
+        else:
+            if t.startswith('"') and t.endswith('"'):
+                term = t[1:-1].lower()
+            else:
+                term = t.lower()
+
+            idx = len(terms)
+            terms.append(term)
+            expr_tokens.append(f"t{idx}")
+            prev_was_operand_like = True
+
+    expr_str = ' '.join(expr_tokens)
+
+    # Safe validation of expr_str
+    allowed_words = {'true', 'false', 'and', 'or', 'not', '(', ')'}
+    words = expr_str.replace('(', ' ( ').replace(')', ' ) ').split()
+    for w in words:
+        if not w.startswith('t') and w.lower() not in allowed_words:
+            raise ValueError(f"Unsafe token detected in query expression: {w}")
+
+    try:
+        compiled_expr = compile(expr_str, '<string>', 'eval')
+    except Exception:
+        return lambda doc: all(term in doc for term in terms)
+
+    def evaluator(doc: str) -> bool:
+        env = {f"t{i}": (term in doc) for i, term in enumerate(terms)}
+        try:
+            return bool(eval(compiled_expr, {"__builtins__": {}}, env))
+        except Exception:
+            return all(env.values())
+
+    return evaluator
+
+
 class ArxivAdapter(DatabaseAdapter):
     name = "arxiv"
     rate_limit = 1  # arXiv requires ~3s between requests
     _BASE = "https://export.arxiv.org/api/query"
 
     async def search(self, query: str) -> list[Paper]:
-        all_papers: list[Paper] = []
-        start = 0
+        # Run file I/O and query scanning off-thread
+        return await asyncio.to_thread(self._sync_search, query)
 
-        while True:
-            params = {
-                "search_query": query,
-                "start": start,
-                "max_results": _PAGE_SIZE,
-                "sortBy": "relevance",
-                "sortOrder": "descending",
-            }
+    def _sync_search(self, query: str) -> list[Paper]:
+        snapshot_filename = "arxiv-metadata-oai-snapshot.json"
+        possible_paths = [
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../../database", snapshot_filename)),
+            os.path.abspath(os.path.join(os.getcwd(), "database", snapshot_filename)),
+            os.path.abspath(os.path.join(os.getcwd(), "../database", snapshot_filename)),
+            "/home/juhasz/Desktop/Projects/Open_Knowledge/Repo/database/arxiv-metadata-oai-snapshot.json",
+        ]
 
-            async with self._semaphore:
-                resp = await self._get_client().get(self._BASE, params=params)
-                resp.raise_for_status()
-
-            root = ET.fromstring(resp.text)
-            total_el = root.find("opensearch:totalResults", _NS)
-            total = int(total_el.text) if total_el is not None and total_el.text else 0
-
-            entries = root.findall("atom:entry", _NS)
-            batch = [self._normalize(entry) for entry in entries]
-            all_papers.extend(batch)
-
-            start += len(batch)
-            if start >= total or len(batch) == 0:
+        snapshot_path = None
+        for p in possible_paths:
+            if os.path.exists(p):
+                snapshot_path = p
                 break
 
-        return all_papers
+        if not snapshot_path:
+            raise FileNotFoundError(f"Could not locate {snapshot_filename} in any of: {possible_paths}")
 
-    def _normalize(self, entry: ET.Element) -> Paper:
-        def text(tag: str, ns: str = "atom") -> str | None:
-            el = entry.find(f"{ns}:{tag}", _NS)
-            return el.text.strip() if el is not None and el.text else None
+        evaluator = _make_evaluator(query)
+        matches = []
 
-        raw_id = text("id") or ""
-        # raw_id looks like http://arxiv.org/abs/2301.00001v2
-        arxiv_id = raw_id.split("/abs/")[-1] if "/abs/" in raw_id else raw_id
-        # base ID without version
-        base_id = arxiv_id.split("v")[0] if "v" in arxiv_id else arxiv_id
+        with open(snapshot_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line_lower = line.lower()
+                if evaluator(line_lower):
+                    try:
+                        data = json.loads(line)
+                    except Exception:
+                        continue
 
-        authors = [
-            Author(name=a.find("atom:name", _NS).text.strip())
-            for a in entry.findall("atom:author", _NS)
-            if a.find("atom:name", _NS) is not None
-        ]
+                    title = data.get("title", "")
+                    abstract = data.get("abstract", "")
+                    if evaluator((title + " " + abstract).lower()):
+                        matches.append(data)
 
-        categories = [
-            cat.get("term", "")
-            for cat in entry.findall("atom:category", _NS)
-        ]
+        papers = []
+        for data in matches:
+            base_id = data.get("id", "")
 
-        doi_el = entry.find("arxiv:doi", _NS)
-        doi = doi_el.text.strip() if doi_el is not None and doi_el.text else None
+            # Parse authors
+            authors = []
+            for auth in data.get("authors_parsed", []):
+                last_name = auth[0] if len(auth) > 0 else ""
+                first_name = auth[1] if len(auth) > 1 else ""
+                name = f"{first_name} {last_name}".strip()
+                if not name:
+                    name = auth[2] if len(auth) > 2 else ""
+                if name:
+                    authors.append(Author(name=name))
 
-        journal_ref_el = entry.find("arxiv:journal_ref", _NS)
-        journal_ref = journal_ref_el.text.strip() if journal_ref_el is not None and journal_ref_el.text else None
+            # Parse categories
+            categories = data.get("categories", "").split()
 
-        published = text("published")
-        updated = text("updated")
+            # Find publication date
+            created_v1 = None
+            for v in data.get("versions", []):
+                if v.get("version") == "v1":
+                    created_v1 = v.get("created")
+                    break
+            if not created_v1 and data.get("versions"):
+                created_v1 = data["versions"][0].get("created")
 
-        # Collect version history from links tagged as version
-        versions: list[PaperVersion] = []
-        for link in entry.findall("atom:link", _NS):
-            if link.get("rel") == "related" and "v" in (link.get("href") or ""):
-                pass  # arXiv API v1 doesn't expose individual version dates in search
-        # At minimum record current version
-        if arxiv_id != base_id:
-            ver_str = arxiv_id.split("v")[-1] if "v" in arxiv_id else "1"
-            versions.append(PaperVersion(version=f"v{ver_str}", submitted=updated or published or ""))
+            published_str = None
+            year = None
+            if created_v1:
+                try:
+                    dt = parsedate_to_datetime(created_v1)
+                    published_str = dt.isoformat().replace("+00:00", "Z")
+                    year = dt.year
+                except Exception:
+                    pass
 
-        pdf_url = f"https://arxiv.org/pdf/{base_id}"
+            if not published_str and data.get("update_date"):
+                published_str = data.get("update_date")
+                try:
+                    year = int(published_str[:4])
+                except ValueError:
+                    pass
 
-        return Paper(
-            doi=doi,
-            arxiv_id=base_id,
-            title=text("title") or "",
-            abstract=(text("summary") or "").replace("\n", " "),
-            publication_date=published,
-            year=int(published[:4]) if published else None,
-            authors=authors,
-            journal=journal_ref,
-            fields_of_study=categories,
-            is_open_access=True,
-            pdf_url=pdf_url,
-            landing_url=f"https://arxiv.org/abs/{base_id}",
-            versions=versions if versions else None,
-            sources=["arxiv"],
-        )
+            # Version history
+            versions = []
+            for v in data.get("versions", []):
+                ver_name = v.get("version", "")
+                created_raw = v.get("created", "")
+                submitted_str = ""
+                if created_raw:
+                    try:
+                        dt = parsedate_to_datetime(created_raw)
+                        submitted_str = dt.isoformat().replace("+00:00", "Z")
+                    except Exception:
+                        submitted_str = created_raw
+                versions.append(PaperVersion(version=ver_name, submitted=submitted_str))
+
+            pdf_url = f"https://arxiv.org/pdf/{base_id}"
+
+            papers.append(Paper(
+                doi=data.get("doi"),
+                arxiv_id=base_id,
+                title=data.get("title", "").strip().replace("\n", " "),
+                abstract=data.get("abstract", "").strip().replace("\n", " "),
+                publication_date=published_str,
+                year=year,
+                authors=authors,
+                journal=data.get("journal-ref"),
+                fields_of_study=categories,
+                is_open_access=True,
+                pdf_url=pdf_url,
+                landing_url=f"https://arxiv.org/abs/{base_id}",
+                versions=versions if versions else None,
+                sources=["arxiv"],
+            ))
+
+        return papers
+

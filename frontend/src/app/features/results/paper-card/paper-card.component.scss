@@ -40,6 +40,22 @@
     margin-right: 0.25rem;
   }
 
+  &__score {
+    display: inline-block;
+    padding: 0.15rem 0.55rem;
+    border-radius: 9999px;
+    font-size: 0.76rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    transition: transform 0.15s;
+
+    &:hover {
+      transform: scale(1.08);
+    }
+  }
+
   &__btn {
     display: flex;
     align-items: center;
