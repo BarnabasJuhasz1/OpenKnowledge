@@ -36,15 +36,19 @@ export interface Paper {
   landing_url: string | null;
   citation_count: number | null;
   reference_count: number | null;
+  referenced_by: string[];
+  references: string[];
   is_peer_reviewed: boolean | null;
   has_public_code: boolean | null;
   code_url: string | null;
+  has_dataset: boolean;
+  repo_stars: number;
   fields_of_study: string[];
   keywords: string[];
   bibtex: string | null;
   sources: string[];
   versions: PaperVersion[] | null;
-  relevancy_score?: number;
+  ok_score?: number;
 }
 
 export interface StreamEvent {
@@ -60,15 +64,30 @@ export interface SearchRequest {
   raw_query?: string;
   databases?: string[];
   domain_filter?: string;
+  max_initial_results?: number;
+  max_total_results?: number | null;
+  continue_in_background?: boolean;
 }
 
 export interface SearchResponse {
   papers: Paper[];
   total_found: number;
+  total_available: number | null;
   sources_queried: string[];
   sources_failed: string[];
   queries_used: Record<string, string>;
   deduplication_removed: number;
+  background_job_id: string | null;
+}
+
+export interface BackgroundProgress {
+  job_id: string;
+  source: string;
+  papers_fetched: number;
+  total_papers: number;
+  estimated_remaining: number | null;
+  is_complete: boolean;
+  error: string | null;
 }
 
 export interface ScoreWeights {
@@ -90,7 +109,7 @@ export interface ScoredPaper {
   is_peer_reviewed: boolean | null;
   has_dataset: boolean;
   repo_stars: number;
-  relevancy_score: number;
+  ok_score: number;
 }
 
 export interface ScoreBreakdown {

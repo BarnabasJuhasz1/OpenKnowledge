@@ -8,6 +8,10 @@ load_dotenv()
 from .db.database import init_db
 from .api.retrieval import router as retrieval_router
 from .api.scoring import router as scoring_router
+from .api.demo import router as demo_router
+from .api.shelf import router as shelf_router
+from .api.bookshelf import router as bookshelf_router
+from .api.citgraph import router as citgraph_router
 
 
 @asynccontextmanager
@@ -32,6 +36,10 @@ app.add_middleware(
 
 app.include_router(retrieval_router, prefix="/api")
 app.include_router(scoring_router, prefix="/api")
+app.include_router(demo_router, prefix="/api")
+app.include_router(shelf_router, prefix="/api")
+app.include_router(bookshelf_router, prefix="/api")
+app.include_router(citgraph_router, prefix="/api")
 
 
 @app.get("/health")

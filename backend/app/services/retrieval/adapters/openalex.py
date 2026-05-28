@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 from ....models.paper import Paper, Author
 from .base import DatabaseAdapter
 
@@ -18,9 +19,9 @@ class OpenAlexAdapter(DatabaseAdapter):
     rate_limit = 10
     _BASE = "https://api.openalex.org/works"
 
-    async def search(self, query: str) -> list[Paper]:
+    async def search(self, query: str, *, max_results: int | None = None) -> list[Paper]:
         all_papers: list[Paper] = []
-        page = 1
+        cursor: str = "*"
 
         while True:
             params: dict = {
@@ -29,25 +30,30 @@ class OpenAlexAdapter(DatabaseAdapter):
                 # result counts far beyond what the website shows.
                 "filter": f"title_and_abstract.search:{query}",
                 "per-page": _PAGE_SIZE,
-                "page": page,
+                "cursor": cursor,
                 "select": _FIELDS,
             }
             if self._contact_email:
                 params["mailto"] = self._contact_email
 
-            async with self._semaphore:
-                resp = await self._get_client().get(self._BASE, params=params)
-                resp.raise_for_status()
+            resp = await self._request_with_retry("GET", self._BASE, params=params)
 
             data = resp.json()
-            total: int = data.get("meta", {}).get("count", 0)
             results = data.get("results", [])
             batch = [self._normalize(w) for w in results]
             all_papers.extend(batch)
 
-            if len(all_papers) >= total or len(results) == 0:
+            if max_results is not None and len(all_papers) >= max_results:
+                all_papers = all_papers[:max_results]
                 break
-            page += 1
+
+            next_cursor = data.get("meta", {}).get("next_cursor")
+            if next_cursor is None or len(results) == 0:
+                break
+            cursor = next_cursor
+
+            # Polite-pool delay (~10 req/s)
+            await asyncio.sleep(0.15)
 
         return all_papers
 

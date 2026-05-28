@@ -1,4 +1,4 @@
-"""Relevancy scoring engine.
+"""OK score engine.
 
 Pure mathematical module — no DB or routing dependencies.
 Handles bulk vectorized scoring and single-paper breakdowns.
@@ -13,7 +13,7 @@ def score_papers_bulk(
     df: pd.DataFrame,
     weights: dict[str, float],
 ) -> pd.DataFrame:
-    """Apply the relevancy formula to every row and return sorted results.
+    """Apply the OK score formula to every row and return sorted results.
 
     Parameters
     ----------
@@ -26,7 +26,7 @@ def score_papers_bulk(
 
     Returns
     -------
-    DataFrame with a new ``relevancy_score`` column, sorted descending.
+    DataFrame with a new ``ok_score`` column, sorted descending.
     """
     df = df.copy()
 
@@ -43,7 +43,7 @@ def score_papers_bulk(
     w_data = weights.get("w_data", 1.0)
     w_stars = weights.get("w_stars", 1.0)
 
-    df["relevancy_score"] = (
+    df["ok_score"] = (
         w_c * np.log10(1 + citations)
         + w_code * has_code
         + w_peer * is_peer
@@ -52,9 +52,9 @@ def score_papers_bulk(
     )
 
     # Round to 2 decimal places
-    df["relevancy_score"] = df["relevancy_score"].round(2)
+    df["ok_score"] = df["ok_score"].round(2)
 
-    return df.sort_values("relevancy_score", ascending=False).reset_index(drop=True)
+    return df.sort_values("ok_score", ascending=False).reset_index(drop=True)
 
 
 def score_paper_single(

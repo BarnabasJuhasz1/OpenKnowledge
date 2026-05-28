@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 from ....models.paper import Paper, Author
 from .base import DatabaseAdapter
 
@@ -16,35 +17,45 @@ _PAGE_SIZE = 100  # Semantic Scholar max per request
 class SemanticScholarAdapter(DatabaseAdapter):
     name = "semantic_scholar"
     rate_limit = 1
-    _BASE = "https://api.semanticscholar.org/graph/v1/paper/search"
+    _BASE = "https://api.semanticscholar.org/graph/v1/paper/search/bulk"
 
-    async def search(self, query: str) -> list[Paper]:
+    async def search(self, query: str, *, max_results: int | None = None) -> list[Paper]:
         all_papers: list[Paper] = []
-        offset = 0
+        token: str | None = None
+        is_first_request = True
 
         while True:
             headers = {}
             if self._api_key:
                 headers["x-api-key"] = self._api_key
 
-            params = {
+            params: dict[str, str | int] = {
                 "query": query,
                 "fields": _FIELDS,
-                "limit": _PAGE_SIZE,
-                "offset": offset,
             }
+            if token is not None:
+                params["token"] = token
 
-            async with self._semaphore:
-                resp = await self._get_client().get(self._BASE, params=params, headers=headers)
-                resp.raise_for_status()
+            # Rate-limit: 1s delay between page requests (skip before first)
+            if not is_first_request:
+                await asyncio.sleep(1.0)
+            is_first_request = False
+
+            resp = await self._request_with_retry(
+                "GET", self._BASE, params=params, headers=headers,
+            )
 
             data = resp.json()
-            total: int = data.get("total", 0)
             batch = [self._normalize(p) for p in data.get("data", [])]
             all_papers.extend(batch)
 
-            offset += len(batch)
-            if offset >= total or len(batch) == 0:
+            # Stop if max_results reached
+            if max_results is not None and len(all_papers) >= max_results:
+                all_papers = all_papers[:max_results]
+                break
+
+            token = data.get("token")
+            if not token or len(batch) == 0:
                 break
 
         return all_papers

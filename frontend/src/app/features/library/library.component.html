@@ -1,0 +1,265 @@
+<div class="library">
+  <header class="library__header">
+    <a class="library__logo" routerLink="/">
+      <img class="library__logo-icon" src="openknowledge_icon.svg" alt="" />
+      OpenKnowledge
+    </a>
+    <nav class="library__nav">
+      <a class="library__nav-link" routerLink="/">Research</a>
+      <a class="library__nav-link" routerLink="/relevancy">OK-score</a>
+      <a class="library__nav-link" routerLink="/graph">Graph</a>
+      <a class="library__nav-link library__nav-link--active" routerLink="/library">Library</a>
+      <a class="library__nav-link" routerLink="/citgraph">Cit-Graph</a>
+    </nav>
+  </header>
+
+  <main class="library__body">
+    <!-- Tab switcher -->
+    <div class="library__tabs">
+      <button
+        class="library__tab"
+        [class.library__tab--active]="activeTab() === 'shelf'"
+        (click)="switchTab('shelf')"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Query Shelf
+        @if (items().length) {
+          <span class="library__tab-count">{{ items().length }}</span>
+        }
+      </button>
+      <button
+        class="library__tab"
+        [class.library__tab--active]="activeTab() === 'bookshelf'"
+        (click)="switchTab('bookshelf')"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        Bookshelf
+        @if (bookshelfItems().length) {
+          <span class="library__tab-count">{{ bookshelfItems().length }}</span>
+        }
+      </button>
+    </div>
+
+    <!-- Query Shelf Tab -->
+    @if (activeTab() === 'shelf') {
+      <h1 class="library__title">Query Shelf</h1>
+      <p class="library__subtitle">Save and manage your frequently used search queries.</p>
+
+      <div class="library__add">
+        <input
+          class="library__add-input library__add-input--query"
+          type="text"
+          placeholder="Search query, e.g. &quot;transformer attention mechanism&quot;"
+          [value]="newQuery()"
+          (input)="newQuery.set($any($event.target).value)"
+          (keydown)="onAddKeydown($event)"
+        />
+        <input
+          class="library__add-input library__add-input--label"
+          type="text"
+          placeholder="Label (optional)"
+          [value]="newLabel()"
+          (input)="newLabel.set($any($event.target).value)"
+          (keydown)="onAddKeydown($event)"
+        />
+        <button
+          class="library__add-btn"
+          [disabled]="!newQuery().trim()"
+          (click)="addItem()"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add
+        </button>
+      </div>
+
+      @if (items().length === 0) {
+        <div class="library__empty">
+          <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          <p>Your shelf is empty. Add a query above or save one from the search bar.</p>
+        </div>
+      } @else {
+        <div class="library__list">
+          @for (item of items(); track item.id) {
+            <div class="library__item">
+              <div class="library__item-main">
+                @if (editingId() === item.id) {
+                  <input
+                    class="library__edit-input"
+                    type="text"
+                    [value]="editLabel()"
+                    (input)="editLabel.set($any($event.target).value)"
+                    (keydown)="onEditKeydown($event, item)"
+                  />
+                } @else {
+                  <div class="library__item-text">
+                    <span class="library__item-label">{{ item.label || item.query_text }}</span>
+                    @if (item.label && item.label !== item.query_text) {
+                      <code class="library__item-query">{{ item.query_text }}</code>
+                    }
+                  </div>
+                }
+              </div>
+              <div class="library__item-meta">
+                <span class="library__item-count" title="Times used">{{ item.use_count }}x</span>
+              </div>
+              <div class="library__item-actions">
+                @if (editingId() === item.id) {
+                  <button class="library__action-btn library__action-btn--save" (click)="saveEdit(item)" title="Save">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  </button>
+                  <button class="library__action-btn" (click)="cancelEdit()" title="Cancel">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                } @else {
+                  <button class="library__action-btn library__action-btn--use" (click)="useItem(item)" title="Use this query">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  </button>
+                  <button class="library__action-btn" (click)="startEdit(item)" title="Edit label">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  </button>
+                  <button class="library__action-btn library__action-btn--delete" (click)="requestDeleteQuery(item)" title="Remove">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  </button>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      }
+    }
+
+    <!-- Bookshelf Tab -->
+    @if (activeTab() === 'bookshelf') {
+      <h1 class="library__title">Bookshelf</h1>
+      <p class="library__subtitle">Your saved papers with personal notes.</p>
+
+      @if (bookshelfItems().length === 0) {
+        <div class="library__empty">
+          <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          <p>Your bookshelf is empty. Save papers from search results or the graph view.</p>
+        </div>
+      } @else {
+        <div class="library__list">
+          @for (item of bookshelfItems(); track item.id) {
+            <div class="library__item library__item--bookshelf">
+              <div class="library__item-main">
+                <div
+                  class="library__item-text library__item-text--clickable"
+                  (click)="toggleExpand(item)"
+                  title="Show paper details"
+                >
+                  <span class="library__item-label">
+                    <svg
+                      class="library__item-chevron"
+                      [class.library__item-chevron--open]="expandedBookId() === item.id"
+                      xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
+                      fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                    ><polyline points="9 18 15 12 9 6"/></svg>
+                    {{ item.title }}
+                  </span>
+                  <span class="library__item-authors">
+                    {{ item.authors.length ? item.authors.slice(0, 3).join(', ') : 'Unknown authors' }}
+                    @if (item.authors.length > 3) { et al. }
+                  </span>
+                  @if (item.year) {
+                    <span class="library__item-year">{{ item.year }}</span>
+                  }
+                </div>
+
+                <!-- Expanded paper details -->
+                @if (expandedBookId() === item.id) {
+                  @if (hasDetails(item)) {
+                    @if (item.paper; as p) {
+                      <div class="library__detail">
+                        @if (p.journal || p.venue) {
+                          <p class="library__detail-venue">{{ p.journal || p.venue }}</p>
+                        }
+                        @if (p.abstract) {
+                          <p class="library__detail-abstract">{{ p.abstract }}</p>
+                        }
+                        <div class="library__detail-badges">
+                          @if (p.citation_count !== null) {
+                            <span class="library__badge">{{ p.citation_count | number }} cited by</span>
+                          }
+                          @if (p.reference_count !== null) {
+                            <span class="library__badge">{{ p.reference_count | number }} references</span>
+                          }
+                          @if (p.has_public_code || p.code_url) {
+                            @if (p.code_url) {
+                              <a class="library__badge library__badge--link" [href]="p.code_url" target="_blank" rel="noopener">Code</a>
+                            } @else {
+                              <span class="library__badge">Code available</span>
+                            }
+                          }
+                          @if (p.pdf_url || p.landing_url) {
+                            <a class="library__badge library__badge--link" [href]="p.pdf_url || p.landing_url" target="_blank" rel="noopener">Open PDF</a>
+                          }
+                        </div>
+                      </div>
+                    }
+                  } @else {
+                    <p class="library__detail-empty">No additional details were saved for this paper.</p>
+                  }
+                }
+
+                <!-- Notes -->
+                @if (editingNotesId() === item.id) {
+                  <div class="library__notes-edit">
+                    <textarea
+                      class="library__notes-textarea"
+                      rows="3"
+                      placeholder="Add your notes..."
+                      [value]="editNotesText()"
+                      (input)="editNotesText.set($any($event.target).value)"
+                      (keydown)="onNotesKeydown($event, item)"
+                    ></textarea>
+                    <div class="library__notes-actions">
+                      <button class="library__notes-btn library__notes-btn--save" (click)="saveNotes(item)">Save</button>
+                      <button class="library__notes-btn" (click)="cancelEditNotes()">Cancel</button>
+                    </div>
+                  </div>
+                } @else if (item.notes) {
+                  <p class="library__notes-display" (click)="startEditNotes(item)">{{ item.notes }}</p>
+                } @else {
+                  <button class="library__notes-add" (click)="startEditNotes(item)">+ Add notes</button>
+                }
+              </div>
+              <div class="library__item-actions">
+                <button class="library__action-btn" (click)="startEditNotes(item)" title="Edit notes">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                <button class="library__action-btn library__action-btn--delete" (click)="requestDeleteBook(item)" title="Remove">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    }
+  </main>
+
+  <!-- Delete confirmation -->
+  @if (pendingDelete(); as pending) {
+    <div class="library__modal-overlay" (click)="cancelDelete()">
+      <div class="library__modal" (click)="$event.stopPropagation()">
+        <h2 class="library__modal-title">
+          {{ pending.kind === 'query' ? 'Remove query?' : 'Remove paper?' }}
+        </h2>
+        <p class="library__modal-text">
+          Are you sure you want to remove
+          <strong>{{ pending.name }}</strong>
+          @if (pending.kind === 'query') {
+            from your Query Shelf?
+          } @else {
+            from your Bookshelf? Your notes are kept and will return if you re-add it.
+          }
+        </p>
+        <div class="library__modal-actions">
+          <button class="library__modal-btn" (click)="cancelDelete()">Cancel</button>
+          <button class="library__modal-btn library__modal-btn--danger" (click)="confirmDelete()">Remove</button>
+        </div>
+      </div>
+    </div>
+  }
+</div>

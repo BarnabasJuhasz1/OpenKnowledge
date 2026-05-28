@@ -1,0 +1,377 @@
+<div class="graph-page">
+  <header class="graph-page__header">
+    <a class="graph-page__logo" routerLink="/">
+      <img class="graph-page__logo-icon" src="openknowledge_icon.svg" alt="" />
+      OpenKnowledge
+    </a>
+    <nav class="graph-page__nav">
+      <a class="graph-page__nav-link" routerLink="/">Research</a>
+      <a class="graph-page__nav-link" routerLink="/relevancy">OK-score</a>
+      <a class="graph-page__nav-link graph-page__nav-link--active" routerLink="/graph">Graph</a>
+      <a class="graph-page__nav-link" routerLink="/library">Library</a>
+      <a class="graph-page__nav-link" routerLink="/citgraph">Cit-Graph</a>
+    </nav>
+  </header>
+
+  <div class="graph-page__body">
+    @if (!state.hasSearched()) {
+      <div class="graph-page__empty">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        <h2>Citation Network Graph</h2>
+        <p>Search for papers first, then the top 5 results by OK-score will appear here as an interactive citation network.</p>
+      </div>
+    } @else {
+      <div class="graph-page__canvas-wrap">
+        <!-- Zoom controls -->
+        <div class="zoom-controls">
+          <button class="zoom-controls__btn" (click)="zoomOut()" title="Zoom out">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <button class="zoom-controls__label" (click)="resetZoom()" title="Reset zoom">{{ zoomPercent }}%</button>
+          <button class="zoom-controls__btn" (click)="zoomIn()" title="Zoom in">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+        </div>
+
+        <!-- Graph canvas -->
+        <div class="graph-page__canvas" (wheel)="onCanvasWheel($event)">
+          @if (nodes().length === 0) {
+            <div class="graph-page__empty">
+              <h2>No papers with year data</h2>
+              <p>The graph requires papers with publication years. Try a different search or add papers via the panel.</p>
+            </div>
+          } @else {
+            <div
+              class="graph-page__svg-wrap"
+              [style.width.px]="svgWidth() * zoom()"
+              [style.height.px]="svgHeight() * zoom()"
+              [style.min-width.px]="svgWidth() * zoom()"
+            >
+            <svg
+              [attr.width]="svgWidth()"
+              [attr.height]="svgHeight()"
+              class="graph-svg"
+              [style.transform]="'scale(' + zoom() + ')'"
+              [style.transform-origin]="'0 0'"
+            >
+              @for (div of dividers(); track div.x) {
+                <line
+                  class="graph-svg__divider"
+                  [attr.x1]="div.x"
+                  [attr.y1]="TOP_PADDING - 5"
+                  [attr.x2]="div.x"
+                  [attr.y2]="svgHeight()"
+                />
+              }
+
+              @for (col of yearColumns(); track col.year) {
+                <text
+                  class="graph-svg__year-label"
+                  [attr.x]="col.x"
+                  [attr.y]="TOP_PADDING - 16"
+                  text-anchor="middle"
+                >{{ col.year }}</text>
+              }
+
+              @for (edge of edges(); track edge.fromId + edge.toId) {
+                <path
+                  class="graph-svg__edge"
+                  [class.graph-svg__edge--highlighted]="isEdgeHighlighted(edge)"
+                  [class.graph-svg__edge--ancestor]="!isEdgeHighlighted(edge) && isEdgeInAncestorChain(edge)"
+                  [class.graph-svg__edge--dimmed]="selectedNodeId() && !isEdgeHighlighted(edge) && !isEdgeInAncestorChain(edge)"
+                  [attr.d]="edgePath(edge)"
+                  fill="none"
+                />
+              }
+
+              @for (node of nodes(); track node.id) {
+                <g
+                  class="graph-svg__node"
+                  [class.graph-svg__node--selected]="isSelected(node)"
+                  [class.graph-svg__node--connected]="isConnected(node) && !isAncestor(node)"
+                  [class.graph-svg__node--ancestor]="isAncestor(node) && !isTransitive(node)"
+                  [class.graph-svg__node--transitive]="isTransitive(node)"
+                  [class.graph-svg__node--dimmed]="selectedNodeId() && !isSelected(node) && !isConnected(node) && !isAncestor(node)"
+                  [style.opacity]="selectedNodeId() && !isSelected(node) && isTransitive(node) ? nodeOpacity(node) : null"
+                  (click)="selectNode(node)"
+                  (dblclick)="onNodeDblClick(node, $event)"
+                  (mouseenter)="onNodeEnter(node)"
+                  (mouseleave)="onNodeLeave()"
+                  style="cursor: pointer"
+                >
+                  <circle
+                    class="graph-svg__circle"
+                    [attr.cx]="node.x"
+                    [attr.cy]="node.y"
+                    r="22"
+                  />
+                  <text
+                    class="graph-svg__node-letter"
+                    [attr.x]="node.x"
+                    [attr.y]="node.y + 1"
+                    text-anchor="middle"
+                    dominant-baseline="central"
+                  >{{ node.letter }}</text>
+                  <text
+                    class="graph-svg__node-score"
+                    [attr.x]="node.x"
+                    [attr.y]="node.y + 13"
+                    text-anchor="middle"
+                  >{{ (node.paper.ok_score ?? 0).toFixed(1) }}</text>
+                  <text
+                    class="graph-svg__node-label"
+                    [attr.x]="node.x"
+                    [attr.y]="node.y + 36"
+                    text-anchor="middle"
+                  >{{ nodeLabel(node) }}</text>
+
+                  <!-- Directional expand buttons (visible on hover or select) -->
+                  @if (showExpandButtons(node)) {
+                    <!-- Left arrow: expand past (papers this node cites) -->
+                    <g
+                      class="graph-svg__expand-btn"
+                      [class.graph-svg__expand-btn--disabled]="!canExpandPast(node)"
+                      (click)="onExpandArrowClick(node, 'past', $event)"
+                      (dblclick)="expandNodePastDbl(node, $event)"
+                    >
+                      <circle
+                        [attr.cx]="node.x - 34"
+                        [attr.cy]="node.y"
+                        r="11"
+                        class="graph-svg__expand-bg"
+                      />
+                      <path
+                        [attr.d]="'M ' + (node.x - 31) + ' ' + node.y + ' l -6 0 m 3 -3 l -3 3 l 3 3'"
+                        class="graph-svg__expand-arrow"
+                      />
+                    </g>
+                    <!-- Right arrow: expand future (papers that cite this node) -->
+                    <g
+                      class="graph-svg__expand-btn"
+                      [class.graph-svg__expand-btn--disabled]="!canExpandFuture(node)"
+                      (click)="onExpandArrowClick(node, 'future', $event)"
+                      (dblclick)="expandNodeFutureDbl(node, $event)"
+                    >
+                      <circle
+                        [attr.cx]="node.x + 34"
+                        [attr.cy]="node.y"
+                        r="11"
+                        class="graph-svg__expand-bg"
+                      />
+                      <path
+                        [attr.d]="'M ' + (node.x + 31) + ' ' + node.y + ' l 6 0 m -3 -3 l 3 3 l -3 3'"
+                        class="graph-svg__expand-arrow"
+                      />
+                    </g>
+                  }
+                </g>
+              }
+            </svg>
+            </div>
+          }
+        </div>
+
+        <!-- Expand popup (spawnable papers list) -->
+        @if (expandPopup(); as popup) {
+          <div class="expand-popup-backdrop" (click)="closeExpandPopup()"></div>
+          <div
+            class="expand-popup"
+            [style.left.px]="popup.x"
+            [style.top.px]="popup.y"
+          >
+            <div class="expand-popup__header">
+              @if (popup.direction === 'past') {
+                Referenced papers
+              } @else {
+                Citing papers
+              }
+              <span class="expand-popup__count">({{ popup.papers.length }})</span>
+            </div>
+            <div class="expand-popup__list">
+              @for (item of popup.papers; track item.id) {
+                <button class="expand-popup__item" (click)="addPaperFromPopup(item)">
+                  <span class="expand-popup__item-title">{{ item.paper.title }}</span>
+                  <span class="expand-popup__item-score">{{ (item.paper.ok_score ?? 0).toFixed(2) }}</span>
+                </button>
+              }
+            </div>
+          </div>
+        }
+
+        <!-- Collapse / expand toggle -->
+        <button
+          class="panel-toggle"
+          [class.panel-toggle--collapsed]="panelCollapsed()"
+          (click)="togglePanel()"
+          [title]="panelCollapsed() ? 'Show panel' : 'Hide panel'"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            @if (panelCollapsed()) {
+              <polyline points="15 18 9 12 15 6"/>
+            } @else {
+              <polyline points="9 18 15 12 9 6"/>
+            }
+          </svg>
+        </button>
+
+        <!-- Right panel -->
+        @if (!panelCollapsed()) {
+        <aside class="detail-panel">
+          <div class="detail-panel__add-section">
+            <h5 class="detail-panel__section-title">Add Paper to Graph</h5>
+            <div class="detail-panel__add-row">
+              <input
+                type="text"
+                class="detail-panel__add-input"
+                placeholder="Search by title…"
+                [(ngModel)]="addNodeQuery"
+                (keydown.enter)="addNodeByTitle()"
+              />
+              <button
+                class="detail-panel__add-btn"
+                [disabled]="!addNodeQuery.trim()"
+                (click)="addNodeByTitle()"
+              >Add</button>
+            </div>
+            @if (addNodeError()) {
+              <span class="detail-panel__add-error">{{ addNodeError() }}</span>
+            }
+          </div>
+
+          @if (selectedPaper(); as paper) {
+            <div class="detail-panel__header">
+              <h3 class="detail-panel__title">
+                <span class="detail-panel__letter">{{ selectedLetter() }}</span>
+                Paper Details
+              </h3>
+              <button class="detail-panel__close" (click)="closePanel()">&times;</button>
+            </div>
+            <div class="detail-panel__body">
+              <h4 class="detail-panel__paper-title">{{ paper.title }}</h4>
+
+              @if (authorLine(paper)) {
+                <p class="detail-panel__authors">{{ authorLine(paper) }}</p>
+              }
+
+              <div class="detail-panel__meta-row">
+                @if (paper.year) {
+                  <span class="detail-panel__badge">{{ paper.year }}</span>
+                }
+                @if (paper.journal || paper.venue) {
+                  <span class="detail-panel__badge detail-panel__badge--venue">{{ paper.journal || paper.venue }}</span>
+                }
+                @if (paper.is_open_access) {
+                  <span class="detail-panel__badge detail-panel__badge--oa">Open Access</span>
+                }
+              </div>
+
+              @if (paper.abstract) {
+                <div class="detail-panel__section">
+                  <h5 class="detail-panel__section-title">Abstract</h5>
+                  <p class="detail-panel__abstract">{{ paper.abstract }}</p>
+                </div>
+              }
+
+              <div class="detail-panel__stats">
+                @if (paper.citation_count !== null) {
+                  <div class="detail-panel__stat">
+                    <span class="detail-panel__stat-value">{{ paper.citation_count | number }}</span>
+                    <span class="detail-panel__stat-label">Citations</span>
+                    <span class="detail-panel__stat-sub">{{ retrievedCitationCount(paper) }} in results</span>
+                  </div>
+                }
+                @if (paper.reference_count !== null) {
+                  <div class="detail-panel__stat">
+                    <span class="detail-panel__stat-value">{{ paper.reference_count | number }}</span>
+                    <span class="detail-panel__stat-label">References</span>
+                    <span class="detail-panel__stat-sub">{{ retrievedReferenceCount(paper) }} in results</span>
+                  </div>
+                }
+                @if (paper.ok_score !== undefined) {
+                  <div class="detail-panel__stat">
+                    <span class="detail-panel__stat-value">{{ paper.ok_score.toFixed(2) }}</span>
+                    <span class="detail-panel__stat-label">OK-score</span>
+                  </div>
+                }
+              </div>
+
+              @if (paper.has_public_code || paper.code_url) {
+                <div class="detail-panel__code-row">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                  @if (paper.code_url) {
+                    <a [href]="paper.code_url" target="_blank" rel="noopener" class="detail-panel__code-link">View Repository</a>
+                  } @else {
+                    <span class="detail-panel__code-text">Code available</span>
+                  }
+                  @if (paper.repo_stars > 0) {
+                    <span class="detail-panel__stars">{{ paper.repo_stars | number }} stars</span>
+                  }
+                </div>
+              }
+
+              <div class="detail-panel__sources">
+                <h5 class="detail-panel__section-title">Sources</h5>
+                <div class="detail-panel__source-tags">
+                  @for (src of paper.sources; track src) {
+                    <span class="detail-panel__source-tag">{{ src }}</span>
+                  }
+                </div>
+              </div>
+
+              @if (paper.pdf_url || paper.landing_url) {
+                <div class="detail-panel__actions">
+                  @if (paper.pdf_url) {
+                    <a class="detail-panel__action-btn" [href]="paper.pdf_url" target="_blank" rel="noopener">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                      PDF
+                    </a>
+                  }
+                  @if (paper.landing_url) {
+                    <a class="detail-panel__action-btn" [href]="paper.landing_url" target="_blank" rel="noopener">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                      Open
+                    </a>
+                  }
+                </div>
+              }
+
+              <div class="detail-panel__panel-actions">
+                <button
+                  class="detail-panel__expand-btn"
+                  [disabled]="!canExpandSelected()"
+                  (click)="expandSelectedNode()"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                  Expand Citations
+                </button>
+                <button class="detail-panel__remove-btn" (click)="removeSelectedNode()">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  Remove from Graph
+                </button>
+              </div>
+              <button
+                class="detail-panel__bookmark-btn"
+                [class.detail-panel__bookmark-btn--active]="selectedBookmarked()"
+                (click)="toggleBookshelf()"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                  [attr.fill]="selectedBookmarked() ? 'currentColor' : 'none'"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+                </svg>
+                {{ selectedBookmarked() ? 'Saved to Bookshelf' : 'Save to Bookshelf' }}
+              </button>
+            </div>
+          } @else {
+            <div class="detail-panel__placeholder">
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+              <p>Click a node to see paper details</p>
+              <p class="detail-panel__placeholder-hint">Double-click to expand its citations</p>
+            </div>
+          }
+        </aside>
+        }
+      </div>
+    }
+  </div>
+</div>

@@ -13,7 +13,7 @@ export class ScoringService {
   private readonly baseUrl = 'http://127.0.0.1:8000/api';
 
   scorePapers(weights: ScoreWeights, limit?: number): Observable<ScorePapersResponse> {
-    const body: Record<string, unknown> = { ...weights };
+    const body: Record<string, unknown> = { weights };
     if (limit !== undefined) {
       body['limit'] = limit;
     }

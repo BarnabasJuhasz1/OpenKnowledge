@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 from ....models.paper import Paper, Author
 from .base import DatabaseAdapter
 
@@ -8,23 +9,24 @@ _PAGE_SIZE = 100  # DBLP max per request
 class DblpAdapter(DatabaseAdapter):
     name = "dblp"
     rate_limit = 10
+    _request_delay = 0.1
     _BASE = "https://dblp.org/search/publ/api"
 
-    async def search(self, query: str) -> list[Paper]:
+    async def search(self, query: str, *, max_results: int | None = None) -> list[Paper]:
         all_papers: list[Paper] = []
         offset = 0
+        # DBLP API hard-limits to 10,000 results
+        cap = min(max_results, 10000) if max_results is not None else 10000
 
-        while True:
+        while offset < cap:
             params = {
                 "q": query,
                 "format": "json",
-                "h": _PAGE_SIZE,
+                "h": min(_PAGE_SIZE, cap - offset),
                 "f": offset,
             }
 
-            async with self._semaphore:
-                resp = await self._get_client().get(self._BASE, params=params)
-                resp.raise_for_status()
+            resp = await self._request_with_retry("GET", self._BASE, params=params)
 
             data = resp.json()
             result = data.get("result") or {}
@@ -36,8 +38,10 @@ class DblpAdapter(DatabaseAdapter):
             all_papers.extend(batch)
 
             offset += len(batch)
-            if offset >= total or len(batch) == 0:
+            if offset >= total or len(batch) == 0 or offset >= cap:
                 break
+
+            await asyncio.sleep(self._request_delay)
 
         return all_papers
 
@@ -86,9 +90,7 @@ class DblpAdapter(DatabaseAdapter):
         """Fetch native BibTeX from DBLP for a given key."""
         url = f"https://dblp.org/rec/{dblp_key}.bib"
         try:
-            async with self._semaphore:
-                resp = await self._get_client().get(url)
-                resp.raise_for_status()
+            resp = await self._request_with_retry("GET", url)
             return resp.text
         except Exception:
             return None

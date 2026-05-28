@@ -91,16 +91,32 @@ class SearchRequest(BaseModel):
     raw_query: str | None = None  # Original boolean query string; used as-is for all APIs
     databases: list[str] | None = None  # None = all
     domain_filter: str | None = None
+    max_initial_results: int = 1000  # Per-adapter cap for initial fast response
+    max_total_results: int | None = 10000  # Per-adapter cap for total results (None = no cap)
+    continue_in_background: bool = True  # Keep paginating after initial results
 
 
 class SearchResponse(BaseModel):
     papers: list[Paper]
     total_found: int
+    total_available: int | None = None  # Estimated total across all APIs (if known)
     sources_queried: list[str]
     sources_failed: list[str]
     queries_used: dict[str, str] = {}
     deduplication_removed: int
+    background_job_id: str | None = None  # Non-null if background fetch is continuing
     retrieved_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class BackgroundProgress(BaseModel):
+    """SSE event for background fetch progress."""
+    job_id: str
+    source: str
+    papers_fetched: int  # Papers fetched so far from this source
+    total_papers: int  # Total papers fetched across all sources
+    estimated_remaining: int | None = None
+    is_complete: bool = False
+    error: str | None = None
 
 
 class ScoreWeights(BaseModel):
@@ -127,7 +143,7 @@ class ScoredPaper(BaseModel):
     is_peer_reviewed: bool | None = None
     has_dataset: bool = False
     repo_stars: int = 0
-    relevancy_score: float
+    ok_score: float
 
 
 class ScorePapersResponse(BaseModel):
@@ -145,5 +161,5 @@ class ScoreBreakdown(BaseModel):
 
 class PaperScoreResponse(BaseModel):
     title: str
-    total_score: float
+    ok_score: float
     breakdown: ScoreBreakdown

@@ -3,19 +3,11 @@
   <div class="card__top">
     <h2 class="card__title">{{ paper.title }}</h2>
     <div class="card__meta">
-      @if (paper.relevancy_score !== undefined) {
-        <span
-          class="card__score"
-          [style.color]="scoreColor"
-          [style.background]="scoreBackground"
-          title="Relevancy score"
-        >{{ paper.relevancy_score.toFixed(2) }}</span>
-      }
       <span class="card__year">{{ displayYear }}</span>
       <button
         class="card__btn"
         [class.card__btn--copied]="bibtexCopied()"
-        [disabled]="!paper.bibtex"
+        [disabled]="bibtexDisabled"
         (click)="copyBibtex()"
         title="Copy BibTeX citation"
         aria-label="Copy BibTeX"
@@ -28,7 +20,7 @@
       </button>
       <button
         class="card__btn"
-        [disabled]="!hasPdf"
+        [disabled]="pdfDisabled"
         (click)="openPdf()"
         title="Open PDF"
         aria-label="Open PDF"
@@ -66,4 +58,69 @@
       <p class="card__abstract-text">{{ paper.abstract }}</p>
     </div>
   }
+
+  <!-- Citation, Reference & Code badges -->
+  @if (paper.citation_count !== null || paper.reference_count !== null || hasCode) {
+    <div class="card__footer">
+      <div class="card__citations">
+        @if (paper.citation_count !== null) {
+          <span class="card__cite-badge" title="Cited by other papers">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+            {{ paper.citation_count | number }} cited by
+          </span>
+        }
+        @if (paper.reference_count !== null) {
+          <span class="card__cite-badge" title="References cited by this paper">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><line x1="21" y1="3" x2="14" y2="10"/><polyline points="9 21 3 21 3 15"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+            {{ paper.reference_count | number }} references
+          </span>
+        }
+        @if (hasCode) {
+          <span
+            class="card__code-badge"
+            [class.card__code-badge--clickable]="!!paper.code_url"
+            (click)="openCode()"
+            [title]="paper.code_url ? 'Open repository' : 'Code available'"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            Code
+            @if (paper.repo_stars > 0) {
+              <span class="card__stars">
+                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                {{ paper.repo_stars | number }}
+              </span>
+            }
+          </span>
+        }
+      </div>
+    </div>
+  }
+
+  <!-- Actions row -->
+  <div class="card__graph-row">
+    @if (inGraph) {
+      <span class="card__graph-status">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        In graph
+      </span>
+    } @else {
+      <button class="card__graph-btn" (click)="addToGraph()" title="Add to citation graph">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        Add to graph
+      </button>
+    }
+    <button
+      class="card__bookmark-btn"
+      [class.card__bookmark-btn--active]="bookmarked()"
+      (click)="toggleBookshelf()"
+      [title]="bookmarked() ? 'Remove from bookshelf' : 'Add to bookshelf'"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
+        [attr.fill]="bookmarked() ? 'currentColor' : 'none'"
+        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+      </svg>
+      {{ bookmarked() ? 'Saved' : 'Save' }}
+    </button>
+  </div>
 </div>

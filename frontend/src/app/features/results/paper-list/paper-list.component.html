@@ -1,6 +1,62 @@
 <div class="paper-list">
   @for (paper of pagePapers; track paper.doi ?? paper.title) {
-    <app-paper-card [paper]="paper" />
+    <div class="paper-list__row">
+      <app-paper-card class="paper-list__card" [paper]="paper" />
+      <div class="paper-list__score-wrap">
+        <div
+          class="paper-list__score"
+          [class.paper-list__score--loading]="scoresLoading && paper.ok_score === undefined"
+          [class.paper-list__score--high]="(paper.ok_score ?? 0) >= 0.7"
+          [class.paper-list__score--mid]="(paper.ok_score ?? 0) >= 0.4 && (paper.ok_score ?? 0) < 0.7"
+          [class.paper-list__score--low]="paper.ok_score !== undefined && paper.ok_score < 0.4"
+          [class.paper-list__score--clickable]="paper.ok_score !== undefined"
+          (click)="paper.ok_score !== undefined && openBreakdown(paper, $event)"
+        >
+          @if (scoresLoading && paper.ok_score === undefined) {
+            <span class="paper-list__score-spinner"></span>
+            <span class="paper-list__score-label">Scoring</span>
+          } @else if (paper.ok_score !== undefined) {
+            <span class="paper-list__score-value">{{ paper.ok_score.toFixed(2) }}</span>
+            <span class="paper-list__score-label">OK-score</span>
+          } @else {
+            <span class="paper-list__score-value paper-list__score-value--na">—</span>
+            <span class="paper-list__score-label">N/A</span>
+          }
+        </div>
+
+        <!-- Score breakdown popup -->
+        @if (popupPaperTitle() === paper.title) {
+          <div class="score-popup" (click)="$event.stopPropagation()">
+            <div class="score-popup__header">
+              <span class="score-popup__title">Score Breakdown</span>
+              <button class="score-popup__close" (click)="closeBreakdown()" aria-label="Close">&times;</button>
+            </div>
+            <div class="score-popup__total">
+              <span class="score-popup__total-label">Total</span>
+              <span class="score-popup__total-value">{{ popupTotal() | number:'1.2-2' }}</span>
+            </div>
+            <div class="score-popup__bars">
+              @for (entry of popupBreakdown(); track entry.label) {
+                <div class="score-popup__bar-row">
+                  <div class="score-popup__bar-label">
+                    <span class="score-popup__dot" [style.background]="entry.color"></span>
+                    {{ entry.label }}
+                  </div>
+                  <div class="score-popup__bar-track">
+                    <div
+                      class="score-popup__bar-fill"
+                      [style.width.%]="barWidth(entry.value)"
+                      [style.background]="entry.color"
+                    ></div>
+                  </div>
+                  <span class="score-popup__bar-value">{{ entry.value | number:'1.3-3' }}</span>
+                </div>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    </div>
   } @empty {
     <p class="paper-list__empty">No papers to display.</p>
   }

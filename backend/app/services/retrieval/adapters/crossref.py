@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 from ....models.paper import Paper, Author
 from .base import DatabaseAdapter
 
@@ -18,33 +19,41 @@ class CrossRefAdapter(DatabaseAdapter):
     rate_limit = 10
     _BASE = "https://api.crossref.org/works"
 
-    async def search(self, query: str) -> list[Paper]:
+    async def search(self, query: str, *, max_results: int | None = None) -> list[Paper]:
         all_papers: list[Paper] = []
-        offset = 0
+        cursor = "*"
 
         while True:
             params: dict = {
                 "query": query,
                 "rows": _PAGE_SIZE,
-                "offset": offset,
+                "cursor": cursor,
                 "select": _SELECT,
             }
             if self._contact_email:
                 params["mailto"] = self._contact_email
 
-            async with self._semaphore:
-                resp = await self._get_client().get(self._BASE, params=params)
-                resp.raise_for_status()
+            resp = await self._request_with_retry("GET", self._BASE, params=params)
 
             data = resp.json().get("message") or {}
-            total: int = data.get("total-results", 0)
             items = data.get("items") or []
+
+            if not items:
+                break
+
             batch = [self._normalize(item) for item in items]
             all_papers.extend(batch)
 
-            offset += len(batch)
-            if offset >= total or len(batch) == 0:
+            if max_results is not None and len(all_papers) >= max_results:
+                all_papers = all_papers[:max_results]
                 break
+
+            next_cursor = data.get("next-cursor")
+            if not next_cursor:
+                break
+
+            cursor = next_cursor
+            await asyncio.sleep(0.1)  # rate-limit between page requests
 
         return all_papers
 

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import xml.etree.ElementTree as ET
 from ....models.paper import Paper, Author
 from .base import DatabaseAdapter
@@ -13,54 +14,62 @@ class PubMedAdapter(DatabaseAdapter):
     name = "pubmed"
     rate_limit = 3  # 10/s with key, 3/s without
 
-    async def search(self, query: str) -> list[Paper]:
+    async def search(self, query: str, *, max_results: int | None = None) -> list[Paper]:
         all_papers: list[Paper] = []
         retstart = 0
 
-        while True:
-            # Step 1 — get PMIDs
-            search_params: dict = {
-                "db": "pubmed",
-                "term": query,
-                "retmax": _PAGE_SIZE,
-                "retstart": retstart,
-                "retmode": "json",
-                "usehistory": "n",
-            }
-            if self._api_key:
-                search_params["api_key"] = self._api_key
+        # Step 1 — single esearch to get count, WebEnv, and query_key
+        search_params: dict = {
+            "db": "pubmed",
+            "term": query,
+            "retmax": 0,
+            "retmode": "json",
+            "usehistory": "y",
+        }
+        if self._api_key:
+            search_params["api_key"] = self._api_key
 
-            async with self._semaphore:
-                search_resp = await self._get_client().get(_ESEARCH, params=search_params)
-                search_resp.raise_for_status()
+        search_resp = await self._request_with_retry("GET", _ESEARCH, params=search_params)
 
-            search_data = search_resp.json().get("esearchresult") or {}
-            total = int(search_data.get("count", 0))
-            pmids: list[str] = search_data.get("idlist") or []
+        search_data = search_resp.json().get("esearchresult") or {}
+        total = int(search_data.get("count", 0))
+        webenv = search_data.get("webenv")
+        query_key = search_data.get("querykey")
 
-            if not pmids:
-                break
+        if total == 0 or not webenv or not query_key:
+            return all_papers
 
-            # Step 2 — fetch full records for those PMIDs
+        if max_results is not None:
+            total = min(total, max_results)
+
+        # Step 2 — paginate efetch using WebEnv/query_key
+        while retstart < total:
+            await asyncio.sleep(0.34)  # rate-limit: ~3 req/s without API key
+
             fetch_params: dict = {
                 "db": "pubmed",
-                "id": ",".join(pmids),
+                "WebEnv": webenv,
+                "query_key": query_key,
+                "retstart": retstart,
+                "retmax": _PAGE_SIZE,
                 "rettype": "xml",
                 "retmode": "xml",
             }
             if self._api_key:
                 fetch_params["api_key"] = self._api_key
 
-            async with self._semaphore:
-                fetch_resp = await self._get_client().get(_EFETCH, params=fetch_params)
-                fetch_resp.raise_for_status()
+            fetch_resp = await self._request_with_retry("GET", _EFETCH, params=fetch_params)
 
             root = ET.fromstring(fetch_resp.text)
             batch = [self._normalize(art) for art in root.findall(".//PubmedArticle")]
             all_papers.extend(batch)
 
-            retstart += len(pmids)
-            if retstart >= total:
+            retstart += _PAGE_SIZE
+            if not batch:
+                break
+
+            if max_results is not None and len(all_papers) >= max_results:
+                all_papers = all_papers[:max_results]
                 break
 
         return all_papers

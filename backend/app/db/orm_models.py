@@ -134,6 +134,42 @@ class DBPaperVersion(Base):
     paper: Mapped[DBPaper] = relationship(back_populates="versions")
 
 
+class DBShelfItem(Base):
+    __tablename__ = "shelf_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    query_text: Mapped[str] = mapped_column(Text, nullable=False)
+    label: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    last_used_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    use_count: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class DBBookshelfItem(Base):
+    __tablename__ = "bookshelf_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    paper_identifier: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    authors_json: Mapped[str | None] = mapped_column(Text)
+    year: Mapped[int | None] = mapped_column(Integer)
+    notes: Mapped[str | None] = mapped_column(Text)
+    paper_json: Mapped[str | None] = mapped_column(Text)  # full Paper snapshot for the detail view
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
+
+
+class DBPaperNote(Base):
+    """Notes kept independently of the bookshelf so they survive remove/re-add."""
+
+    __tablename__ = "paper_notes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    paper_identifier: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
+
+
 class DBRetrievalJob(Base):
     __tablename__ = "retrieval_jobs"
 

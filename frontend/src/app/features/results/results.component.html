@@ -1,17 +1,86 @@
 <div class="results-page">
   <header class="results-page__header">
-    <a class="results-page__logo" routerLink="/">OpenKnowledge</a>
-    <a class="results-page__nav-link" routerLink="/relevancy">Relevancy</a>
+    <a class="results-page__logo" routerLink="/">
+      <img class="results-page__logo-icon" src="openknowledge_icon.svg" alt="" />
+      OpenKnowledge
+    </a>
+    <nav class="results-page__nav">
+      <a
+        class="results-page__nav-link results-page__nav-link--active"
+        routerLink="/"
+      >Research</a>
+      <a
+        class="results-page__nav-link"
+        routerLink="/relevancy"
+      >OK-score</a>
+      <a
+        class="results-page__nav-link"
+        routerLink="/graph"
+      >Graph</a>
+      <a
+        class="results-page__nav-link"
+        routerLink="/library"
+      >Library</a>
+      <a
+        class="results-page__nav-link"
+        routerLink="/citgraph"
+      >Cit-Graph</a>
+    </nav>
     <div class="results-page__search">
       <app-query-input
         [initialQuery]="state.rawQuery()"
         [loading]="state.loading()"
+        [compact]="true"
         (search)="onSearch($event)"
       />
     </div>
+    <label class="demo-toggle" title="Use bundled sample data instead of live APIs">
+      <span class="demo-toggle__label">Demo</span>
+      <span
+        class="demo-toggle__track"
+        [class.demo-toggle__track--on]="demo.enabled()"
+        (click)="demo.toggle()"
+      >
+        <span class="demo-toggle__thumb"></span>
+      </span>
+    </label>
   </header>
 
   <main class="results-page__main">
+    <!-- Welcome state when no search has been performed -->
+    @if (!state.hasSearched() && !state.loading()) {
+      <div class="results-page__welcome">
+        <h1 class="results-page__welcome-title">Discover Research Literature</h1>
+        <p class="results-page__welcome-subtitle">
+          Search across OpenAlex, Semantic Scholar, arXiv, PubMed, DBLP, CrossRef, Europe PMC and CORE — open source, no subscription required.
+        </p>
+        <div class="results-page__welcome-features">
+          <div class="results-page__feature">
+            <div class="results-page__feature-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </div>
+            <h3 class="results-page__feature-title">8 Academic Sources</h3>
+            <p class="results-page__feature-desc">Query multiple databases simultaneously and get deduplicated results</p>
+          </div>
+          <div class="results-page__feature">
+            <div class="results-page__feature-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            </div>
+            <h3 class="results-page__feature-title">OK-score</h3>
+            <p class="results-page__feature-desc">Automatic OK-score calculation based on citations, code, peer review, and more</p>
+          </div>
+          <div class="results-page__feature">
+            <div class="results-page__feature-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </div>
+            <h3 class="results-page__feature-title">BibTeX Export</h3>
+            <p class="results-page__feature-desc">One-click citation copying for any paper in your results</p>
+          </div>
+        </div>
+        <p class="results-page__welcome-hint">Use the search bar above to get started</p>
+      </div>
+    }
+
     <!-- Loading skeletons (only shown before any results arrive) -->
     @if (state.loading() && state.totalRaw() === 0) {
       <div class="skeletons">
@@ -47,7 +116,7 @@
       <div class="stream-progress stream-progress--scoring">
         <div class="stream-progress__bar"></div>
         <div class="stream-progress__text">
-          Computing relevancy scores…
+          Computing OK-scores…
         </div>
       </div>
     }
@@ -64,21 +133,34 @@
         [sourceErrors]="state.sourceErrors()"
       />
 
-      <div class="filters">
+      <div class="source-islands">
         <button
-          class="filters__btn"
-          [class.filters__btn--active]="state.activeFilter() === null"
+          class="source-island"
+          [class.source-island--active]="state.activeFilter() === null"
           (click)="onFilterChange(null)"
-        >All</button>
-        @for (source of state.sourcesQueried(); track source) {
+        >
+          <span class="source-island__name">All</span>
+          <span class="source-island__count">({{ state.totalFound() }})</span>
+        </button>
+        @for (src of state.sourceStatuses(); track src.name) {
           <button
-            class="filters__btn"
-            [class.filters__btn--active]="state.activeFilter() === source"
-            (click)="onFilterChange(source)"
-          >{{ source }}</button>
-        }
-        @if (state.loading()) {
-          <span class="filters__loading">...</span>
+            class="source-island"
+            [class.source-island--active]="state.activeFilter() === src.name"
+            [class.source-island--failed]="src.hasFailed"
+            (click)="onFilterChange(src.name)"
+            [title]="src.hasFailed ? src.errorMessage : ''"
+          >
+            <span class="source-island__name">{{ src.displayName }}</span>
+            <span class="source-island__count">({{ src.paperCount }})</span>
+            @if (src.isSearching) {
+              <span class="source-island__spinner">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              </span>
+            }
+            @if (src.hasFailed && !src.isSearching) {
+              <span class="source-island__error-mark" [title]="src.errorMessage ?? ''">!</span>
+            }
+          </button>
         }
       </div>
 
@@ -91,22 +173,26 @@
             <span class="filter-info__query-label">Query used:</span>
             <code class="filter-info__query-value">{{ state.activeQuery() }}</code>
           </div>
-          @if (state.activeError()) {
-            <div class="filter-info__error">
-              {{ state.activeFilter() }} failed: {{ state.activeError() }}
-            </div>
-          }
         </div>
       }
 
-      <app-paper-list [papers]="state.filteredPapers()" [page]="state.currentPage()" />
+      <div class="results-layout">
+        <app-filters-sidebar class="results-layout__sidebar" />
+        <div class="results-layout__content">
+          <app-paper-list
+            [papers]="state.filteredPapers()"
+            [page]="state.currentPage()"
+            [scoresLoading]="state.scoresLoading()"
+          />
 
-      <app-pagination
-        [totalItems]="state.filteredPapers().length"
-        [pageSize]="pageSize"
-        [currentPage]="state.currentPage()"
-        (pageChange)="onPageChange($event)"
-      />
+          <app-pagination
+            [totalItems]="state.filteredPapers().length"
+            [pageSize]="pageSize"
+            [currentPage]="state.currentPage()"
+            (pageChange)="onPageChange($event)"
+          />
+        </div>
+      </div>
     }
 
     <!-- Empty state -->

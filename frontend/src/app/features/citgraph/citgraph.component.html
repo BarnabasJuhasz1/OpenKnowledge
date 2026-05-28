@@ -1,0 +1,264 @@
+<div class="citgraph">
+  <header class="citgraph__header">
+    <a class="citgraph__logo" routerLink="/">
+      <img class="citgraph__logo-icon" src="openknowledge_icon.svg" alt="" />
+      OpenKnowledge
+    </a>
+    <nav class="citgraph__nav">
+      <a class="citgraph__nav-link" routerLink="/">Research</a>
+      <a class="citgraph__nav-link" routerLink="/relevancy">OK-score</a>
+      <a class="citgraph__nav-link" routerLink="/graph">Graph</a>
+      <a class="citgraph__nav-link" routerLink="/library">Library</a>
+      <a class="citgraph__nav-link citgraph__nav-link--active" routerLink="/citgraph">Cit-Graph</a>
+    </nav>
+  </header>
+
+  <div class="citgraph__body">
+    <!-- Input bar -->
+    <div class="citgraph__controls">
+      <div class="citgraph__input-group">
+        <label class="citgraph__label">Paper ID (DOI, S2 ID, or arXiv ID)</label>
+        <input
+          class="citgraph__input"
+          type="text"
+          placeholder="e.g. 10.1145/3292500.3330919 or 204e3073870fae3d05bcbc2f6a8e263d9b72e776"
+          [value]="paperId()"
+          (input)="paperId.set($any($event.target).value)"
+          (keydown.enter)="buildGraph()"
+        />
+      </div>
+      <div class="citgraph__param-group">
+        <div class="citgraph__param">
+          <label class="citgraph__label">K hops</label>
+          <select
+            class="citgraph__select"
+            [value]="kHops()"
+            (change)="kHops.set(+$any($event.target).value)"
+          >
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+          </select>
+        </div>
+        <div class="citgraph__param">
+          <label class="citgraph__label">Max/hop</label>
+          <input
+            class="citgraph__input citgraph__input--small"
+            type="number"
+            min="1"
+            max="50"
+            [value]="maxPerHop()"
+            (input)="maxPerHop.set(+$any($event.target).value)"
+          />
+        </div>
+      </div>
+      <button
+        class="citgraph__build-btn"
+        [disabled]="loading() || !paperId().trim()"
+        (click)="buildGraph()"
+      >
+        @if (loading()) {
+          Building...
+        } @else {
+          Build Graph
+        }
+      </button>
+    </div>
+
+    @if (error()) {
+      <div class="citgraph__error">{{ error() }}</div>
+    }
+
+    @if (!graphData() && !loading()) {
+      <div class="citgraph__empty">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        <h2>K-Hop Citation Graph</h2>
+        <p>Enter a paper DOI or Semantic Scholar ID and choose the number of hops to explore the citation network.</p>
+      </div>
+    }
+
+    @if (graphData()) {
+      <div class="citgraph__canvas-wrap">
+        <!-- Toolbar -->
+        <div class="citgraph__toolbar">
+          <div class="citgraph__toolbar-left">
+            <span class="citgraph__stats">{{ layoutNodes().length }} nodes, {{ layoutEdges().length }} edges</span>
+            <button
+              class="citgraph__toolbar-btn"
+              [class.citgraph__toolbar-btn--active]="showCommunities()"
+              (click)="runLouvain()"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+              Louvain Clusters
+            </button>
+            @if (showCommunities() && louvainResult()) {
+              <div class="citgraph__level-select">
+                <label class="citgraph__label">Level:</label>
+                <select
+                  class="citgraph__select citgraph__select--small"
+                  [value]="louvainLevel()"
+                  (change)="changeLouvainLevel(+$any($event.target).value)"
+                >
+                  @for (lvl of louvainResult()!.levels; track $index) {
+                    <option [value]="$index">{{ $index }}</option>
+                  }
+                </select>
+                <span class="citgraph__modularity">Q={{ louvainResult()!.modularity.toFixed(3) }}</span>
+              </div>
+            }
+          </div>
+          <div class="citgraph__toolbar-right">
+            <div class="zoom-controls">
+              <button class="zoom-controls__btn" (click)="zoomOut()" title="Zoom out">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </button>
+              <button class="zoom-controls__label" (click)="resetZoom()" title="Reset zoom">{{ zoomPercent }}%</button>
+              <button class="zoom-controls__btn" (click)="zoomIn()" title="Zoom in">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Graph canvas -->
+        <div class="citgraph__canvas" (wheel)="onCanvasWheel($event)">
+          <div
+            class="citgraph__svg-wrap"
+            [style.width.px]="svgWidth() * zoom()"
+            [style.height.px]="svgHeight() * zoom()"
+          >
+            <svg
+              [attr.width]="svgWidth()"
+              [attr.height]="svgHeight()"
+              class="citgraph-svg"
+              [style.transform]="'scale(' + zoom() + ')'"
+              [style.transform-origin]="'0 0'"
+            >
+              <!-- Community hulls -->
+              @for (hull of hullPaths(); track hull.color) {
+                <path
+                  class="citgraph-svg__hull"
+                  [attr.d]="hull.path"
+                  [attr.fill]="hull.color"
+                  fill-opacity="0.08"
+                  [attr.stroke]="hull.color"
+                  stroke-opacity="0.25"
+                  stroke-width="1.5"
+                />
+              }
+
+              <!-- Edges -->
+              @for (edge of layoutEdges(); track edge.source + edge.target) {
+                <path
+                  class="citgraph-svg__edge-path"
+                  [class.citgraph-svg__edge-path--highlighted]="isEdgeHighlighted(edge)"
+                  [class.citgraph-svg__edge-path--dimmed]="selectedNodeId() && !isEdgeHighlighted(edge)"
+                  [attr.d]="edgePath(edge)"
+                  fill="none"
+                />
+              }
+
+              <!-- Nodes -->
+              @for (node of layoutNodes(); track node.id) {
+                <g
+                  class="citgraph-svg__node"
+                  [class.citgraph-svg__node--selected]="selectedNodeId() === node.id"
+                  [class.citgraph-svg__node--dimmed]="selectedNodeId() && selectedNodeId() !== node.id && !isEdgeHighlighted({ source: selectedNodeId()!, target: node.id }) && !isEdgeHighlighted({ source: node.id, target: selectedNodeId()! })"
+                  (click)="selectNode(node)"
+                  (mouseenter)="hoveredNodeId.set(node.id)"
+                  (mouseleave)="hoveredNodeId.set(null)"
+                  style="cursor: pointer"
+                >
+                  <circle
+                    class="citgraph-svg__circle"
+                    [attr.cx]="node.x"
+                    [attr.cy]="node.y"
+                    [attr.r]="nodeRadius(node)"
+                    [attr.fill]="nodeColor(node)"
+                    [attr.stroke]="selectedNodeId() === node.id ? '#1d4ed8' : nodeColor(node)"
+                    [attr.stroke-width]="selectedNodeId() === node.id ? 3 : 1.5"
+                    fill-opacity="0.85"
+                  />
+                  @if (hoveredNodeId() === node.id || selectedNodeId() === node.id) {
+                    <text
+                      class="citgraph-svg__node-label"
+                      [attr.x]="node.x"
+                      [attr.y]="node.y + nodeRadius(node) + 14"
+                      text-anchor="middle"
+                    >{{ nodeLabel(node) }}</text>
+                  }
+                </g>
+              }
+            </svg>
+          </div>
+        </div>
+
+        <!-- Community legend -->
+        @if (showCommunities() && communityLegend().length) {
+          <div class="citgraph__legend">
+            <h5 class="citgraph__legend-title">Communities</h5>
+            @for (c of communityLegend(); track c.id) {
+              <div class="citgraph__legend-item">
+                <span class="citgraph__legend-swatch" [style.background]="c.color"></span>
+                <span class="citgraph__legend-label">Cluster {{ c.id }}</span>
+                <span class="citgraph__legend-count">{{ c.count }}</span>
+              </div>
+            }
+          </div>
+        }
+
+        <!-- Detail panel -->
+        @if (selectedNode(); as node) {
+          <aside class="citgraph__panel">
+            <div class="citgraph__panel-header">
+              <h3 class="citgraph__panel-title">Paper Details</h3>
+              <button class="citgraph__panel-close" (click)="closePanel()">&times;</button>
+            </div>
+            <div class="citgraph__panel-body">
+              <h4 class="citgraph__panel-paper-title">{{ node.title }}</h4>
+              @if (authorLine(node)) {
+                <p class="citgraph__panel-authors">{{ authorLine(node) }}</p>
+              }
+              <div class="citgraph__panel-meta">
+                @if (node.year) {
+                  <span class="citgraph__panel-badge">{{ node.year }}</span>
+                }
+                @if (node.journal) {
+                  <span class="citgraph__panel-badge citgraph__panel-badge--venue">{{ node.journal }}</span>
+                }
+                <span class="citgraph__panel-badge citgraph__panel-badge--hop">Hop {{ node.hop }}</span>
+              </div>
+              @if (node.abstract) {
+                <div class="citgraph__panel-section">
+                  <h5 class="citgraph__panel-section-title">Abstract</h5>
+                  <p class="citgraph__panel-abstract">{{ node.abstract }}</p>
+                </div>
+              }
+              <div class="citgraph__panel-stats">
+                @if (node.citation_count !== null) {
+                  <div class="citgraph__panel-stat">
+                    <span class="citgraph__panel-stat-value">{{ node.citation_count | number }}</span>
+                    <span class="citgraph__panel-stat-label">Citations</span>
+                  </div>
+                }
+                @if (node.reference_count !== null) {
+                  <div class="citgraph__panel-stat">
+                    <span class="citgraph__panel-stat-value">{{ node.reference_count | number }}</span>
+                    <span class="citgraph__panel-stat-label">References</span>
+                  </div>
+                }
+              </div>
+              @if (node.fields_of_study.length) {
+                <div class="citgraph__panel-fields">
+                  @for (f of node.fields_of_study; track f) {
+                    <span class="citgraph__panel-field">{{ f }}</span>
+                  }
+                </div>
+              }
+            </div>
+          </aside>
+        }
+      </div>
+    }
+  </div>
+</div>

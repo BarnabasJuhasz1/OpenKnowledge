@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 from ....models.paper import Paper, Author
 from .base import DatabaseAdapter
 
@@ -8,9 +9,10 @@ _PAGE_SIZE = 100  # Europe PMC max pageSize
 class EuropePmcAdapter(DatabaseAdapter):
     name = "europe_pmc"
     rate_limit = 10
+    _request_delay = 0.1
     _BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
 
-    async def search(self, query: str) -> list[Paper]:
+    async def search(self, query: str, *, max_results: int | None = None) -> list[Paper]:
         all_papers: list[Paper] = []
         cursor_mark = "*"
 
@@ -23,19 +25,23 @@ class EuropePmcAdapter(DatabaseAdapter):
                 "resultType": "core",
             }
 
-            async with self._semaphore:
-                resp = await self._get_client().get(self._BASE, params=params)
-                resp.raise_for_status()
+            resp = await self._request_with_retry("GET", self._BASE, params=params)
 
             data = resp.json()
             results = (data.get("resultList") or {}).get("result") or []
             batch = [self._normalize(r) for r in results]
             all_papers.extend(batch)
 
+            if max_results is not None and len(all_papers) >= max_results:
+                all_papers = all_papers[:max_results]
+                break
+
             next_cursor = data.get("nextCursorMark")
             if len(results) == 0 or not next_cursor or next_cursor == cursor_mark:
                 break
             cursor_mark = next_cursor
+
+            await asyncio.sleep(self._request_delay)
 
         return all_papers
 

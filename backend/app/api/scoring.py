@@ -93,7 +93,7 @@ async def score_papers(
             is_peer_reviewed=row.get("is_peer_reviewed"),
             has_dataset=row.get("has_dataset", False),
             repo_stars=row.get("repo_stars", 0),
-            relevancy_score=row["relevancy_score"],
+            ok_score=row["ok_score"],
         ))
 
     return ScorePapersResponse(
@@ -152,6 +152,6 @@ async def paper_score(
 
     return PaperScoreResponse(
         title=db_paper.title,
-        total_score=result_data["total_score"],
+        ok_score=result_data["total_score"],
         breakdown=ScoreBreakdown(**result_data["breakdown"]),
     )

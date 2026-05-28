@@ -11,6 +11,10 @@ from ..retrieval.merger import merge_group
 from ..retrieval.bibtex import attach_bibtex
 from ..retrieval.code_enrichment import enrich_papers
 from ..retrieval.cache import cache
+from ..retrieval.query_normalizer import strip_boolean_syntax, has_boolean_operators
+from ..retrieval.background import background_manager
+
+_STRIP_BOOLEAN_DBS = {"semantic_scholar", "dblp", "crossref", "openalex"}
 
 
 def _build_adapters(db_names: list[str] | None) -> list[DatabaseAdapter]:
@@ -31,10 +35,11 @@ def _build_adapters(db_names: list[str] | None) -> list[DatabaseAdapter]:
 async def _run_adapter(
     adapter: DatabaseAdapter,
     query: str,
+    max_results: int | None = None,
 ) -> tuple[str, list[Paper] | Exception]:
     try:
         papers = await asyncio.wait_for(
-            adapter.search(query),
+            adapter.search(query, max_results=max_results),
             timeout=300.0,
         )
         return adapter.name, papers
@@ -53,30 +58,46 @@ def _compute_strictness(n_kw: int) -> float:
         return min(0.3, 3.0 / n_kw)
 
 
+def _build_query_for_adapter(
+    adapter: DatabaseAdapter,
+    request: SearchRequest,
+    strictness: float,
+) -> str:
+    """Build the query string for a specific adapter."""
+    if request.raw_query:
+        query = request.raw_query
+        if adapter.name in _STRIP_BOOLEAN_DBS and has_boolean_operators(query):
+            query = strip_boolean_syntax(query)
+    else:
+        query = build_query(
+            request.keywords,
+            adapter.name,
+            domain_filter=request.domain_filter,
+            strictness=strictness,
+        )
+    return query
+
+
 async def search(request: SearchRequest) -> SearchResponse:
     adapters = _build_adapters(request.databases)
+    strictness = _compute_strictness(len(request.keywords))
 
     queries_used: dict[str, str] = {}
     tasks = []
     for adapter in adapters:
-        if request.raw_query:
-            query = request.raw_query
-        else:
-            strictness = _compute_strictness(len(request.keywords))
-            query = build_query(
-                request.keywords,
-                adapter.name,
-                domain_filter=request.domain_filter,
-                strictness=strictness,
-            )
+        query = _build_query_for_adapter(adapter, request, strictness)
         queries_used[adapter.name] = query
-        tasks.append(_run_adapter(adapter, query))
+        tasks.append(_run_adapter(
+            adapter, query,
+            max_results=request.max_initial_results,
+        ))
 
     outcomes = await asyncio.gather(*tasks)
 
     all_papers: list[Paper] = []
     sources_queried: list[str] = []
     sources_failed: list[str] = []
+    initial_counts: dict[str, int] = {}
 
     for db_name, result in outcomes:
         sources_queried.append(db_name)
@@ -84,6 +105,7 @@ async def search(request: SearchRequest) -> SearchResponse:
             sources_failed.append(db_name)
         else:
             all_papers.extend(result)
+            initial_counts[db_name] = len(result)
 
     # Deduplicate → list of groups
     groups, n_removed = deduplicate(all_papers)
@@ -97,6 +119,29 @@ async def search(request: SearchRequest) -> SearchResponse:
     # Enrich with code URLs, repo stars, and dataset detection
     await enrich_papers(merged)
 
+    # --- Phase 2: Background continuation ---
+    background_job_id: str | None = None
+    if (
+        request.continue_in_background
+        and request.max_total_results is not None
+        and request.max_total_results > request.max_initial_results
+    ):
+        # Build fresh adapters for background (the original ones are closed)
+        bg_adapters = _build_adapters(request.databases)
+        # Only continue for sources that actually returned results
+        bg_adapters = [a for a in bg_adapters if a.name in initial_counts and a.name not in sources_failed]
+
+        if bg_adapters:
+            job = background_manager.create_job()
+            background_job_id = job.job_id
+            background_manager.start_background_fetch(
+                job=job,
+                adapters=bg_adapters,
+                queries=queries_used,
+                initial_counts=initial_counts,
+                max_results_per_adapter=request.max_total_results,
+            )
+
     return SearchResponse(
         papers=merged,
         total_found=len(merged),
@@ -104,6 +149,7 @@ async def search(request: SearchRequest) -> SearchResponse:
         sources_failed=sources_failed,
         queries_used=queries_used,
         deduplication_removed=n_removed,
+        background_job_id=background_job_id,
     )
 
 
@@ -142,23 +188,15 @@ def _describe_error(exc: Exception, adapter_name: str) -> str:
 async def search_stream(request: SearchRequest) -> AsyncGenerator[StreamEvent, None]:
     """Yield StreamEvent objects as each database adapter completes."""
     adapters = _build_adapters(request.databases)
+    strictness = _compute_strictness(len(request.keywords))
 
     queue: asyncio.Queue[StreamEvent | None] = asyncio.Queue()
 
     async def _run_and_enqueue(adapter: DatabaseAdapter) -> None:
-        if request.raw_query:
-            query = request.raw_query
-        else:
-            strictness = _compute_strictness(len(request.keywords))
-            query = build_query(
-                request.keywords,
-                adapter.name,
-                domain_filter=request.domain_filter,
-                strictness=strictness,
-            )
+        query = _build_query_for_adapter(adapter, request, strictness)
         try:
             papers = await asyncio.wait_for(
-                adapter.search(query),
+                adapter.search(query, max_results=request.max_initial_results),
                 timeout=300.0,
             )
             attach_bibtex(papers)

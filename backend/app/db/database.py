@@ -21,3 +21,15 @@ async def init_db() -> None:
     from . import orm_models  # noqa: F401 — ensures models are registered
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_apply_migrations)
+
+
+def _apply_migrations(conn) -> None:
+    """Add columns that create_all cannot retrofit onto an existing SQLite table."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(conn)
+    if "bookshelf_items" in inspector.get_table_names():
+        columns = {col["name"] for col in inspector.get_columns("bookshelf_items")}
+        if "paper_json" not in columns:
+            conn.execute(text("ALTER TABLE bookshelf_items ADD COLUMN paper_json TEXT"))

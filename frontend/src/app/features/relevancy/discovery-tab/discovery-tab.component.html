@@ -1,7 +1,7 @@
 <div class="discovery">
   <section class="discovery__controls">
     <h2 class="discovery__heading">Weight Configuration</h2>
-    <p class="discovery__subtitle">Adjust weights to customize relevancy scoring</p>
+    <p class="discovery__subtitle">Adjust weights to customize OK-score calculation</p>
 
     <div class="discovery__sliders">
       @for (slider of sliders; track slider.key) {
@@ -78,10 +78,10 @@
                 <td class="discovery__td discovery__td--score">
                   <span
                     class="score-badge"
-                    [style.color]="getScoreColor(paper.relevancy_score)"
-                    [style.background]="getScoreBackground(paper.relevancy_score)"
+                    [style.color]="getScoreColor(paper.ok_score)"
+                    [style.background]="getScoreBackground(paper.ok_score)"
                   >
-                    {{ paper.relevancy_score | number:'1.2-2' }}
+                    {{ paper.ok_score | number:'1.2-2' }}
                   </span>
                 </td>
               </tr>
