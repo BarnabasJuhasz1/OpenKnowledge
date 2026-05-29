@@ -1,26 +1,31 @@
+// ============================================================================
+// Discovery Tab — Dark Mode (DESIGN.MD)
+// ============================================================================
+
 .discovery {
   display: flex;
   flex-direction: column;
   gap: 2rem;
 
   &__controls {
-    background: #fff;
-    border: 1px solid #e5e7eb;
-    border-radius: 14px;
+    background: var(--ok-glass-bg);
+    backdrop-filter: blur(var(--ok-glass-blur));
+    border: 1px solid var(--ok-glass-border);
+    border-radius: var(--ok-radius-lg);
     padding: 1.75rem 2rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   }
 
   &__heading {
+    font-family: var(--ok-font-headline);
     font-size: 1.05rem;
     font-weight: 700;
-    color: #1a1a2e;
+    color: var(--ok-on-surface);
     margin: 0 0 0.25rem;
   }
 
   &__subtitle {
     font-size: 0.82rem;
-    color: #9ca3af;
+    color: var(--ok-outline);
     margin: 0 0 1.5rem;
   }
 
@@ -30,13 +35,12 @@
     gap: 1.5rem 2rem;
   }
 
-  // -- Loader --
   &__loader {
     position: relative;
     padding: 1rem 1.25rem;
-    background: #eff6ff;
-    border: 1px solid #93c5fd;
-    border-radius: 10px;
+    background: var(--ok-surface-container);
+    border: 1px solid var(--ok-outline-variant);
+    border-radius: var(--ok-radius-md);
     overflow: hidden;
   }
 
@@ -46,49 +50,49 @@
     left: 0;
     height: 3px;
     width: 40%;
-    background: linear-gradient(90deg, #2563eb, #60a5fa);
+    background: var(--ok-gradient-primary);
     border-radius: 3px;
     animation: loader-slide 1.4s ease-in-out infinite;
   }
 
   &__loader-text {
+    font-family: var(--ok-font-label);
     font-size: 0.85rem;
     font-weight: 500;
-    color: #1e40af;
+    color: var(--ok-primary);
   }
 
-  // -- Empty --
   &__empty {
     text-align: center;
     padding: 4rem 2rem;
-    background: #fff;
-    border: 1px dashed #d1d5db;
-    border-radius: 14px;
+    background: var(--ok-surface-container-low);
+    border: 1px dashed var(--ok-outline-variant);
+    border-radius: var(--ok-radius-lg);
   }
 
   &__empty-icon {
     font-size: 2.5rem;
-    color: #d1d5db;
+    color: var(--ok-outline-variant);
     margin-bottom: 0.75rem;
   }
 
   &__empty-title {
+    font-family: var(--ok-font-headline);
     font-size: 1rem;
     font-weight: 600;
-    color: #374151;
+    color: var(--ok-on-surface-variant);
     margin: 0 0 0.35rem;
   }
 
   &__empty-hint {
     font-size: 0.85rem;
-    color: #9ca3af;
+    color: var(--ok-outline);
     margin: 0;
     max-width: 380px;
     margin-inline: auto;
     line-height: 1.5;
   }
 
-  // -- Meta --
   &__meta {
     display: flex;
     align-items: center;
@@ -96,18 +100,18 @@
   }
 
   &__meta-count {
+    font-family: var(--ok-font-label);
     font-size: 0.82rem;
     font-weight: 600;
-    color: #6b7280;
+    color: var(--ok-on-surface-variant);
   }
 
-  // -- Table --
   &__table-wrap {
-    background: #fff;
-    border: 1px solid #e5e7eb;
-    border-radius: 14px;
+    background: var(--ok-glass-bg);
+    backdrop-filter: blur(var(--ok-glass-blur));
+    border: 1px solid var(--ok-glass-border);
+    border-radius: var(--ok-radius-lg);
     overflow: hidden;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   }
 
   &__table {
@@ -119,27 +123,28 @@
   &__th {
     padding: 0.75rem 1rem;
     text-align: left;
+    font-family: var(--ok-font-label);
     font-size: 0.75rem;
     font-weight: 600;
-    color: #6b7280;
+    color: var(--ok-outline);
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    background: #f9fafb;
-    border-bottom: 1px solid #e5e7eb;
+    background: var(--ok-surface-container-low);
+    border-bottom: 1px solid var(--ok-outline-variant);
 
     &--center { text-align: center; }
     &--right  { text-align: right; }
   }
 
   &__row {
-    transition: background 0.15s;
+    transition: background var(--ok-transition-fast);
 
     &:hover {
-      background: #f8faff;
+      background: var(--ok-surface-container);
     }
 
     &:not(:last-child) .discovery__td {
-      border-bottom: 1px solid #f3f4f6;
+      border-bottom: 1px solid var(--ok-outline-variant);
     }
   }
 
@@ -149,12 +154,12 @@
 
     &--title {
       font-weight: 500;
-      color: #1a1a2e;
+      color: var(--ok-on-surface);
       max-width: 380px;
     }
 
     &--authors {
-      color: #6b7280;
+      color: var(--ok-on-surface-variant);
       font-size: 0.82rem;
       max-width: 200px;
       white-space: nowrap;
@@ -164,7 +169,7 @@
 
     &--year {
       text-align: center;
-      color: #9ca3af;
+      color: var(--ok-outline);
       font-size: 0.82rem;
       white-space: nowrap;
     }
@@ -175,22 +180,23 @@
   }
 }
 
-// -- Score badge --
+// Score badge
 .score-badge {
   display: inline-block;
   padding: 0.25rem 0.7rem;
-  border-radius: 9999px;
+  border-radius: var(--ok-radius-full);
+  font-family: var(--ok-font-label);
   font-size: 0.82rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  transition: transform 0.15s;
+  transition: transform var(--ok-transition-fast);
 
   .discovery__row:hover & {
     transform: scale(1.08);
   }
 }
 
-// -- Slider group --
+// Slider group
 .slider-group {
   display: flex;
   flex-direction: column;
@@ -210,16 +216,18 @@
   }
 
   &__label {
+    font-family: var(--ok-font-label);
     font-size: 0.82rem;
     font-weight: 600;
-    color: #374151;
+    color: var(--ok-on-surface-variant);
     flex: 1;
   }
 
   &__value {
+    font-family: var(--ok-font-label);
     font-size: 0.82rem;
     font-weight: 700;
-    color: #1a1a2e;
+    color: var(--ok-on-surface);
     min-width: 2rem;
     text-align: right;
     font-variant-numeric: tabular-nums;
@@ -231,10 +239,10 @@
     width: 100%;
     height: 6px;
     border-radius: 3px;
-    background: #e5e7eb;
+    background: var(--ok-outline-variant);
     outline: none;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: background var(--ok-transition);
 
     &::-webkit-slider-thumb {
       -webkit-appearance: none;
@@ -242,15 +250,15 @@
       width: 18px;
       height: 18px;
       border-radius: 50%;
-      background: var(--slider-color, #2563eb);
-      border: 3px solid #fff;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+      background: var(--slider-color, var(--ok-primary-raw));
+      border: 3px solid var(--ok-surface-container);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
       cursor: pointer;
-      transition: transform 0.15s, box-shadow 0.15s;
+      transition: transform var(--ok-transition-fast), box-shadow var(--ok-transition-fast);
 
       &:hover {
         transform: scale(1.2);
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
       }
 
       &:active {
@@ -262,22 +270,16 @@
       width: 18px;
       height: 18px;
       border-radius: 50%;
-      background: var(--slider-color, #2563eb);
-      border: 3px solid #fff;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+      background: var(--slider-color, var(--ok-primary-raw));
+      border: 3px solid var(--ok-surface-container);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
       cursor: pointer;
-      transition: transform 0.15s, box-shadow 0.15s;
-
-      &:hover {
-        transform: scale(1.2);
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
-      }
     }
 
     &::-moz-range-track {
       height: 6px;
       border-radius: 3px;
-      background: #e5e7eb;
+      background: var(--ok-outline-variant);
     }
   }
 
@@ -285,7 +287,7 @@
     display: flex;
     justify-content: space-between;
     font-size: 0.68rem;
-    color: #9ca3af;
+    color: var(--ok-outline);
   }
 }
 

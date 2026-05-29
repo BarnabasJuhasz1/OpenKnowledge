@@ -1,0 +1,21 @@
+<div class="dashboard">
+  <aside class="dashboard__sidebar">
+    <span class="dashboard__sidebar-heading">Features</span>
+    <nav class="dashboard__nav" aria-label="Features">
+      @for (feature of features; track feature.path) {
+        <a
+          class="dashboard__nav-link"
+          [routerLink]="feature.path"
+          routerLinkActive="dashboard__nav-link--active"
+        >
+          <span class="material-symbols-outlined dashboard__nav-icon">{{ feature.icon }}</span>
+          <span class="dashboard__nav-label">{{ feature.label }}</span>
+        </a>
+      }
+    </nav>
+  </aside>
+
+  <section class="dashboard__content">
+    <router-outlet />
+  </section>
+</div>

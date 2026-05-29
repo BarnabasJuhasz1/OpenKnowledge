@@ -1,0 +1,166 @@
+// ============================================================================
+// Persistent global top navigation — constant on every route.
+// Uses the dark :root app theme so it reads as consistent app chrome over
+// both the light landing page and the dark dashboard/docs.
+// ============================================================================
+$brand: #6366f1;
+$brand-hover: #4f46e5;
+$brand-light: rgba(99, 102, 241, 0.15);
+
+:host {
+  display: block;
+}
+
+.top-nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  height: var(--ok-topnav-height);
+  background: rgba(11, 19, 38, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--ok-outline-variant);
+
+  &__inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    max-width: var(--ok-container-max);
+    height: 100%;
+    margin: 0 auto;
+    padding: 0 var(--ok-margin-desktop);
+  }
+
+  &__logo {
+    display: flex;
+    align-items: center;
+    gap: var(--ok-space-2);
+    text-decoration: none;
+    &:hover { text-decoration: none; }
+  }
+
+  &__logo-icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  &__logo-text {
+    font-family: var(--ok-font-headline);
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--ok-on-surface);
+  }
+
+  // ── Center tabs ──
+  &__tabs {
+    display: flex;
+    align-items: center;
+    gap: var(--ok-space-2);
+  }
+
+  &__tab {
+    padding: 0.5rem 1.1rem;
+    border-radius: var(--ok-radius-full);
+    font-family: var(--ok-font-label);
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ok-on-surface-variant);
+    text-decoration: none;
+    white-space: nowrap;
+    transition: color var(--ok-transition), background var(--ok-transition);
+
+    &:hover {
+      color: var(--ok-on-surface);
+      background: rgba(255, 255, 255, 0.06);
+      text-decoration: none;
+    }
+
+    &--active {
+      color: #fff;
+      background: $brand-light;
+    }
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--ok-space-3);
+  }
+
+  &__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ok-space-2);
+    padding: 0.55rem 1.15rem;
+    border-radius: var(--ok-radius-full);
+    font-family: var(--ok-font-label);
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all var(--ok-transition);
+    white-space: nowrap;
+
+    &--ghost {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--ok-outline-variant);
+      color: var(--ok-on-surface);
+      &:hover {
+        background: rgba(255, 255, 255, 0.1);
+        text-decoration: none;
+      }
+    }
+
+    &--primary {
+      background: $brand;
+      color: #fff;
+      border: none;
+      box-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.35);
+      &:hover {
+        background: $brand-hover;
+        text-decoration: none;
+      }
+    }
+  }
+
+  &__gh-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  &__coffee-icon {
+    font-size: 18px !important;
+  }
+
+  &__stars {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: var(--ok-space-2);
+    padding-left: var(--ok-space-2);
+    border-left: 1px solid rgba(255, 255, 255, 0.35);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+
+  &__star-icon {
+    font-size: 16px !important;
+    font-variation-settings: 'FILL' 1;
+  }
+}
+
+@media (max-width: 768px) {
+  .top-nav {
+    &__inner { padding: 0 var(--ok-margin-mobile); }
+    &__logo-text { display: none; }
+    &__btn--ghost { display: none; }
+    &__btn {
+      padding: 0.5rem 0.9rem;
+      font-size: 13px;
+    }
+    &__tab {
+      padding: 0.45rem 0.8rem;
+      font-size: 14px;
+    }
+  }
+}

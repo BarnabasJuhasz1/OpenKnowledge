@@ -1,6 +1,6 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ShelfService, ShelfItem } from '../../core/services/shelf.service';
 import { BookshelfService, BookshelfItem } from '../../core/services/bookshelf.service';
@@ -13,7 +13,7 @@ type PendingDelete =
 @Component({
   selector: 'app-library',
   standalone: true,
-  imports: [RouterLink, FormsModule, DecimalPipe],
+  imports: [FormsModule, DecimalPipe],
   templateUrl: './library.component.html',
   styleUrl: './library.component.scss',
 })

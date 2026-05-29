@@ -1,22 +1,27 @@
+// ============================================================================
+// Results Meta — Dark Mode (DESIGN.MD)
+// ============================================================================
+
 .meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
+  font-family: var(--ok-font-label);
   font-size: 0.83rem;
-  color: #6b7280;
+  color: var(--ok-on-surface-variant);
   padding: 0.5rem 0 1rem;
 
   &__count {
     font-weight: 600;
-    color: #374151;
+    color: var(--ok-on-surface);
   }
 
   &__sep {
-    color: #d1d5db;
+    color: var(--ok-outline-variant);
   }
 
   &__failed {
-    color: #b45309;
+    color: #eab308;
   }
 }

@@ -80,6 +80,12 @@ export class FiltersSidebarComponent {
     this.state.updateFilter({ openAccessOnly: val });
   }
 
+  /** Filter the result list down to a single source (or all when null). */
+  selectSource(name: string | null): void {
+    this.state.activeFilter.set(name);
+    this.state.currentPage.set(1);
+  }
+
   get hasActiveFilters(): boolean {
     const f = this.state.filters();
     return f.yearMin != null || f.yearMax != null

@@ -1,7 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
 import { CitGraphService, CitGraphNode, CitGraphEdge, CitGraphResponse } from '../../core/services/citgraph.service';
 import { louvain, getCommunitiesAtLevel, LouvainResult } from './louvain';
 
@@ -24,7 +23,7 @@ const COMMUNITY_COLORS = [
 @Component({
   selector: 'app-citgraph',
   standalone: true,
-  imports: [RouterLink, DecimalPipe, FormsModule],
+  imports: [DecimalPipe, FormsModule],
   templateUrl: './citgraph.component.html',
   styleUrl: './citgraph.component.scss',
 })

@@ -1,3 +1,141 @@
+// ============================================================================
+// OpenKnowledge — Global Design System
+// ============================================================================
+// Based on DESIGN.md "Art of Research" design system.
+// Dark-mode app palette + light-mode landing page palette.
+// ============================================================================
+
+// ---------------------------------------------------------------------------
+// 1. CSS Custom Properties — Dark App Theme (DESIGN.MD)
+// ---------------------------------------------------------------------------
+:root {
+  // — Surface / Background tiers (Deep Space Indigo) —
+  --ok-bg:                       #0b1326;
+  --ok-surface:                  #0b1326;
+  --ok-surface-dim:              #0b1326;
+  --ok-surface-bright:           #31394d;
+  --ok-surface-container-lowest: #060e20;
+  --ok-surface-container-low:    #131b2e;
+  --ok-surface-container:        #171f33;
+  --ok-surface-container-high:   #222a3d;
+  --ok-surface-container-highest:#2d3449;
+
+  // — On-surface text —
+  --ok-on-surface:               #dae2fd;
+  --ok-on-surface-variant:       #c7c4d7;
+
+  // — Outline / borders —
+  --ok-outline:                  #908fa0;
+  --ok-outline-variant:          #464554;
+
+  // — Primary (Electric Indigo) —
+  --ok-primary:                  #c0c1ff;
+  --ok-on-primary:               #1000a9;
+  --ok-primary-container:        #8083ff;
+  --ok-on-primary-container:     #0d0096;
+  --ok-primary-raw:              #6366f1;  // Solid indigo for gradients
+
+  // — Secondary (Vibrant Purple) —
+  --ok-secondary:                #ddb7ff;
+  --ok-on-secondary:             #490080;
+  --ok-secondary-container:      #6f00be;
+  --ok-secondary-raw:            #a855f7;  // Solid purple for gradients
+
+  // — Tertiary (Electric Blue) —
+  --ok-tertiary:                 #89ceff;
+  --ok-on-tertiary:              #00344d;
+  --ok-tertiary-container:       #009ada;
+  --ok-tertiary-raw:             #0ea5e9;
+
+  // — Error —
+  --ok-error:                    #ffb4ab;
+  --ok-on-error:                 #690005;
+  --ok-error-container:          #93000a;
+
+  // — Inverse —
+  --ok-inverse-surface:          #dae2fd;
+  --ok-inverse-on-surface:       #283044;
+  --ok-inverse-primary:          #494bd6;
+
+  // — Surface tint —
+  --ok-surface-tint:             #c0c1ff;
+
+  // — Gradients (45° Indigo → Purple) —
+  --ok-gradient-primary:         linear-gradient(135deg, #6366f1, #a855f7);
+  --ok-gradient-primary-hover:   linear-gradient(135deg, #4f46e5, #9333ea);
+
+  // — Elevation / Glass —
+  --ok-glass-bg:                 rgba(30, 41, 59, 0.7);
+  --ok-glass-border:             rgba(255, 255, 255, 0.1);
+  --ok-glass-blur:               12px;
+  --ok-glass-bg-floating:        rgba(30, 41, 59, 0.85);
+  --ok-glass-blur-floating:      24px;
+  --ok-glass-glow:               0 0 30px rgba(99, 102, 241, 0.1);
+
+  // — Typography families —
+  --ok-font-headline:            'Libre Caslon Text', 'Georgia', serif;
+  --ok-font-body:                'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --ok-font-label:               'Geist', 'Inter', -apple-system, sans-serif;
+
+  // — Spacing (8px base) —
+  --ok-space-1:                  4px;
+  --ok-space-2:                  8px;
+  --ok-space-3:                  12px;
+  --ok-space-4:                  16px;
+  --ok-space-5:                  20px;
+  --ok-space-6:                  24px;
+  --ok-space-8:                  32px;
+  --ok-space-10:                 40px;
+  --ok-space-12:                 48px;
+  --ok-space-16:                 64px;
+  --ok-space-20:                 80px;
+  --ok-gutter:                   24px;
+  --ok-topnav-height:            64px;
+  --ok-container-max:            1280px;
+  --ok-margin-mobile:            16px;
+  --ok-margin-desktop:           40px;
+
+  // — Corner radii —
+  --ok-radius-sm:                0.25rem;
+  --ok-radius:                   0.5rem;
+  --ok-radius-md:                0.75rem;
+  --ok-radius-lg:                1rem;
+  --ok-radius-xl:                1.5rem;
+  --ok-radius-full:              9999px;
+
+  // — Transitions —
+  --ok-transition-fast:          0.15s ease;
+  --ok-transition:               0.2s ease;
+  --ok-transition-slow:          0.3s ease;
+  --ok-transition-smooth:        0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+
+// ---------------------------------------------------------------------------
+// 2. Light-mode Landing Page variables (Stitch-derived)
+// ---------------------------------------------------------------------------
+.landing-theme {
+  --ok-bg:                       #fbf8ff;
+  --ok-surface:                  #fbf8ff;
+  --ok-surface-container-lowest: #ffffff;
+  --ok-surface-container-low:    #f4f2ff;
+  --ok-surface-container:        #edecff;
+  --ok-surface-container-high:   #e6e6ff;
+  --ok-surface-container-highest:#e0e0fc;
+  --ok-on-surface:               #181a2e;
+  --ok-on-surface-variant:       #414753;
+  --ok-outline:                  #717785;
+  --ok-outline-variant:          #c1c6d5;
+  --ok-glass-bg:                 rgba(255, 255, 255, 0.7);
+  --ok-glass-border:             rgba(0, 0, 0, 0.05);
+  --ok-brand:                    #6366f1;
+  --ok-brand-hover:              #4f46e5;
+}
+
+
+// ---------------------------------------------------------------------------
+// 3. Global Reset
+// ---------------------------------------------------------------------------
 *, *::before, *::after {
   box-sizing: border-box;
 }
@@ -6,20 +144,219 @@ html, body {
   margin: 0;
   padding: 0;
   height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  font-size: 15px;
-  color: #1a1a2e;
-  background: #f5f6fa;
+  font-family: var(--ok-font-body);
+  font-size: 16px;
+  color: var(--ok-on-surface);
+  background: var(--ok-bg);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
 }
 
 a {
-  color: #2563eb;
+  color: var(--ok-primary);
   text-decoration: none;
-  &:hover { text-decoration: underline; }
+  transition: color var(--ok-transition);
+  &:hover { color: var(--ok-primary-container); }
 }
 
 button {
   cursor: pointer;
   font-family: inherit;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+
+// ---------------------------------------------------------------------------
+// 4. Typography Utility Classes
+// ---------------------------------------------------------------------------
+.t-display-lg {
+  font-family: var(--ok-font-headline);
+  font-size: 48px;
+  font-weight: 700;
+  line-height: 56px;
+  letter-spacing: -0.02em;
+}
+
+.t-headline-lg {
+  font-family: var(--ok-font-headline);
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 40px;
+}
+
+.t-headline-lg-mobile {
+  font-family: var(--ok-font-headline);
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 36px;
+}
+
+.t-headline-md {
+  font-family: var(--ok-font-headline);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 32px;
+}
+
+.t-body-lg {
+  font-family: var(--ok-font-body);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 28px;
+}
+
+.t-body-md {
+  font-family: var(--ok-font-body);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 24px;
+}
+
+.t-label-md {
+  font-family: var(--ok-font-label);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  letter-spacing: 0.05em;
+}
+
+.t-code-sm {
+  font-family: var(--ok-font-label);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+}
+
+
+// ---------------------------------------------------------------------------
+// 5. Elevation & Glassmorphism Utilities
+// ---------------------------------------------------------------------------
+.glass-panel {
+  background: var(--ok-glass-bg);
+  backdrop-filter: blur(var(--ok-glass-blur));
+  -webkit-backdrop-filter: blur(var(--ok-glass-blur));
+  border: 1px solid var(--ok-glass-border);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.glass-panel-floating {
+  background: var(--ok-glass-bg-floating);
+  backdrop-filter: blur(var(--ok-glass-blur-floating));
+  -webkit-backdrop-filter: blur(var(--ok-glass-blur-floating));
+  border: 1px solid var(--ok-glass-border);
+  box-shadow: var(--ok-glass-glow);
+}
+
+.mesh-gradient {
+  background-color: var(--ok-bg);
+  background-image:
+    radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.12) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(168, 85, 247, 0.1) 0px, transparent 50%),
+    radial-gradient(at 50% 100%, rgba(14, 165, 233, 0.08) 0px, transparent 50%);
+}
+
+.grain-overlay {
+  position: relative;
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0.03;
+    pointer-events: none;
+    z-index: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// 6. Material Symbols Configuration
+// ---------------------------------------------------------------------------
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+
+// ---------------------------------------------------------------------------
+// 7. Custom Scrollbars (DESIGN.MD §6)
+// ---------------------------------------------------------------------------
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--ok-surface-container-lowest);
+  border-radius: var(--ok-radius-full);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--ok-outline-variant);
+  border-radius: var(--ok-radius-full);
+  border: 2px solid var(--ok-surface-container-lowest);
+  &:hover {
+    background: var(--ok-outline);
+  }
+}
+
+// Firefox scrollbar
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ok-outline-variant) var(--ok-surface-container-lowest);
+}
+
+
+// ---------------------------------------------------------------------------
+// 8. Selection highlight
+// ---------------------------------------------------------------------------
+::selection {
+  background: rgba(99, 102, 241, 0.3);
+  color: #fff;
+}
+
+
+// ---------------------------------------------------------------------------
+// 9. Utility: gradient text
+// ---------------------------------------------------------------------------
+.gradient-text {
+  background: var(--ok-gradient-primary);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+
+// ---------------------------------------------------------------------------
+// 10. Animations
+// ---------------------------------------------------------------------------
+@keyframes ok-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes ok-fade-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ok-slide-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ok-pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.2); }
+  50%      { box-shadow: 0 0 20px 4px rgba(99, 102, 241, 0.15); }
+}
+
+@keyframes ok-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-8px); }
 }

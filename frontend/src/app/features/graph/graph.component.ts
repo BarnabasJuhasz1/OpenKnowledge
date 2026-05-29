@@ -1,7 +1,6 @@
 import { Component, computed, effect, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
 import { SearchStateService, paperId as servicePaperId } from '../../core/services/search-state.service';
 import { Paper } from '../../core/models/paper.model';
 import { BookshelfService } from '../../core/services/bookshelf.service';
@@ -62,7 +61,7 @@ export interface ExpandPopup {
 @Component({
   selector: 'app-graph',
   standalone: true,
-  imports: [RouterLink, DecimalPipe, FormsModule],
+  imports: [DecimalPipe, FormsModule],
   templateUrl: './graph.component.html',
   styleUrl: './graph.component.scss',
 })

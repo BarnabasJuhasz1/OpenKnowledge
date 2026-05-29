@@ -1,87 +1,21 @@
+// ============================================================================
+// Relevancy Page — Dark Mode (DESIGN.MD)
+// ============================================================================
+
 .relevancy {
   min-height: 100vh;
-  background: #f5f6fa;
+  background: var(--ok-bg);
   display: flex;
   flex-direction: column;
-
-  &__header {
-    position: sticky;
-    top: 0;
-    z-index: 20;
-    background: rgba(255, 255, 255, 0.92);
-    backdrop-filter: blur(12px);
-    border-bottom: 1px solid #e5e7eb;
-    padding: 0 1.5rem;
-    display: flex;
-    align-items: center;
-    gap: 1.5rem;
-    height: 60px;
-  }
-
-  &__logo {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 1.15rem;
-    font-weight: 700;
-    color: #1a1a2e;
-    text-decoration: none;
-    letter-spacing: -0.02em;
-    flex-shrink: 0;
-    transition: color 0.2s;
-
-    &:hover {
-      color: #2563eb;
-    }
-  }
-
-  &__logo-icon {
-    width: 22px;
-    height: 22px;
-  }
-
-  &__nav {
-    display: flex;
-    gap: 0.25rem;
-    background: #f0f1f5;
-    border-radius: 10px;
-    padding: 3px;
-    flex-shrink: 0;
-  }
-
-  &__nav-link {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.45rem 1.1rem;
-    border-radius: 8px;
-    font-size: 0.87rem;
-    font-weight: 500;
-    color: #6b7280;
-    text-decoration: none;
-    white-space: nowrap;
-    transition: all 0.2s ease;
-
-    &:hover:not(&--active) {
-      color: #374151;
-      background: rgba(255, 255, 255, 0.5);
-      text-decoration: none;
-    }
-
-    &--active {
-      background: #fff;
-      color: #1a1a2e;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
-      font-weight: 600;
-    }
-  }
 
   &__tabs {
     display: flex;
     gap: 0.25rem;
-    background: #f0f1f5;
-    border-radius: 10px;
+    background: var(--ok-surface-container);
+    border-radius: var(--ok-radius-md);
     padding: 3px;
+    margin: var(--ok-space-4) var(--ok-margin-desktop);
+    width: fit-content;
   }
 
   &__tab {
@@ -90,24 +24,25 @@
     gap: 0.4rem;
     padding: 0.45rem 1.1rem;
     border: none;
-    border-radius: 8px;
+    border-radius: var(--ok-radius);
     background: transparent;
-    color: #6b7280;
+    color: var(--ok-on-surface-variant);
+    font-family: var(--ok-font-label);
     font-size: 0.87rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all var(--ok-transition);
     white-space: nowrap;
 
     &:hover:not(&--active) {
-      color: #374151;
-      background: rgba(255, 255, 255, 0.5);
+      color: var(--ok-on-surface);
+      background: var(--ok-surface-container-high);
     }
 
     &--active {
-      background: #fff;
-      color: #1a1a2e;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+      background: var(--ok-surface-container-highest);
+      color: var(--ok-on-surface);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
       font-weight: 600;
     }
   }
@@ -117,27 +52,21 @@
     max-width: 1040px;
     width: 100%;
     margin: 0 auto;
-    padding: 2rem 1.5rem 4rem;
+    padding: var(--ok-space-8) var(--ok-margin-desktop) var(--ok-space-16);
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   .relevancy {
-    &__header {
-      padding: 0 1rem;
-      gap: 0.75rem;
+    &__tabs {
+      margin: var(--ok-space-4) var(--ok-margin-mobile);
     }
 
     &__body {
-      padding: 1.25rem 1rem 3rem;
+      padding: var(--ok-space-5) var(--ok-margin-mobile) var(--ok-space-12);
     }
 
     &__tab {
-      padding: 0.4rem 0.75rem;
-      font-size: 0.82rem;
-    }
-
-    &__nav-link {
       padding: 0.4rem 0.75rem;
       font-size: 0.82rem;
     }

@@ -1,5 +1,4 @@
 import { Component, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
 import { ScoreWeights } from '../../core/models/paper.model';
 import { DiscoveryTabComponent } from './discovery-tab/discovery-tab.component';
 import { AnalysisTabComponent } from './analysis-tab/analysis-tab.component';
@@ -7,7 +6,7 @@ import { AnalysisTabComponent } from './analysis-tab/analysis-tab.component';
 @Component({
   selector: 'app-relevancy',
   standalone: true,
-  imports: [RouterLink, DiscoveryTabComponent, AnalysisTabComponent],
+  imports: [DiscoveryTabComponent, AnalysisTabComponent],
   templateUrl: './relevancy.component.html',
   styleUrl: './relevancy.component.scss',
 })

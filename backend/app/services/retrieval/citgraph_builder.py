@@ -9,6 +9,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://api.semanticscholar.org/graph/v1/paper"
+_MATCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search/match"
 _FIELDS = "paperId,externalIds,title,abstract,year,citationCount,referenceCount,authors,isOpenAccess,openAccessPdf,journal,publicationDate,fieldsOfStudy"
 _REF_CIT_FIELDS = "paperId,externalIds,title,abstract,year,citationCount,referenceCount,authors,isOpenAccess,openAccessPdf,journal,publicationDate,fieldsOfStudy"
 
@@ -93,9 +94,12 @@ async def _bfs(
     visited: dict[str, CitGraphNode] = {}
     edges: list[CitGraphEdge] = []
     edge_set: set[tuple[str, str]] = set()
-    frontier: list[str] = [seed_id]
 
-    seed_data = await _fetch_paper(client, seed_id, api_key)
+    # The seed may be an identifier (DOI, S2 ID, arXiv ID) or a free-text paper
+    # title. Resolve titles to a canonical Semantic Scholar paperId first.
+    lookup_id = await _resolve_seed_id(client, seed_id, api_key)
+
+    seed_data = await _fetch_paper(client, lookup_id, api_key)
     if not seed_data:
         return CitGraphResult(nodes=[], edges=[], seed_id=seed_id)
 
@@ -104,6 +108,8 @@ async def _bfs(
         return CitGraphResult(nodes=[], edges=[], seed_id=seed_id)
     visited[seed_node.paper_id] = seed_node
     resolved_seed_id = seed_node.paper_id
+    # Traverse from the canonical paperId so edge endpoints match the seed node.
+    frontier: list[str] = [resolved_seed_id]
 
     for hop in range(1, k + 1):
         next_frontier: list[str] = []
@@ -177,6 +183,50 @@ async def _get_with_retry(
     return None
 
 
+def _looks_like_identifier(value: str) -> bool:
+    """Decide whether the seed is an ID rather than a paper title.
+
+    Every Semantic Scholar identifier form — bare S2 hashes, ``DOI:``/``ARXIV:``
+    prefixed ids, raw DOIs, arXiv ids — is a single whitespace-free token, while
+    paper titles are multi-word. So treat anything containing whitespace as a
+    title and everything else as an identifier to look up directly.
+    """
+    v = value.strip()
+    return bool(v) and not any(c.isspace() for c in v)
+
+
+async def _match_title(
+    client: httpx.AsyncClient, title: str, api_key: str | None
+) -> str | None:
+    """Resolve a free-text title to the best-matching S2 paperId."""
+    headers = {}
+    if api_key:
+        headers["x-api-key"] = api_key
+    params = {"query": title, "fields": "paperId,title"}
+    resp = await _get_with_retry(client, _MATCH_URL, params, headers)
+    if resp is None:
+        return None
+    data = resp.json().get("data") or []
+    if data and isinstance(data[0], dict):
+        return data[0].get("paperId")
+    return None
+
+
+async def _resolve_seed_id(
+    client: httpx.AsyncClient, seed: str, api_key: str | None
+) -> str:
+    """Return a Semantic Scholar lookup id for the seed.
+
+    Identifiers are returned untouched; titles are resolved via the title-match
+    endpoint, falling back to the raw string if no match is found.
+    """
+    seed = seed.strip()
+    if _looks_like_identifier(seed):
+        return seed
+    matched = await _match_title(client, seed, api_key)
+    return matched or seed
+
+
 async def _fetch_paper(
     client: httpx.AsyncClient, paper_id: str, api_key: str | None
 ) -> dict | None:
@@ -202,7 +252,9 @@ async def _fetch_refs_and_cits(
         resp = await _get_with_retry(client, url, params, headers)
         if resp is None:
             return []
-        return resp.json().get("data", [])
+        # S2 may return {"data": null}; `.get(..., [])` only covers a missing
+        # key, so coalesce an explicit null to an empty list.
+        return resp.json().get("data") or []
 
     refs, cits = await asyncio.gather(_get(refs_url), _get(cits_url))
     return refs, cits

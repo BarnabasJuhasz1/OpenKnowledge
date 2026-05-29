@@ -1,0 +1,167 @@
+// ============================================================================
+// Documentation page — dark app theme.
+// ============================================================================
+$brand: #6366f1;
+
+.docs {
+  min-height: calc(100vh - var(--ok-topnav-height));
+  background: var(--ok-bg);
+  padding: var(--ok-space-16) var(--ok-margin-desktop);
+
+  &__inner {
+    max-width: 860px;
+    margin: 0 auto;
+  }
+
+  &__header {
+    margin-bottom: var(--ok-space-16);
+  }
+
+  &__eyebrow {
+    display: block;
+    font-family: var(--ok-font-label);
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: var(--ok-primary);
+    margin-bottom: var(--ok-space-4);
+  }
+
+  &__title {
+    font-family: var(--ok-font-headline);
+    font-size: clamp(36px, 5vw, 56px);
+    font-weight: 700;
+    color: var(--ok-on-surface);
+    margin: 0 0 var(--ok-space-6);
+    letter-spacing: -0.02em;
+  }
+
+  &__lead {
+    font-family: var(--ok-font-body);
+    font-size: 18px;
+    line-height: 28px;
+    color: var(--ok-on-surface-variant);
+    margin: 0;
+  }
+
+  &__section {
+    margin-bottom: var(--ok-space-16);
+  }
+
+  &__section-title {
+    font-family: var(--ok-font-headline);
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--ok-on-surface);
+    margin: 0 0 var(--ok-space-6);
+  }
+
+  &__steps {
+    margin: 0;
+    padding-left: var(--ok-space-6);
+    display: flex;
+    flex-direction: column;
+    gap: var(--ok-space-3);
+
+    li {
+      font-family: var(--ok-font-body);
+      font-size: 16px;
+      line-height: 24px;
+      color: var(--ok-on-surface-variant);
+    }
+
+    a {
+      color: var(--ok-primary);
+      font-weight: 600;
+    }
+  }
+
+  &__features {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ok-space-4);
+  }
+
+  &__feature {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--ok-space-4);
+    padding: var(--ok-space-6);
+    border-radius: var(--ok-radius-lg);
+    background: var(--ok-surface-container);
+    border: 1px solid var(--ok-outline-variant);
+  }
+
+  &__feature-icon {
+    flex-shrink: 0;
+    font-size: 28px;
+    color: var(--ok-primary);
+    background: rgba(99, 102, 241, 0.12);
+    border-radius: var(--ok-radius-md);
+    padding: var(--ok-space-2);
+  }
+
+  &__feature-title {
+    font-family: var(--ok-font-headline);
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--ok-on-surface);
+    margin: 0 0 var(--ok-space-2);
+  }
+
+  &__feature-body {
+    font-family: var(--ok-font-body);
+    font-size: 15px;
+    line-height: 24px;
+    color: var(--ok-on-surface-variant);
+    margin: 0;
+  }
+
+  &__cta {
+    text-align: center;
+    padding: var(--ok-space-12) var(--ok-space-6);
+    border-radius: var(--ok-radius-xl);
+    background: var(--ok-surface-container-low);
+    border: 1px solid var(--ok-outline-variant);
+  }
+
+  &__cta-title {
+    font-family: var(--ok-font-headline);
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--ok-on-surface);
+    margin: 0 0 var(--ok-space-6);
+  }
+
+  &__cta-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ok-space-2);
+    padding: 0.9rem 2rem;
+    border-radius: var(--ok-radius-full);
+    background: $brand;
+    color: #fff;
+    font-family: var(--ok-font-label);
+    font-size: 15px;
+    font-weight: 700;
+    text-decoration: none;
+    box-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.35);
+    transition: all var(--ok-transition);
+
+    &:hover {
+      background: #4f46e5;
+      color: #fff;
+      transform: translateY(-1px);
+      text-decoration: none;
+    }
+
+    .material-symbols-outlined { font-size: 20px; }
+  }
+}
+
+@media (max-width: 768px) {
+  .docs {
+    padding: var(--ok-space-10) var(--ok-margin-mobile);
+  }
+}

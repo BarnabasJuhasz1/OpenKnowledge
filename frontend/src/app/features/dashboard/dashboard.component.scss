@@ -1,0 +1,111 @@
+// ============================================================================
+// Dashboard shell — left feature sidebar + content region.
+// Sits directly below the constant global top nav.
+// ============================================================================
+$sidebar-width: 240px;
+$brand: #6366f1;
+
+.dashboard {
+  display: flex;
+  align-items: stretch;
+  min-height: calc(100vh - var(--ok-topnav-height));
+  background: var(--ok-bg);
+
+  &__sidebar {
+    position: sticky;
+    top: var(--ok-topnav-height);
+    flex-shrink: 0;
+    width: $sidebar-width;
+    height: calc(100vh - var(--ok-topnav-height));
+    overflow-y: auto;
+    padding: var(--ok-space-6) var(--ok-space-4);
+    background: var(--ok-surface-container-lowest);
+    border-right: 1px solid var(--ok-outline-variant);
+  }
+
+  &__sidebar-heading {
+    display: block;
+    padding: 0 var(--ok-space-3);
+    margin-bottom: var(--ok-space-4);
+    font-family: var(--ok-font-label);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ok-on-surface-variant);
+  }
+
+  &__nav {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ok-space-1);
+  }
+
+  &__nav-link {
+    display: flex;
+    align-items: center;
+    gap: var(--ok-space-3);
+    padding: 0.7rem var(--ok-space-3);
+    border-radius: var(--ok-radius-md);
+    font-family: var(--ok-font-label);
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ok-on-surface-variant);
+    text-decoration: none;
+    transition: color var(--ok-transition), background var(--ok-transition);
+
+    &:hover {
+      color: var(--ok-on-surface);
+      background: rgba(255, 255, 255, 0.05);
+      text-decoration: none;
+    }
+
+    &--active {
+      color: #fff;
+      background: var(--ok-gradient-primary);
+      box-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.3);
+
+      &:hover {
+        color: #fff;
+        background: var(--ok-gradient-primary);
+      }
+    }
+  }
+
+  &__nav-icon {
+    font-size: 20px;
+  }
+
+  &__content {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard {
+    flex-direction: column;
+
+    &__sidebar {
+      position: static;
+      width: 100%;
+      height: auto;
+      border-right: none;
+      border-bottom: 1px solid var(--ok-outline-variant);
+      padding: var(--ok-space-3) var(--ok-space-4);
+    }
+
+    &__sidebar-heading { display: none; }
+
+    &__nav {
+      flex-direction: row;
+      flex-wrap: wrap;
+      gap: var(--ok-space-2);
+    }
+
+    &__nav-link { padding: 0.5rem 0.8rem; font-size: 14px; }
+    &__nav-label { display: none; }
+  }
+}

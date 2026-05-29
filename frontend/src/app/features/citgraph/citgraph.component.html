@@ -1,27 +1,13 @@
 <div class="citgraph">
-  <header class="citgraph__header">
-    <a class="citgraph__logo" routerLink="/">
-      <img class="citgraph__logo-icon" src="openknowledge_icon.svg" alt="" />
-      OpenKnowledge
-    </a>
-    <nav class="citgraph__nav">
-      <a class="citgraph__nav-link" routerLink="/">Research</a>
-      <a class="citgraph__nav-link" routerLink="/relevancy">OK-score</a>
-      <a class="citgraph__nav-link" routerLink="/graph">Graph</a>
-      <a class="citgraph__nav-link" routerLink="/library">Library</a>
-      <a class="citgraph__nav-link citgraph__nav-link--active" routerLink="/citgraph">Cit-Graph</a>
-    </nav>
-  </header>
-
   <div class="citgraph__body">
     <!-- Input bar -->
     <div class="citgraph__controls">
       <div class="citgraph__input-group">
-        <label class="citgraph__label">Paper ID (DOI, S2 ID, or arXiv ID)</label>
+        <label class="citgraph__label">Paper title or ID (DOI, S2 ID, or arXiv ID)</label>
         <input
           class="citgraph__input"
           type="text"
-          placeholder="e.g. 10.1145/3292500.3330919 or 204e3073870fae3d05bcbc2f6a8e263d9b72e776"
+          placeholder="e.g. Attention Is All You Need or 10.1145/3292500.3330919"
           [value]="paperId()"
           (input)="paperId.set($any($event.target).value)"
           (keydown.enter)="buildGraph()"

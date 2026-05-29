@@ -1,0 +1,45 @@
+<div class="docs">
+  <div class="docs__inner">
+    <header class="docs__header">
+      <span class="docs__eyebrow">Documentation</span>
+      <h1 class="docs__title">Using OpenKnowledge</h1>
+      <p class="docs__lead">
+        OpenKnowledge is a free, open-source platform for automating literature
+        reviews — discovering papers across major academic databases, scoring their
+        relevance, and mapping how the research connects.
+      </p>
+    </header>
+
+    <section class="docs__section">
+      <h2 class="docs__section-title">Getting started</h2>
+      <ol class="docs__steps">
+        <li>Open the <a routerLink="/dashboard/research">Dashboard</a> from the top navigation.</li>
+        <li>Pick a feature from the left panel and describe what you are looking for in the search bar.</li>
+        <li>Refine results with the OK-score weights, then save what matters to your Library.</li>
+      </ol>
+    </section>
+
+    <section class="docs__section">
+      <h2 class="docs__section-title">Features</h2>
+      <div class="docs__features">
+        @for (feature of features; track feature.title) {
+          <article class="docs__feature">
+            <span class="material-symbols-outlined docs__feature-icon">{{ feature.icon }}</span>
+            <div>
+              <h3 class="docs__feature-title">{{ feature.title }}</h3>
+              <p class="docs__feature-body">{{ feature.body }}</p>
+            </div>
+          </article>
+        }
+      </div>
+    </section>
+
+    <section class="docs__cta">
+      <h2 class="docs__cta-title">Ready to dive in?</h2>
+      <a class="docs__cta-btn" routerLink="/dashboard/research">
+        Open the Dashboard
+        <span class="material-symbols-outlined">arrow_forward</span>
+      </a>
+    </section>
+  </div>
+</div>

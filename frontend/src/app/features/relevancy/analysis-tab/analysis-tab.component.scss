@@ -1,26 +1,31 @@
+// ============================================================================
+// Analysis Tab — Dark Mode (DESIGN.MD)
+// ============================================================================
+
 .analysis {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
 
   &__input-section {
-    background: #fff;
-    border: 1px solid #e5e7eb;
-    border-radius: 14px;
+    background: var(--ok-glass-bg);
+    backdrop-filter: blur(var(--ok-glass-blur));
+    border: 1px solid var(--ok-glass-border);
+    border-radius: var(--ok-radius-lg);
     padding: 1.75rem 2rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   }
 
   &__heading {
+    font-family: var(--ok-font-headline);
     font-size: 1.05rem;
     font-weight: 700;
-    color: #1a1a2e;
+    color: var(--ok-on-surface);
     margin: 0 0 0.25rem;
   }
 
   &__subtitle {
     font-size: 0.82rem;
-    color: #9ca3af;
+    color: var(--ok-outline);
     margin: 0 0 1.25rem;
   }
 
@@ -32,22 +37,21 @@
   &__input {
     flex: 1;
     padding: 0.65rem 1rem;
-    border: 1.5px solid #e5e7eb;
-    border-radius: 10px;
+    border: 1px solid var(--ok-outline-variant);
+    border-radius: var(--ok-radius-md);
+    font-family: var(--ok-font-body);
     font-size: 0.9rem;
-    color: #1a1a2e;
-    background: #f9fafb;
+    color: var(--ok-on-surface);
+    background: var(--ok-surface-container-lowest);
     outline: none;
-    transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+    transition: border-color var(--ok-transition-fast), box-shadow var(--ok-transition-fast), background var(--ok-transition-fast);
 
-    &::placeholder {
-      color: #9ca3af;
-    }
+    &::placeholder { color: var(--ok-outline); }
 
     &:focus {
-      border-color: #2563eb;
-      background: #fff;
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+      border-color: var(--ok-primary-raw);
+      background: var(--ok-surface-container);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
     }
   }
 
@@ -57,18 +61,19 @@
     gap: 0.5rem;
     padding: 0.65rem 1.5rem;
     border: none;
-    border-radius: 10px;
-    background: #2563eb;
+    border-radius: var(--ok-radius-md);
+    background: var(--ok-gradient-primary);
     color: #fff;
+    font-family: var(--ok-font-label);
     font-size: 0.88rem;
     font-weight: 600;
     cursor: pointer;
     white-space: nowrap;
-    transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
+    transition: opacity var(--ok-transition-fast), transform var(--ok-transition-fast);
+    box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
 
     &:hover:not(:disabled) {
-      background: #1d4ed8;
-      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+      opacity: 0.9;
     }
 
     &:active:not(:disabled) {
@@ -90,13 +95,12 @@
     animation: spin 0.6s linear infinite;
   }
 
-  // -- Loader --
   &__loader {
     position: relative;
     padding: 1rem 1.25rem;
-    background: #eff6ff;
-    border: 1px solid #93c5fd;
-    border-radius: 10px;
+    background: var(--ok-surface-container);
+    border: 1px solid var(--ok-outline-variant);
+    border-radius: var(--ok-radius-md);
     overflow: hidden;
   }
 
@@ -106,27 +110,27 @@
     left: 0;
     height: 3px;
     width: 40%;
-    background: linear-gradient(90deg, #2563eb, #60a5fa);
+    background: var(--ok-gradient-primary);
     border-radius: 3px;
     animation: loader-slide 1.4s ease-in-out infinite;
   }
 
   &__loader-text {
+    font-family: var(--ok-font-label);
     font-size: 0.85rem;
     font-weight: 500;
-    color: #1e40af;
+    color: var(--ok-primary);
   }
 
-  // -- Error --
   &__error {
     display: flex;
     align-items: center;
     gap: 0.6rem;
     padding: 1rem 1.25rem;
-    background: #fef2f2;
-    border: 1px solid #fecaca;
-    border-radius: 10px;
-    color: #991b1b;
+    background: var(--ok-error-container);
+    border: 1px solid rgba(255, 180, 171, 0.3);
+    border-radius: var(--ok-radius-md);
+    color: var(--ok-error);
     font-size: 0.88rem;
   }
 
@@ -135,13 +139,12 @@
     flex-shrink: 0;
   }
 
-  // -- Result --
   &__result {
-    background: #fff;
-    border: 1px solid #e5e7eb;
-    border-radius: 14px;
+    background: var(--ok-glass-bg);
+    backdrop-filter: blur(var(--ok-glass-blur));
+    border: 1px solid var(--ok-glass-border);
+    border-radius: var(--ok-radius-lg);
     overflow: hidden;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
     animation: result-enter 0.35s ease-out;
   }
 
@@ -150,14 +153,15 @@
     display: flex;
     align-items: flex-start;
     gap: 1.5rem;
-    border-bottom: 1px solid #f3f4f6;
+    border-bottom: 1px solid var(--ok-outline-variant);
   }
 
   &__result-title {
     flex: 1;
+    font-family: var(--ok-font-headline);
     font-size: 1.05rem;
     font-weight: 600;
-    color: #1a1a2e;
+    color: var(--ok-on-surface);
     margin: 0;
     line-height: 1.45;
   }
@@ -167,12 +171,13 @@
     flex-direction: column;
     align-items: center;
     padding: 0.75rem 1.25rem;
-    border-radius: 12px;
+    border-radius: var(--ok-radius-lg);
     flex-shrink: 0;
     min-width: 90px;
   }
 
   &__total-score-label {
+    font-family: var(--ok-font-label);
     font-size: 0.68rem;
     font-weight: 600;
     text-transform: uppercase;
@@ -187,15 +192,15 @@
     font-variant-numeric: tabular-nums;
   }
 
-  // -- Breakdown --
   &__breakdown {
     padding: 1.5rem 2rem;
   }
 
   &__breakdown-title {
+    font-family: var(--ok-font-label);
     font-size: 0.82rem;
     font-weight: 600;
-    color: #6b7280;
+    color: var(--ok-outline);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     margin: 0 0 1.25rem;
@@ -208,7 +213,7 @@
   }
 }
 
-// -- Bar row --
+// Bar row
 .bar-row {
   display: grid;
   grid-template-columns: 110px 1fr 60px;
@@ -219,9 +224,10 @@
     display: flex;
     align-items: center;
     gap: 0.45rem;
+    font-family: var(--ok-font-label);
     font-size: 0.82rem;
     font-weight: 500;
-    color: #374151;
+    color: var(--ok-on-surface-variant);
   }
 
   &__dot {
@@ -233,7 +239,7 @@
 
   &__track {
     height: 10px;
-    background: #f3f4f6;
+    background: var(--ok-surface-container-highest);
     border-radius: 5px;
     overflow: hidden;
   }
@@ -246,9 +252,10 @@
   }
 
   &__value {
+    font-family: var(--ok-font-label);
     font-size: 0.82rem;
     font-weight: 700;
-    color: #1a1a2e;
+    color: var(--ok-on-surface);
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
@@ -264,14 +271,8 @@
 }
 
 @keyframes result-enter {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 @media (max-width: 640px) {

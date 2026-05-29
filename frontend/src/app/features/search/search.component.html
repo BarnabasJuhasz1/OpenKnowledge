@@ -1,9 +1,179 @@
-<div class="landing">
-  <div class="landing__inner">
-    <h1 class="landing__title">OpenKnowledge</h1>
-    <p class="landing__subtitle">
-      Search across OpenAlex, Semantic Scholar, arXiv, PubMed, DBLP, CrossRef, Europe PMC and CORE — open source, no subscription required.
-    </p>
-    <app-query-input (search)="onSearch($event)" />
-  </div>
+<div class="landing landing-theme">
+  <!-- ========== HERO SECTION ========== -->
+  <section class="hero mesh-gradient grain-overlay">
+    <div class="hero__orb hero__orb--1"></div>
+    <div class="hero__orb hero__orb--2"></div>
+    <div class="hero__content reveal-on-scroll">
+      <span class="hero__eyebrow">The Future of Synthesis</span>
+      <h1 class="hero__title">Explore the Art of Research</h1>
+      <p class="hero__description">
+        OpenKnowledge is 100% Free &amp; Open Source. Explore literature, test hypotheses,
+        and map your knowledge with a modern research tool designed for the curious mind.
+      </p>
+      <div class="hero__actions">
+        <button class="hero__btn hero__btn--primary" (click)="startExploring()">
+          Start Exploring
+          <span class="material-symbols-outlined hero__btn-arrow">arrow_forward</span>
+        </button>
+        <a class="hero__btn hero__btn--ghost" routerLink="/graph">
+          Explore Knowledge Map
+        </a>
+      </div>
+
+      <!-- App preview frame -->
+      <div class="hero__preview">
+        <div class="hero__preview-dots">
+          <span class="hero__dot hero__dot--red"></span>
+          <span class="hero__dot hero__dot--yellow"></span>
+          <span class="hero__dot hero__dot--green"></span>
+        </div>
+        <img
+          class="hero__preview-img"
+          src="hero-dashboard.png"
+          alt="Research Dashboard Interface showing a knowledge graph with interconnected nodes and data visualizations"
+          loading="eager"
+        />
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== PROCESS SECTION ========== -->
+  <section class="process">
+    <div class="process__inner reveal-on-scroll">
+      <div class="process__header">
+        <h2 class="process__title">An Open Source Workflow for Deep Focus</h2>
+        <div class="process__accent-line"></div>
+      </div>
+      <div class="process__grid">
+        <!-- Discover -->
+        <div class="process__card glass-panel">
+          <div class="process__icon-wrap process__icon-wrap--primary">
+            <span class="material-symbols-outlined">search</span>
+          </div>
+          <h3 class="process__card-title">Discover</h3>
+          <p class="process__card-desc">
+            Navigate the vast ocean of academic papers and data sources with our semantic search engine that understands context, not just keywords.
+          </p>
+        </div>
+        <!-- Analyze -->
+        <div class="process__card glass-panel">
+          <div class="process__icon-wrap process__icon-wrap--tertiary">
+            <span class="material-symbols-outlined">analytics</span>
+          </div>
+          <h3 class="process__card-title">Analyze</h3>
+          <p class="process__card-desc">
+            Deconstruct complex arguments using AI-assisted extraction. Identify core hypotheses and evidence paths in seconds.
+          </p>
+        </div>
+        <!-- Synthesize -->
+        <div class="process__card glass-panel">
+          <div class="process__icon-wrap process__icon-wrap--secondary">
+            <span class="material-symbols-outlined">join_inner</span>
+          </div>
+          <h3 class="process__card-title">Synthesize</h3>
+          <p class="process__card-desc">
+            Weave disparate findings into a cohesive narrative. Our knowledge mapping tool visualizes relationships as they evolve.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== KNOWLEDGE MAP SECTION ========== -->
+  <section class="kmap">
+    <!-- Decorative nodes -->
+    <div class="kmap__node kmap__node--1"></div>
+    <div class="kmap__node kmap__node--2"></div>
+    <div class="kmap__node kmap__node--3"></div>
+    <div class="kmap__line kmap__line--1"></div>
+    <div class="kmap__line kmap__line--2"></div>
+    <div class="kmap__inner reveal-on-scroll">
+      <div class="kmap__text">
+        <span class="kmap__eyebrow">Visual Synthesis</span>
+        <h2 class="kmap__title">Your Research as a Free, Living Ecosystem</h2>
+        <p class="kmap__desc">
+          OpenKnowledge doesn't just store files; it connects thoughts. Our mapping engine visualizes the weight of evidence and the bridges between concepts, transforming static data into an interactive map of discovery.
+        </p>
+        <ul class="kmap__features">
+          <li class="kmap__feature">
+            <span class="material-symbols-outlined kmap__feature-icon kmap__feature-icon--primary">hub</span>
+            <div>
+              <h4 class="kmap__feature-title">Dynamic Node Clustering</h4>
+              <p class="kmap__feature-desc">Automatically group related papers by semantic similarity and temporal proximity.</p>
+            </div>
+          </li>
+          <li class="kmap__feature">
+            <span class="material-symbols-outlined kmap__feature-icon kmap__feature-icon--tertiary">account_tree</span>
+            <div>
+              <h4 class="kmap__feature-title">Citation Path Tracking</h4>
+              <p class="kmap__feature-desc">Visualize how ideas have traveled through academic history in real-time.</p>
+            </div>
+          </li>
+          <li class="kmap__feature">
+            <span class="material-symbols-outlined kmap__feature-icon kmap__feature-icon--secondary">score</span>
+            <div>
+              <h4 class="kmap__feature-title">OK-score Relevancy Engine</h4>
+              <p class="kmap__feature-desc">Our composite score ranks papers by citations, code availability, peer review, and data openness.</p>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== SEARCH CTA SECTION ========== -->
+  <section class="cta-section">
+    <div class="cta glass-panel reveal-on-scroll">
+      <div class="cta__glow cta__glow--1"></div>
+      <div class="cta__glow cta__glow--2"></div>
+      <h2 class="cta__title">Ready to redefine your research?</h2>
+      <p class="cta__desc">
+        Search across OpenAlex, Semantic Scholar, arXiv, PubMed, DBLP, CrossRef, Europe PMC and CORE — open source, no subscription required.
+      </p>
+      <div class="cta__search-wrap">
+        <app-query-input (search)="onSearch($event)" />
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== FOOTER ========== -->
+  <footer class="landing-footer">
+    <div class="landing-footer__inner">
+      <div class="landing-footer__brand">
+        <span class="landing-footer__brand-name">OpenKnowledge</span>
+        <p class="landing-footer__brand-desc">Elevating the standard of synthesis for the world's most curious minds.</p>
+      </div>
+      <div class="landing-footer__col">
+        <h5 class="landing-footer__heading">Product</h5>
+        <ul class="landing-footer__links">
+          <li><a routerLink="/results">Literature Search</a></li>
+          <li><a routerLink="/graph">Knowledge Map</a></li>
+          <li><a routerLink="/relevancy">OK-score</a></li>
+          <li><a routerLink="/library">Library</a></li>
+        </ul>
+      </div>
+      <div class="landing-footer__col">
+        <h5 class="landing-footer__heading">Resources</h5>
+        <ul class="landing-footer__links">
+          <li><a [href]="repoUrl" target="_blank" rel="noopener">GitHub</a></li>
+          <li><a href="#" >Documentation</a></li>
+          <li><a href="#">Privacy Policy</a></li>
+        </ul>
+      </div>
+      <div class="landing-footer__col">
+        <h5 class="landing-footer__heading">Stay Curious</h5>
+        <div class="landing-footer__social">
+          <a class="landing-footer__social-btn" href="#" aria-label="Website">
+            <span class="material-symbols-outlined">public</span>
+          </a>
+          <a class="landing-footer__social-btn" href="#" aria-label="Email">
+            <span class="material-symbols-outlined">alternate_email</span>
+          </a>
+        </div>
+      </div>
+    </div>
+    <div class="landing-footer__bottom">
+      <p>© 2024 OpenKnowledge. The Art of Research, Reimagined.</p>
+    </div>
+  </footer>
 </div>
