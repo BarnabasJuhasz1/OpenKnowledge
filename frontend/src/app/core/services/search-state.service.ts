@@ -70,6 +70,8 @@ export class SearchStateService {
   readonly currentPage = signal(1);
   readonly rawQuery = signal('');
   readonly activeFilter = signal<string | null>(null);
+  /** Databases the user has selected to include in the results (all by default). */
+  readonly selectedSources = signal<Set<string>>(new Set(ALL_SOURCES));
   readonly queriesUsed = signal<Record<string, string>>({});
   readonly sourceErrors = signal<Record<string, string>>({});
   readonly sourcesCompleted = signal<string[]>([]);
@@ -150,12 +152,10 @@ export class SearchStateService {
 
   /** Papers with scores attached (before filtering/sorting). */
   private readonly scoredPapers = computed(() => {
-    const filter = this.activeFilter();
-    let papers: Paper[];
-    if (!filter) {
-      papers = this.dedupResult().papers;
-    } else {
-      papers = this.rawPapersBySource()[filter] ?? [];
+    const selected = this.selectedSources();
+    let papers = this.dedupResult().papers;
+    if (selected.size < ALL_SOURCES.length) {
+      papers = papers.filter(p => (p.sources ?? []).some(s => selected.has(s)));
     }
     const scores = this.scoresByTitle();
     const w = SearchStateService.DEFAULT_WEIGHTS;
@@ -270,6 +270,23 @@ export class SearchStateService {
     });
   }
 
+  /** Toggle a single database in/out of the selected set. */
+  toggleSource(name: string): void {
+    this.selectedSources.update(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+    this.currentPage.set(1);
+  }
+
+  /** Select or clear every database at once. */
+  setAllSources(selected: boolean): void {
+    this.selectedSources.set(selected ? new Set(ALL_SOURCES) : new Set());
+    this.currentPage.set(1);
+  }
+
   updateFilter(partial: Partial<FilterState>): void {
     this.filters.update(prev => ({ ...prev, ...partial }));
     this.currentPage.set(1);
@@ -286,6 +303,7 @@ export class SearchStateService {
       openAccessOnly: false,
     });
     this.sortField.set('relevancy');
+    this.selectedSources.set(new Set(ALL_SOURCES));
     this.currentPage.set(1);
   }
 

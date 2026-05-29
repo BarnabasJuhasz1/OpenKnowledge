@@ -8,6 +8,12 @@
   flex-direction: column;
   gap: 0.5rem;
 
+  // Anchors the shelf dropdown directly beneath the input row (not the whole
+  // component) so it drops under the field in both compact and full layouts.
+  &__field {
+    position: relative;
+  }
+
   &__row {
     display: flex;
     align-items: center;

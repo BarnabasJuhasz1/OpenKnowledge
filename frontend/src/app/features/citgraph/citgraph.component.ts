@@ -1,7 +1,9 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, HostListener, computed, inject, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CitGraphService, CitGraphNode, CitGraphEdge, CitGraphResponse } from '../../core/services/citgraph.service';
+import { DemoModeService } from '../../core/services/demo-mode.service';
+import { BookshelfService, BookshelfItem } from '../../core/services/bookshelf.service';
 import { louvain, getCommunitiesAtLevel, LouvainResult } from './louvain';
 
 interface LayoutNode {
@@ -29,6 +31,12 @@ const COMMUNITY_COLORS = [
 })
 export class CitGraphComponent {
   private readonly citgraphSvc = inject(CitGraphService);
+  private readonly demo = inject(DemoModeService);
+  private readonly bookshelfSvc = inject(BookshelfService);
+  private readonly elRef = inject(ElementRef);
+
+  readonly bookshelfOpen = signal(false);
+  readonly bookshelfItems = signal<BookshelfItem[]>([]);
 
   readonly paperId = signal('');
   readonly kHops = signal(1);
@@ -119,7 +127,11 @@ export class CitGraphComponent {
     this.showCommunities.set(false);
     this.selectedNodeId.set(null);
 
-    this.citgraphSvc.build(id, this.kHops(), this.maxPerHop()).subscribe({
+    const request$ = this.demo.enabled()
+      ? this.citgraphSvc.buildDemo(id, this.kHops(), this.maxPerHop())
+      : this.citgraphSvc.build(id, this.kHops(), this.maxPerHop());
+
+    request$.subscribe({
       next: (data) => {
         this.graphData.set(data);
         this.layoutEdges.set(data.edges);
@@ -131,6 +143,34 @@ export class CitGraphComponent {
         this.error.set(err.error?.detail || 'Failed to build citation graph');
       },
     });
+  }
+
+  toggleBookshelf(): void {
+    if (this.bookshelfOpen()) {
+      this.bookshelfOpen.set(false);
+      return;
+    }
+    this.bookshelfSvc.list().subscribe({
+      next: (items) => {
+        this.bookshelfItems.set(items);
+        this.bookshelfOpen.set(true);
+      },
+    });
+  }
+
+  pickBookshelfItem(item: BookshelfItem): void {
+    this.bookshelfOpen.set(false);
+    // The stored identifier is a DOI / arXiv / S2 / OpenAlex id (or the CSV
+    // UUID in demo mode), each of which the matching builder resolves directly.
+    this.paperId.set(item.paper_identifier);
+    this.buildGraph();
+  }
+
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: MouseEvent): void {
+    if (this.bookshelfOpen() && !this.elRef.nativeElement.contains(event.target)) {
+      this.bookshelfOpen.set(false);
+    }
   }
 
   private runLayout(data: CitGraphResponse): void {

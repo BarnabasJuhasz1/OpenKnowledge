@@ -42,4 +42,12 @@ export class CitGraphService {
       max_per_hop: maxPerHop ?? 20,
     });
   }
+
+  buildDemo(paperId: string, k: number, maxPerHop?: number): Observable<CitGraphResponse> {
+    return this.http.post<CitGraphResponse>(`${this.baseUrl}/demo/build`, {
+      paper_id: paperId,
+      k,
+      max_per_hop: maxPerHop ?? 20,
+    });
+  }
 }

@@ -4,7 +4,8 @@ import os
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from ..services.retrieval.citgraph_builder import build_citation_graph
+from ..services.retrieval.citgraph_builder import build_citation_graph, UpstreamError
+from ..services.retrieval.demo_citgraph import DemoCitGraphStore
 
 router = APIRouter(prefix="/citgraph", tags=["citgraph"])
 
@@ -43,22 +44,7 @@ class CitGraphResponse(BaseModel):
     seed_id: str
 
 
-@router.post("/build", response_model=CitGraphResponse)
-async def build_graph(body: CitGraphRequest):
-    api_key = os.getenv("SEMANTIC_SCHOLAR_API_KEY")
-    try:
-        result = await build_citation_graph(
-            paper_id=body.paper_id,
-            k=body.k,
-            max_per_hop=body.max_per_hop,
-            api_key=api_key,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Failed to build graph: {e}")
-
-    if not result.nodes:
-        raise HTTPException(status_code=404, detail="Paper not found or no data available")
-
+def _to_response(result) -> CitGraphResponse:
     return CitGraphResponse(
         nodes=[
             CitGraphNodeOut(
@@ -85,3 +71,44 @@ async def build_graph(body: CitGraphRequest):
         ],
         seed_id=result.seed_id,
     )
+
+
+@router.post("/build", response_model=CitGraphResponse)
+async def build_graph(body: CitGraphRequest):
+    api_key = os.getenv("SEMANTIC_SCHOLAR_API_KEY")
+    try:
+        result = await build_citation_graph(
+            paper_id=body.paper_id,
+            k=body.k,
+            max_per_hop=body.max_per_hop,
+            api_key=api_key,
+        )
+    except UpstreamError as e:
+        # Transient upstream failure (rate limit / network) — not a missing paper.
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to build graph: {e}")
+
+    if not result.nodes:
+        raise HTTPException(status_code=404, detail="Paper not found or no data available")
+
+    return _to_response(result)
+
+
+@router.post("/demo/build", response_model=CitGraphResponse)
+async def build_graph_demo(body: CitGraphRequest):
+    """Build a citation graph from the local demo dataset (no external calls)."""
+    store = DemoCitGraphStore.get()
+    try:
+        result = await store.build(
+            seed=body.paper_id, k=body.k, max_per_hop=body.max_per_hop
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to build graph: {e}")
+
+    if not result.nodes:
+        raise HTTPException(
+            status_code=404, detail="Paper not found in demo dataset"
+        )
+
+    return _to_response(result)

@@ -8,6 +8,17 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+
+class UpstreamError(Exception):
+    """A Semantic Scholar request failed for a reason other than a clean 404.
+
+    Used to distinguish a genuine "paper does not exist" (404 -> ``None``) from a
+    transient failure such as rate limiting (HTTP 429) or a network error, so the
+    API layer can report an accurate, actionable message instead of a misleading
+    "paper not found".
+    """
+
+
 _BASE_URL = "https://api.semanticscholar.org/graph/v1/paper"
 _MATCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search/match"
 _FIELDS = "paperId,externalIds,title,abstract,year,citationCount,referenceCount,authors,isOpenAccess,openAccessPdf,journal,publicationDate,fieldsOfStudy"
@@ -155,21 +166,30 @@ async def _get_with_retry(
     url: str,
     params: dict,
     headers: dict,
-    max_retries: int = 3,
+    max_retries: int = 4,
 ) -> httpx.Response | None:
-    """GET with 429-aware retry. Returns None on 404 or exhausted retries."""
+    """GET with 429-aware retry.
+
+    Returns ``None`` only on a genuine 404 (resource does not exist). Raises
+    :class:`UpstreamError` on a network error or when rate limiting (429) /
+    another HTTP error persists past ``max_retries`` — these are transient and
+    must not be confused with "not found".
+    """
     for attempt in range(max_retries + 1):
         try:
             resp = await client.get(url, params=params, headers=headers)
         except httpx.HTTPError as e:
             logger.warning("Request error for %s: %s", url, e)
-            return None
+            raise UpstreamError(f"Network error contacting Semantic Scholar: {e}") from e
         if resp.status_code == 404:
             return None
         if resp.status_code == 429:
             if attempt == max_retries:
                 logger.warning("Rate limited (429) after %d retries: %s", max_retries, url)
-                return None
+                raise UpstreamError(
+                    "Semantic Scholar rate limit reached (HTTP 429). Set "
+                    "SEMANTIC_SCHOLAR_API_KEY to raise the limit, or retry shortly."
+                )
             try:
                 retry_after = int(resp.headers.get("Retry-After", "2"))
             except ValueError:
@@ -178,7 +198,9 @@ async def _get_with_retry(
             continue
         if resp.status_code >= 400:
             logger.warning("HTTP %d for %s", resp.status_code, url)
-            return None
+            raise UpstreamError(
+                f"Semantic Scholar returned HTTP {resp.status_code} for {url}"
+            )
         return resp
     return None
 
@@ -224,6 +246,10 @@ async def _resolve_seed_id(
     if _looks_like_identifier(seed):
         return seed
     matched = await _match_title(client, seed, api_key)
+    # The match call and the seed fetch are back-to-back requests; on the
+    # unauthenticated (~1 req/s) tier that pair alone can trip the rate limit,
+    # so space them out slightly.
+    await asyncio.sleep(0.5)
     return matched or seed
 
 
@@ -249,7 +275,13 @@ async def _fetch_refs_and_cits(
     params = {"fields": _REF_CIT_FIELDS, "limit": 100}
 
     async def _get(url: str) -> list[dict]:
-        resp = await _get_with_retry(client, url, params, headers)
+        # Tolerate transient upstream failures here: a rate-limited neighbour
+        # fetch should yield a smaller graph, not abort the whole build.
+        try:
+            resp = await _get_with_retry(client, url, params, headers)
+        except UpstreamError as e:
+            logger.warning("Skipping neighbours for %s: %s", url, e)
+            return []
         if resp is None:
             return []
         # S2 may return {"data": null}; `.get(..., [])` only covers a missing

@@ -192,51 +192,103 @@
   }
 }
 
-// ── Database source filter chips ──
-.source-islands {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-
-.source-island {
+// ── Database multi-select dropdown ──
+.db-select {
   position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.3rem 0.65rem;
-  border: 1px solid var(--ok-outline-variant);
-  border-radius: var(--ok-radius-full);
-  background: var(--ok-surface-container);
-  color: var(--ok-on-surface-variant);
-  font-family: var(--ok-font-label);
-  font-size: 0.78rem;
-  cursor: pointer;
-  transition: background var(--ok-transition-fast), color var(--ok-transition-fast), border-color var(--ok-transition-fast);
 
-  &:hover {
-    background: var(--ok-surface-container-high);
+  &__toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.45rem 0.65rem;
+    border: 1px solid var(--ok-outline-variant);
+    border-radius: var(--ok-radius);
+    background: var(--ok-surface-container-lowest);
+    color: var(--ok-on-surface);
+    font-family: var(--ok-font-label);
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: border-color var(--ok-transition-fast);
+
+    &:hover { border-color: var(--ok-outline); }
   }
 
-  &--active {
-    background: var(--ok-primary-raw);
-    color: #fff;
+  &--open &__toggle {
     border-color: var(--ok-primary-raw);
+  }
 
-    &:hover {
-      background: #4f46e5;
-    }
+  &__summary {
+    font-weight: 500;
+  }
 
-    .source-island__count {
-      color: rgba(255, 255, 255, 0.75);
+  &__chevron {
+    flex-shrink: 0;
+    color: var(--ok-outline);
+    transition: transform var(--ok-transition-fast);
+  }
+
+  &--open &__chevron {
+    transform: rotate(180deg);
+  }
+
+  &__menu {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(100% + 0.35rem);
+    z-index: 20;
+    max-height: 280px;
+    overflow-y: auto;
+    padding: 0.35rem;
+    border: 1px solid var(--ok-outline-variant);
+    border-radius: var(--ok-radius);
+    background: var(--ok-surface-container);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  }
+
+  &__divider {
+    height: 1px;
+    margin: 0.3rem 0;
+    background: var(--ok-outline-variant);
+  }
+
+  &__option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.5rem;
+    border-radius: var(--ok-radius-sm);
+    cursor: pointer;
+    font-family: var(--ok-font-label);
+    font-size: 0.82rem;
+    color: var(--ok-on-surface-variant);
+    transition: background var(--ok-transition-fast);
+
+    &:hover { background: var(--ok-surface-container-high); }
+
+    input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+      accent-color: var(--ok-primary-raw);
+      cursor: pointer;
+      flex-shrink: 0;
     }
   }
 
-  &--failed:not(&--active) {
-    border-color: rgba(255, 180, 171, 0.5);
+  &__option--all {
+    font-weight: 600;
+    color: var(--ok-on-surface);
+  }
+
+  &__option--failed &__name {
+    color: var(--ok-error);
   }
 
   &__name {
+    flex: 1;
     font-weight: 500;
   }
 
@@ -251,16 +303,9 @@
     align-items: center;
     animation: spin-arrows 1.2s linear infinite;
     color: var(--ok-outline);
-
-    .source-island--active & {
-      color: rgba(255, 255, 255, 0.8);
-    }
   }
 
   &__error-mark {
-    position: absolute;
-    bottom: -3px;
-    right: -3px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -272,8 +317,6 @@
     font-size: 9px;
     font-weight: 800;
     line-height: 1;
-    border: 1.5px solid var(--ok-surface-container);
-    pointer-events: none;
   }
 }
 

@@ -1,6 +1,7 @@
 """Unit tests for the citation graph builder normalization + BFS edge logic."""
 from __future__ import annotations
 
+import httpx
 import pytest
 
 from app.services.retrieval.citgraph_builder import (
@@ -8,7 +9,33 @@ from app.services.retrieval.citgraph_builder import (
     _normalize_node,
     build_citation_graph,
     CitGraphNode,
+    UpstreamError,
 )
+
+
+class _FakeResp:
+    def __init__(self, status_code, headers=None, payload=None):
+        self.status_code = status_code
+        self.headers = headers or {}
+        self._payload = payload or {}
+
+    def json(self):
+        return self._payload
+
+
+class _FakeClient:
+    """Returns queued responses (or raises queued exceptions) on each GET."""
+
+    def __init__(self, results):
+        self._results = list(results)
+        self.calls = 0
+
+    async def get(self, url, params=None, headers=None):
+        self.calls += 1
+        result = self._results[min(self.calls - 1, len(self._results) - 1)]
+        if isinstance(result, Exception):
+            raise result
+        return result
 
 
 @pytest.mark.parametrize(
@@ -135,6 +162,68 @@ async def test_build_graph_resolves_title_seed(monkeypatch):
 
     assert matched_ids == ["Seed Paper"]
     assert {n.paper_id for n in result.nodes} == {"SEED"}
+
+
+@pytest.mark.asyncio
+async def test_get_with_retry_returns_none_on_404():
+    """A genuine 404 means 'does not exist' and must stay distinct from errors."""
+    import app.services.retrieval.citgraph_builder as mod
+
+    client = _FakeClient([_FakeResp(404)])
+    assert await mod._get_with_retry(client, "url", {}, {}) is None
+
+
+@pytest.mark.asyncio
+async def test_get_with_retry_raises_on_persistent_429(monkeypatch):
+    """Exhausted rate-limit retries must raise, not masquerade as 'not found'."""
+    import app.services.retrieval.citgraph_builder as mod
+
+    async def _no_sleep(_):
+        return None
+
+    monkeypatch.setattr(mod.asyncio, "sleep", _no_sleep)
+    client = _FakeClient([_FakeResp(429)])
+    with pytest.raises(UpstreamError):
+        await mod._get_with_retry(client, "url", {}, {}, max_retries=2)
+
+
+@pytest.mark.asyncio
+async def test_get_with_retry_raises_on_network_error():
+    """A network error is transient, not a missing paper."""
+    import app.services.retrieval.citgraph_builder as mod
+
+    client = _FakeClient([httpx.ConnectError("boom")])
+    with pytest.raises(UpstreamError):
+        await mod._get_with_retry(client, "url", {}, {})
+
+
+@pytest.mark.asyncio
+async def test_build_graph_propagates_upstream_error_on_seed(monkeypatch):
+    """A rate-limited seed fetch propagates UpstreamError (not an empty graph)."""
+    import app.services.retrieval.citgraph_builder as mod
+
+    async def boom(client, pid, api_key):
+        raise UpstreamError("Semantic Scholar rate limit reached (HTTP 429).")
+
+    monkeypatch.setattr(mod, "_fetch_paper", boom)
+
+    with pytest.raises(UpstreamError):
+        await build_citation_graph("SEED", k=1, max_per_hop=20)
+
+
+@pytest.mark.asyncio
+async def test_fetch_refs_and_cits_tolerates_upstream_error(monkeypatch):
+    """A rate-limited neighbour fetch degrades to an empty list, not a crash."""
+    import app.services.retrieval.citgraph_builder as mod
+
+    async def boom(client, url, params, headers, max_retries=4):
+        raise UpstreamError("rate limited")
+
+    monkeypatch.setattr(mod, "_get_with_retry", boom)
+
+    refs, cits = await mod._fetch_refs_and_cits(client=None, paper_id="X", api_key=None)
+    assert refs == []
+    assert cits == []
 
 
 @pytest.mark.asyncio
