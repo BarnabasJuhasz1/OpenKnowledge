@@ -5,6 +5,10 @@ import { CitGraphService, CitGraphNode, CitGraphEdge, CitGraphResponse } from '.
 import { DemoModeService } from '../../core/services/demo-mode.service';
 import { BookshelfService, BookshelfItem } from '../../core/services/bookshelf.service';
 import { louvain, getCommunitiesAtLevel, LouvainResult } from './louvain';
+import { SearchStateService } from '../../core/services/search-state.service';
+import { Router } from '@angular/router';
+import { Paper } from '../../core/models/paper.model';
+import { NotificationService } from '../../core/services/notification.service';
 
 interface LayoutNode {
   id: string;
@@ -14,6 +18,27 @@ interface LayoutNode {
   vx: number;
   vy: number;
   community: number;
+}
+
+// What is actually drawn on the canvas. At level 0 each display node is a
+// single paper; at level ≥1 the graph collapses to one meta-node per cluster.
+interface DisplayNode {
+  id: string;
+  x: number;
+  y: number;
+  radius: number;
+  color: string;
+  label: string;
+  kind: 'paper' | 'cluster';
+  paper: CitGraphNode | null;
+  clusterId: number | null;
+  count: number;
+}
+
+interface DisplayEdge {
+  source: string;
+  target: string;
+  weight: number;
 }
 
 const COMMUNITY_COLORS = [
@@ -33,6 +58,9 @@ export class CitGraphComponent {
   private readonly citgraphSvc = inject(CitGraphService);
   private readonly demo = inject(DemoModeService);
   private readonly bookshelfSvc = inject(BookshelfService);
+  private readonly searchState = inject(SearchStateService);
+  private readonly router = inject(Router);
+  private readonly notify = inject(NotificationService);
   private readonly elRef = inject(ElementRef);
 
   readonly bookshelfOpen = signal(false);
@@ -56,8 +84,24 @@ export class CitGraphComponent {
   private static readonly ZOOM_STEP = 0.15;
 
   readonly louvainResult = signal<LouvainResult | null>(null);
+  // Display level numbering: 0 = no clusters (raw graph), 1 = the finest
+  // Louvain communities, 2 = clusters of those, and so on. Internally a
+  // display level L (≥1) maps to hierarchy index L-1.
   readonly louvainLevel = signal(0);
-  readonly showCommunities = signal(false);
+  readonly resolution = signal(1);
+  readonly maxLevels = signal(10);
+  readonly selectedClusterId = signal<number | null>(null);
+
+  /** Whether Louvain has been run on the current graph. */
+  readonly louvainActive = computed(() => this.louvainResult() !== null);
+
+  /** Communities (hulls + colors) are only shown from level 1 upward. */
+  readonly showCommunities = computed(() => this.louvainActive() && this.louvainLevel() >= 1);
+
+  /** Selectable levels: 0 (none) plus one per detected hierarchy level. */
+  readonly levelOptions = computed(() =>
+    Array.from({ length: (this.louvainResult()?.levels.length ?? 0) + 1 }, (_, i) => i),
+  );
 
   readonly selectedNode = computed<CitGraphNode | null>(() => {
     const id = this.selectedNodeId();
@@ -81,40 +125,166 @@ export class CitGraphComponent {
       }));
   });
 
-  readonly hullPaths = computed(() => {
-    if (!this.showCommunities()) return [];
+  // Composition of the currently inspected cluster, at the active level.
+  // A cluster is made up of finer sub-clusters (the communities one level
+  // below) and ultimately of papers (the leaf nodes). At level 0 the leaves
+  // are the papers themselves, so there are no separate sub-clusters.
+  readonly clusterInspection = computed(() => {
+    const cid = this.selectedClusterId();
+    if (cid === null || !this.showCommunities()) return null;
+    const result = this.louvainResult();
+    if (!result) return null;
     const nodes = this.layoutNodes();
-    const byComm = new Map<number, LayoutNode[]>();
+
+    const papers = nodes
+      .filter(n => n.community === cid)
+      .map(n => {
+        const score = +(1.0 * Math.log10(1 + (n.data.citation_count || 0))).toFixed(2);
+        return { id: n.id, title: n.data.title, score, isRepresentative: false };
+      })
+      .sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
+    if (!papers.length) return null;
+    papers[0].isRepresentative = true;
+
+    // Display level L (≥1) is hierarchy index L-1. Its sub-clusters are the
+    // communities one level finer (hierarchy index L-2), which only exist from
+    // display level 2 upward; at level 1 the sub-units are the papers.
+    const level = this.louvainLevel();
+    let subClusters: { id: number; size: number }[] = [];
+    if (level >= 2) {
+      const finer = getCommunitiesAtLevel(result.levels, nodes.length, level - 2);
+      const counts = new Map<number, number>();
+      nodes.forEach((n, i) => {
+        if (n.community !== cid) return;
+        counts.set(finer[i], (counts.get(finer[i]) ?? 0) + 1);
+      });
+      subClusters = [...counts.entries()]
+        .map(([id, size]) => ({ id, size }))
+        .sort((a, b) => b.size - a.size);
+    }
+
+    return {
+      id: cid,
+      color: COMMUNITY_COLORS[cid % COMMUNITY_COLORS.length],
+      level,
+      paperCount: papers.length,
+      subClusterCount: level >= 2 ? subClusters.length : papers.length,
+      subClusters,
+      papers,
+    };
+  });
+
+  // Nodes drawn on the canvas. Level 0 → individual papers; level ≥1 → one
+  // collapsed meta-node per cluster, sized by how many papers it contains.
+  readonly displayNodes = computed<DisplayNode[]>(() => {
+    const nodes = this.layoutNodes();
+    if (!this.showCommunities()) {
+      const seed = this.graphData()?.seed_id;
+      return nodes.map(n => ({
+        id: n.id,
+        x: n.x,
+        y: n.y,
+        radius: n.id === seed ? 18 : 12,
+        color: hopColor(n.data.hop),
+        label: truncate(n.data.title),
+        kind: 'paper' as const,
+        paper: n.data,
+        clusterId: null,
+        count: 1,
+      }));
+    }
+
+    const groups = new Map<number, LayoutNode[]>();
     for (const n of nodes) {
-      let arr = byComm.get(n.community);
-      if (!arr) { arr = []; byComm.set(n.community, arr); }
+      let arr = groups.get(n.community);
+      if (!arr) { arr = []; groups.set(n.community, arr); }
       arr.push(n);
     }
-    const hulls: { path: string; color: string }[] = [];
-    for (const [cid, members] of byComm) {
-      if (members.length < 3) continue;
-      const points = members.map(n => ({ x: n.x, y: n.y }));
-      const hull = convexHull(points);
-      const expanded = expandHull(hull, 30);
-      const path = hullToSmoothPath(expanded);
-      hulls.push({
-        path,
+    const metaNodes: DisplayNode[] = [...groups.entries()].map(([cid, members]) => {
+      const cx = members.reduce((s, m) => s + m.x, 0) / members.length;
+      const cy = members.reduce((s, m) => s + m.y, 0) / members.length;
+      return {
+        id: `cluster-${cid}`,
+        x: cx,
+        y: cy,
+        radius: Math.min(46, 12 + Math.sqrt(members.length) * 4),
         color: COMMUNITY_COLORS[cid % COMMUNITY_COLORS.length],
-      });
+        label: `Cluster ${cid} · ${members.length}`,
+        kind: 'cluster' as const,
+        paper: null,
+        clusterId: cid,
+        count: members.length,
+      };
+    });
+    // Centroids of coarse clusters can overlap; nudge them apart so each
+    // meta-node stays distinct, then shift back into positive bounds so
+    // nothing is clipped at the top/left edge. Deterministic for a layout.
+    spreadClusterNodes(metaNodes);
+    const minX = Math.min(...metaNodes.map(n => n.x - n.radius));
+    const minY = Math.min(...metaNodes.map(n => n.y - n.radius));
+    for (const n of metaNodes) {
+      n.x += 80 - minX;
+      n.y += 80 - minY;
     }
-    return hulls;
+    return metaNodes;
+  });
+
+  // Edges drawn on the canvas. Level 0 → the raw citation edges; level ≥1 →
+  // edges aggregated between clusters (intra-cluster edges are dropped).
+  readonly displayEdges = computed<DisplayEdge[]>(() => {
+    const edges = this.layoutEdges();
+    if (!this.showCommunities()) {
+      return edges.map(e => ({ source: e.source, target: e.target, weight: 1 }));
+    }
+    const commById = new Map(this.layoutNodes().map(n => [n.id, n.community]));
+    const agg = new Map<string, DisplayEdge>();
+    for (const e of edges) {
+      const cs = commById.get(e.source);
+      const ct = commById.get(e.target);
+      if (cs === undefined || ct === undefined || cs === ct) continue;
+      const a = Math.min(cs, ct), b = Math.max(cs, ct);
+      const key = `${a}|${b}`;
+      const cur = agg.get(key);
+      if (cur) cur.weight++;
+      else agg.set(key, { source: `cluster-${a}`, target: `cluster-${b}`, weight: 1 });
+    }
+    return [...agg.values()];
+  });
+
+  private readonly displayNodePos = computed(() => {
+    const m = new Map<string, { x: number; y: number }>();
+    for (const n of this.displayNodes()) m.set(n.id, { x: n.x, y: n.y });
+    return m;
+  });
+
+  /** Id of the currently active display node (selected paper or cluster). */
+  readonly activeDisplayId = computed<string | null>(() => {
+    if (!this.showCommunities()) return this.selectedNodeId();
+    const c = this.selectedClusterId();
+    return c === null ? null : `cluster-${c}`;
+  });
+
+  private readonly activeNeighbors = computed(() => {
+    const a = this.activeDisplayId();
+    const set = new Set<string>();
+    if (!a) return set;
+    for (const e of this.displayEdges()) {
+      if (e.source === a) set.add(e.target);
+      else if (e.target === a) set.add(e.source);
+    }
+    return set;
   });
 
   readonly svgWidth = computed(() => {
-    const nodes = this.layoutNodes();
+    const nodes = this.displayNodes();
     if (!nodes.length) return 800;
-    return Math.max(800, Math.max(...nodes.map(n => n.x)) + 100);
+    return Math.max(800, Math.max(...nodes.map(n => n.x + n.radius)) + 80);
   });
 
   readonly svgHeight = computed(() => {
-    const nodes = this.layoutNodes();
+    const nodes = this.displayNodes();
     if (!nodes.length) return 600;
-    return Math.max(600, Math.max(...nodes.map(n => n.y)) + 100);
+    return Math.max(600, Math.max(...nodes.map(n => n.y + n.radius)) + 80);
   });
 
   buildGraph(): void {
@@ -124,8 +294,9 @@ export class CitGraphComponent {
     this.error.set(null);
     this.graphData.set(null);
     this.louvainResult.set(null);
-    this.showCommunities.set(false);
+    this.louvainLevel.set(0);
     this.selectedNodeId.set(null);
+    this.selectedClusterId.set(null);
 
     const request$ = this.demo.enabled()
       ? this.citgraphSvc.buildDemo(id, this.kHops(), this.maxPerHop())
@@ -271,12 +442,21 @@ export class CitGraphComponent {
       }))
       .filter(e => e.source >= 0 && e.target >= 0);
 
-    const result = louvain(nodes.length, edges);
+    const result = louvain(nodes.length, edges, {
+      resolution: this.resolution(),
+      maxLevels: this.maxLevels(),
+    });
     this.louvainResult.set(result);
-    this.louvainLevel.set(0);
-    this.showCommunities.set(true);
+    // Default to level 1 — the finest detected communities — so clusters are
+    // visible immediately. Level 0 (no clusters) remains selectable.
+    this.louvainLevel.set(result.levels.length ? 1 : 0);
+    this.selectedClusterId.set(null);
 
-    const comm = result.communities;
+    // Group the layout by the finest communities so nested hulls stay tidy at
+    // every level (coarser hulls then naturally enclose the finer ones).
+    const comm = result.levels.length
+      ? getCommunitiesAtLevel(result.levels, nodes.length, 0)
+      : nodes.map((_, i) => i);
     const updated = nodes.map((n, i) => ({ ...n, community: comm[i] }));
 
     const commCenters = new Map<number, { sx: number; sy: number; count: number }>();
@@ -301,48 +481,57 @@ export class CitGraphComponent {
 
   changeLouvainLevel(level: number): void {
     const result = this.louvainResult();
-    if (!result || result.levels.length === 0) return;
+    if (!result) return;
+    // Levels are precomputed: switching is a pure re-color of the existing
+    // hierarchy, no recomputation. Cluster ids differ per level, so any open
+    // cluster inspection is cleared. Display level 0 shows no clusters; level
+    // L (≥1) shows hierarchy index L-1.
     this.louvainLevel.set(level);
-    const comm = getCommunitiesAtLevel(result.levels, this.layoutNodes().length, level);
-    const updated = this.layoutNodes().map((n, i) => ({ ...n, community: comm[i] }));
-    this.layoutNodes.set(updated);
-  }
-
-  selectNode(node: LayoutNode): void {
-    this.selectedNodeId.set(this.selectedNodeId() === node.id ? null : node.id);
-  }
-
-  nodeColor(node: LayoutNode): string {
-    if (this.selectedNodeId() === node.id) return '#2563eb';
-    if (this.showCommunities()) {
-      return COMMUNITY_COLORS[node.community % COMMUNITY_COLORS.length];
+    this.selectedClusterId.set(null);
+    this.selectedNodeId.set(null);
+    if (level >= 1) {
+      const comm = getCommunitiesAtLevel(result.levels, this.layoutNodes().length, level - 1);
+      const updated = this.layoutNodes().map((n, i) => ({ ...n, community: comm[i] }));
+      this.layoutNodes.set(updated);
     }
-    return hopColor(node.data.hop);
   }
 
-  nodeRadius(node: LayoutNode): number {
-    const data = this.graphData();
-    if (data && node.id === data.seed_id) return 18;
-    return 12;
+  inspectCluster(clusterId: number): void {
+    this.selectedClusterId.set(this.selectedClusterId() === clusterId ? null : clusterId);
+    if (this.selectedClusterId() !== null) this.selectedNodeId.set(null);
   }
 
-  edgePath(edge: { source: string; target: string }): string {
-    const nodes = this.layoutNodes();
-    const from = nodes.find(n => n.id === edge.source);
-    const to = nodes.find(n => n.id === edge.target);
+  closeClusterPanel(): void {
+    this.selectedClusterId.set(null);
+  }
+
+  onNodeClick(node: DisplayNode): void {
+    if (node.kind === 'cluster' && node.clusterId !== null) {
+      this.inspectCluster(node.clusterId);
+    } else {
+      this.selectedNodeId.set(this.selectedNodeId() === node.id ? null : node.id);
+      if (this.selectedNodeId() !== null) this.selectedClusterId.set(null);
+    }
+  }
+
+  edgePath(edge: DisplayEdge): string {
+    const pos = this.displayNodePos();
+    const from = pos.get(edge.source);
+    const to = pos.get(edge.target);
     if (!from || !to) return '';
     return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
   }
 
-  isEdgeHighlighted(edge: { source: string; target: string }): boolean {
-    const sel = this.selectedNodeId();
-    if (!sel) return false;
-    return edge.source === sel || edge.target === sel;
+  isEdgeHighlighted(edge: DisplayEdge): boolean {
+    const a = this.activeDisplayId();
+    if (!a) return false;
+    return edge.source === a || edge.target === a;
   }
 
-  nodeLabel(node: LayoutNode): string {
-    const t = node.data.title;
-    return t.length > 22 ? t.slice(0, 20) + '...' : t;
+  isNodeDimmed(node: DisplayNode): boolean {
+    const a = this.activeDisplayId();
+    if (!a) return false;
+    return node.id !== a && !this.activeNeighbors().has(node.id);
   }
 
   authorLine(node: CitGraphNode): string {
@@ -380,6 +569,47 @@ export class CitGraphComponent {
       Math.min(Math.max(z + delta, CitGraphComponent.ZOOM_MIN), CitGraphComponent.ZOOM_MAX)
     );
   }
+
+  sendRepresentativesToGraph(): void {
+    if (!this.showCommunities()) return;
+    const nodes = this.layoutNodes();
+    const groups = new Map<number, LayoutNode[]>();
+    for (const n of nodes) {
+      let arr = groups.get(n.community);
+      if (!arr) { arr = []; groups.set(n.community, arr); }
+      arr.push(n);
+    }
+    const reps: Paper[] = [];
+    for (const [, members] of groups) {
+      if (!members.length) continue;
+      const sorted = members.map(m => {
+        const score = +(1.0 * Math.log10(1 + (m.data.citation_count || 0))).toFixed(2);
+        return { member: m, score };
+      }).sort((a, b) => b.score - a.score);
+      const repNode = sorted[0].member.data;
+      reps.push({
+        title: repNode.title,
+        authors: repNode.authors.map(a => ({ name: a, is_corresponding: false })),
+        abstract: repNode.abstract,
+        url: '',
+        year: repNode.year,
+        citation_count: repNode.citation_count,
+        reference_count: repNode.reference_count,
+        openalex_id: repNode.paper_id,
+        semantic_scholar_id: repNode.paper_id,
+        ok_score: sorted[0].score,
+        // Make sure required Paper fields have defaults
+        has_public_code: false,
+        is_peer_reviewed: false,
+        has_dataset: false,
+        repo_stars: 0,
+        is_open_access: false,
+      } as unknown as Paper);
+    }
+    this.searchState.addExternalGraphPapers(reps);
+    this.notify.show(`Sent ${reps.length} representatives to Graph`);
+    this.router.navigate(['/graph']);
+  }
 }
 
 function hopColor(hop: number): string {
@@ -387,52 +617,31 @@ function hopColor(hop: number): string {
   return colors[Math.min(hop, colors.length - 1)];
 }
 
-function convexHull(points: { x: number; y: number }[]): { x: number; y: number }[] {
-  if (points.length < 3) return points;
-  const sorted = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
-  const cross = (o: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }) =>
-    (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-  const lower: { x: number; y: number }[] = [];
-  for (const p of sorted) {
-    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
-    lower.push(p);
-  }
-  const upper: { x: number; y: number }[] = [];
-  for (const p of sorted.reverse()) {
-    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
-    upper.push(p);
-  }
-  lower.pop();
-  upper.pop();
-  return lower.concat(upper);
+function truncate(title: string): string {
+  return title.length > 22 ? title.slice(0, 20) + '...' : title;
 }
 
-function expandHull(hull: { x: number; y: number }[], padding: number): { x: number; y: number }[] {
-  if (hull.length < 3) return hull;
-  const cx = hull.reduce((s, p) => s + p.x, 0) / hull.length;
-  const cy = hull.reduce((s, p) => s + p.y, 0) / hull.length;
-  return hull.map(p => {
-    const dx = p.x - cx;
-    const dy = p.y - cy;
-    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-    return { x: p.x + (dx / dist) * padding, y: p.y + (dy / dist) * padding };
-  });
-}
-
-function hullToSmoothPath(hull: { x: number; y: number }[]): string {
-  if (hull.length < 3) return '';
-  const pts = [...hull, hull[0], hull[1]];
-  let d = `M ${pts[0].x} ${pts[0].y}`;
-  for (let i = 0; i < hull.length; i++) {
-    const p0 = pts[i];
-    const p1 = pts[i + 1];
-    const p2 = pts[i + 2];
-    const cx1 = p0.x + (p1.x - p0.x) * 0.5;
-    const cy1 = p0.y + (p1.y - p0.y) * 0.5;
-    const cx2 = p1.x + (p2.x - p1.x) * 0.5;
-    const cy2 = p1.y + (p2.y - p1.y) * 0.5;
-    d += ` Q ${p1.x} ${p1.y} ${(cx1 + cx2) / 2} ${(cy1 + cy2) / 2}`;
+// Resolve overlaps between collapsed cluster meta-nodes by pushing any pair
+// closer than their combined radii apart. Deterministic given the input.
+function spreadClusterNodes(nodes: DisplayNode[]): void {
+  const pad = 26;
+  for (let iter = 0; iter < 80; iter++) {
+    let moved = false;
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i], b = nodes[j];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+        const min = a.radius + b.radius + pad;
+        if (dist < min) {
+          const push = (min - dist) / 2;
+          const ux = dx / dist, uy = dy / dist;
+          a.x -= ux * push; a.y -= uy * push;
+          b.x += ux * push; b.y += uy * push;
+          moved = true;
+        }
+      }
+    }
+    if (!moved) break;
   }
-  d += ' Z';
-  return d;
 }

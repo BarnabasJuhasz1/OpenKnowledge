@@ -21,11 +21,13 @@ export class SearchComponent implements OnInit, AfterViewInit {
 
   onSearch(query: string): void {
     if (!query.trim()) return;
-    this.router.navigate(['/results'], { queryParams: { q: query, page: 1 } });
+    // Features live inside a project — funnel through the project picker,
+    // carrying the query so it can be run once a project is chosen.
+    this.router.navigate(['/dashboard/projects'], { queryParams: { q: query } });
   }
 
   startExploring(): void {
-    this.router.navigate(['/dashboard/search']);
+    this.router.navigate(['/dashboard/projects']);
   }
 
   ngOnInit(): void {

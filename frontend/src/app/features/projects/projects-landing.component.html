@@ -1,0 +1,128 @@
+<div class="projects">
+  <div class="projects__inner">
+    <header class="projects__header">
+      <div>
+        <h1 class="projects__title">My Projects</h1>
+        <p class="projects__subtitle">
+          A project keeps its own library, bookshelf, and saved queries. Create
+          one to get started.
+        </p>
+      </div>
+      @if (hasProjects() && !showForm()) {
+        <button class="projects__new-btn" (click)="openForm()">
+          <span class="material-symbols-outlined">add</span>
+          New project
+        </button>
+      }
+    </header>
+
+    @if (loading()) {
+      <p class="projects__muted">Loading projects…</p>
+    } @else {
+      <!-- Create form -->
+      @if (showForm() || !hasProjects()) {
+        <form class="project-form" (ngSubmit)="createProject()">
+          <h2 class="project-form__heading">
+            {{ hasProjects() ? 'Create a new project' : 'Create your first project' }}
+          </h2>
+
+          <label class="project-form__label" for="project-name">Name</label>
+          <input
+            id="project-name"
+            class="project-form__input"
+            type="text"
+            placeholder="e.g. LLM Compression Survey"
+            [ngModel]="name()"
+            (ngModelChange)="name.set($event)"
+            name="name"
+            autocomplete="off"
+          />
+
+          <label class="project-form__label" for="project-desc">Description (optional)</label>
+          <textarea
+            id="project-desc"
+            class="project-form__input project-form__textarea"
+            placeholder="What is this project about?"
+            [ngModel]="description()"
+            (ngModelChange)="description.set($event)"
+            name="description"
+            rows="2"
+          ></textarea>
+
+          <span class="project-form__label">Color</span>
+          <div class="project-form__colors">
+            @for (c of colors; track c) {
+              <button
+                type="button"
+                class="project-form__color"
+                [class.project-form__color--selected]="color() === c"
+                [style.background]="c"
+                (click)="color.set(c)"
+                [attr.aria-label]="'Choose color ' + c"
+              ></button>
+            }
+          </div>
+
+          <div class="project-form__actions">
+            <button
+              type="submit"
+              class="projects__new-btn"
+              [disabled]="!name().trim() || saving()"
+            >
+              {{ saving() ? 'Creating…' : 'Create project' }}
+            </button>
+            @if (hasProjects()) {
+              <button type="button" class="project-form__cancel" (click)="cancelForm()">
+                Cancel
+              </button>
+            }
+          </div>
+        </form>
+      }
+
+      <!-- Project grid -->
+      @if (hasProjects()) {
+        <div class="project-grid">
+          @for (project of projects(); track project.id) {
+            <article class="project-card" (click)="open(project)">
+              <span
+                class="project-card__dot"
+                [style.background]="project.color || '#6366f1'"
+              ></span>
+              <div class="project-card__body">
+                <h3 class="project-card__name">{{ project.name }}</h3>
+                @if (project.description) {
+                  <p class="project-card__desc">{{ project.description }}</p>
+                }
+              </div>
+              <button
+                class="project-card__delete"
+                title="Delete project"
+                (click)="confirmDelete(project, $event)"
+              >
+                <span class="material-symbols-outlined">delete</span>
+              </button>
+            </article>
+          }
+        </div>
+      }
+    }
+  </div>
+</div>
+
+<!-- Delete confirmation -->
+@if (pendingDelete(); as project) {
+  <div class="project-modal" (click)="cancelDelete()">
+    <div class="project-modal__box" (click)="$event.stopPropagation()">
+      <h3 class="project-modal__title">Delete project?</h3>
+      <p class="project-modal__text">
+        "{{ project.name }}" and all of its library, bookshelf, and saved
+        queries will be permanently removed.
+      </p>
+      <div class="project-modal__actions">
+        <button class="project-modal__cancel" (click)="cancelDelete()">Cancel</button>
+        <button class="project-modal__confirm" (click)="deleteProject()">Delete</button>
+      </div>
+    </div>
+  </div>
+}

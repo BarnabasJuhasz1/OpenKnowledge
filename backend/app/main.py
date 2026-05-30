@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from .db.database import init_db
+from .api.projects import router as projects_router
+from .api.keywords import router as keywords_router
 from .api.retrieval import router as retrieval_router
 from .api.scoring import router as scoring_router
 from .api.demo import router as demo_router
@@ -34,6 +36,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(projects_router, prefix="/api")
+app.include_router(keywords_router, prefix="/api")
 app.include_router(retrieval_router, prefix="/api")
 app.include_router(scoring_router, prefix="/api")
 app.include_router(demo_router, prefix="/api")

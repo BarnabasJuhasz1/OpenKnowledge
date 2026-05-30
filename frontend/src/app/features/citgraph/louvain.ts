@@ -4,10 +4,24 @@ export interface LouvainResult {
   modularity: number;
 }
 
+export interface LouvainOptions {
+  /** Resolution γ for the null-model term. >1 → more/smaller communities,
+   *  <1 → fewer/larger communities. Default 1. */
+  resolution?: number;
+  /** Hard cap on the number of hierarchy levels produced. The algorithm stops
+   *  once this many levels exist, even if a further pass would raise
+   *  modularity. Default 20. */
+  maxLevels?: number;
+}
+
 export function louvain(
   nodeCount: number,
   edges: { source: number; target: number; weight?: number }[],
+  options: LouvainOptions = {},
 ): LouvainResult {
+  const resolution = options.resolution && options.resolution > 0 ? options.resolution : 1;
+  const maxLevels = options.maxLevels && options.maxLevels > 0 ? Math.floor(options.maxLevels) : 20;
+
   if (nodeCount === 0) {
     return { levels: [], communities: [], modularity: 0 };
   }
@@ -47,7 +61,7 @@ export function louvain(
   let currentComm = community;
   let currentM2 = m2;
 
-  for (let level = 0; level < 10; level++) {
+  for (let level = 0; level < maxLevels; level++) {
     let improved = true;
     let iterations = 0;
 
@@ -64,13 +78,19 @@ export function louvain(
         const commWeights = new Map<number, number>();
         let selfComm = 0;
         for (const [j, w] of neighbors) {
+          // A node's self-loop (only present on aggregated super-nodes) is
+          // internal to the node and travels with it, so it is not a link to
+          // "other" members of its community — exclude it from the gain math.
+          if (j === i) continue;
           const cj = currentComm[j];
           commWeights.set(cj, (commWeights.get(cj) ?? 0) + w);
           if (cj === ci) selfComm += w;
         }
 
-        const sigmaTotCI = _sigmaTot(currentComm, currentKDeg, ci, currentNodes);
-        const removeCost = selfComm - (sigmaTotCI * ki) / currentM2;
+        // Cost of removing i from its own community: the community's total
+        // degree must exclude i itself (Σtot of ci \ {i}).
+        const sigmaTotCI = _sigmaTot(currentComm, currentKDeg, ci, currentNodes) - ki;
+        const removeCost = selfComm - (resolution * sigmaTotCI * ki) / currentM2;
 
         let bestComm = ci;
         let bestGain = 0;
@@ -78,7 +98,7 @@ export function louvain(
         for (const [cj, wj] of commWeights) {
           if (cj === ci) continue;
           const sigmaTotCJ = _sigmaTot(currentComm, currentKDeg, cj, currentNodes);
-          const gain = wj - (sigmaTotCJ * ki) / currentM2 - removeCost;
+          const gain = wj - (resolution * sigmaTotCJ * ki) / currentM2 - removeCost;
           if (gain > bestGain) {
             bestGain = gain;
             bestComm = cj;
@@ -100,10 +120,18 @@ export function louvain(
       if (!commMap.has(c)) commMap.set(c, nextId++);
       normalized[i] = commMap.get(c)!;
     }
+    const numComms = nextId;
+
+    // A pass that leaves every node in its own community produces no merge —
+    // the resulting level would be an identity map (and would render
+    // identically to the level below it). Drop it: stop without pushing for
+    // any level above the base. Level 0 is always kept since it is the base
+    // node→community assignment that the rest of the hierarchy composes from.
+    if (numComms === currentNodes && level > 0) break;
+
     currentComm = normalized;
     levels.push([...currentComm]);
 
-    const numComms = nextId;
     if (numComms === currentNodes) break;
 
     const newAdj = new Map<number, Map<number, number>>();
@@ -138,7 +166,7 @@ export function louvain(
     }
   }
 
-  const mod = _modularity(adj, finalComm, kDeg, m2, nodeCount);
+  const mod = _modularity(adj, finalComm, kDeg, m2, nodeCount, resolution);
 
   return { levels, communities: finalComm, modularity: mod };
 }
@@ -157,6 +185,7 @@ function _modularity(
   kDeg: Float64Array,
   m2: number,
   n: number,
+  resolution: number,
 ): number {
   let q = 0;
   for (let i = 0; i < n; i++) {
@@ -164,7 +193,7 @@ function _modularity(
     if (!neighbors) continue;
     for (const [j, w] of neighbors) {
       if (comm[i] === comm[j]) {
-        q += w - (kDeg[i] * kDeg[j]) / m2;
+        q += w - (resolution * kDeg[i] * kDeg[j]) / m2;
       }
     }
   }

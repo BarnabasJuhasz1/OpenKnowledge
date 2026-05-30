@@ -96,16 +96,59 @@
         <!-- Toolbar -->
         <div class="citgraph__toolbar">
           <div class="citgraph__toolbar-left">
-            <span class="citgraph__stats">{{ layoutNodes().length }} nodes, {{ layoutEdges().length }} edges</span>
+            <span class="citgraph__stats">
+              @if (showCommunities()) {
+                {{ displayNodes().length }} clusters · {{ layoutNodes().length }} papers
+              } @else {
+                {{ layoutNodes().length }} nodes, {{ layoutEdges().length }} edges
+              }
+            </span>
             <button
               class="citgraph__toolbar-btn"
-              [class.citgraph__toolbar-btn--active]="showCommunities()"
+              [class.citgraph__toolbar-btn--active]="louvainActive()"
               (click)="runLouvain()"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-              Louvain Clusters
+              {{ louvainActive() ? 'Re-run Louvain' : 'Louvain Clusters' }}
             </button>
-            @if (showCommunities() && louvainResult()) {
+            @if (showCommunities()) {
+              <button
+                class="citgraph__toolbar-btn"
+                (click)="sendRepresentativesToGraph()"
+                title="Send the highest OK-score paper from each visible cluster to the Graph tab"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                Send Reps to Graph
+              </button>
+            }
+
+            <!-- Hierarchical Louvain parameters -->
+            <div class="citgraph__louvain-params">
+              <div class="citgraph__param citgraph__param--inline">
+                <label class="citgraph__label" title="Resolution γ — higher splits into more, smaller communities; lower merges into fewer, larger ones.">Resolution</label>
+                <input
+                  class="citgraph__input citgraph__input--tiny"
+                  type="number"
+                  min="0.1"
+                  step="0.1"
+                  [value]="resolution()"
+                  (input)="resolution.set(+$any($event.target).value)"
+                />
+              </div>
+              <div class="citgraph__param citgraph__param--inline">
+                <label class="citgraph__label" title="Maximum hierarchy levels — clustering stops at this depth even if a further merge would raise modularity.">Max levels</label>
+                <input
+                  class="citgraph__input citgraph__input--tiny"
+                  type="number"
+                  min="1"
+                  step="1"
+                  [value]="maxLevels()"
+                  (input)="maxLevels.set(+$any($event.target).value)"
+                />
+              </div>
+            </div>
+
+            @if (louvainActive()) {
               <div class="citgraph__level-select">
                 <label class="citgraph__label">Level:</label>
                 <select
@@ -113,11 +156,11 @@
                   [value]="louvainLevel()"
                   (change)="changeLouvainLevel(+$any($event.target).value)"
                 >
-                  @for (lvl of louvainResult()!.levels; track $index) {
-                    <option [value]="$index">{{ $index }}</option>
+                  @for (lvl of levelOptions(); track lvl) {
+                    <option [value]="lvl">{{ lvl === 0 ? '0 · none' : lvl }}</option>
                   }
                 </select>
-                <span class="citgraph__modularity">Q={{ louvainResult()!.modularity.toFixed(3) }}</span>
+                <span class="citgraph__modularity" title="Modularity of the finest partition">Q={{ louvainResult()!.modularity.toFixed(3) }}</span>
               </div>
             }
           </div>
@@ -148,37 +191,24 @@
               [style.transform]="'scale(' + zoom() + ')'"
               [style.transform-origin]="'0 0'"
             >
-              <!-- Community hulls -->
-              @for (hull of hullPaths(); track hull.color) {
-                <path
-                  class="citgraph-svg__hull"
-                  [attr.d]="hull.path"
-                  [attr.fill]="hull.color"
-                  fill-opacity="0.08"
-                  [attr.stroke]="hull.color"
-                  stroke-opacity="0.25"
-                  stroke-width="1.5"
-                />
-              }
-
               <!-- Edges -->
-              @for (edge of layoutEdges(); track edge.source + edge.target) {
+              @for (edge of displayEdges(); track edge.source + edge.target) {
                 <path
                   class="citgraph-svg__edge-path"
                   [class.citgraph-svg__edge-path--highlighted]="isEdgeHighlighted(edge)"
-                  [class.citgraph-svg__edge-path--dimmed]="selectedNodeId() && !isEdgeHighlighted(edge)"
+                  [class.citgraph-svg__edge-path--dimmed]="activeDisplayId() && !isEdgeHighlighted(edge)"
                   [attr.d]="edgePath(edge)"
                   fill="none"
                 />
               }
 
-              <!-- Nodes -->
-              @for (node of layoutNodes(); track node.id) {
+              <!-- Nodes (papers at level 0, collapsed clusters at level ≥1) -->
+              @for (node of displayNodes(); track node.id) {
                 <g
                   class="citgraph-svg__node"
-                  [class.citgraph-svg__node--selected]="selectedNodeId() === node.id"
-                  [class.citgraph-svg__node--dimmed]="selectedNodeId() && selectedNodeId() !== node.id && !isEdgeHighlighted({ source: selectedNodeId()!, target: node.id }) && !isEdgeHighlighted({ source: node.id, target: selectedNodeId()! })"
-                  (click)="selectNode(node)"
+                  [class.citgraph-svg__node--selected]="activeDisplayId() === node.id"
+                  [class.citgraph-svg__node--dimmed]="isNodeDimmed(node)"
+                  (click)="onNodeClick(node)"
                   (mouseenter)="hoveredNodeId.set(node.id)"
                   (mouseleave)="hoveredNodeId.set(null)"
                   style="cursor: pointer"
@@ -187,19 +217,27 @@
                     class="citgraph-svg__circle"
                     [attr.cx]="node.x"
                     [attr.cy]="node.y"
-                    [attr.r]="nodeRadius(node)"
-                    [attr.fill]="nodeColor(node)"
-                    [attr.stroke]="selectedNodeId() === node.id ? '#1d4ed8' : nodeColor(node)"
-                    [attr.stroke-width]="selectedNodeId() === node.id ? 3 : 1.5"
+                    [attr.r]="node.radius"
+                    [attr.fill]="node.color"
+                    [attr.stroke]="activeDisplayId() === node.id ? '#1d4ed8' : node.color"
+                    [attr.stroke-width]="activeDisplayId() === node.id ? 3 : 1.5"
                     fill-opacity="0.85"
                   />
-                  @if (hoveredNodeId() === node.id || selectedNodeId() === node.id) {
+                  @if (node.kind === 'cluster') {
+                    <text
+                      class="citgraph-svg__node-count"
+                      [attr.x]="node.x"
+                      [attr.y]="node.y + 4"
+                      text-anchor="middle"
+                    >{{ node.count }}</text>
+                  }
+                  @if (hoveredNodeId() === node.id || activeDisplayId() === node.id) {
                     <text
                       class="citgraph-svg__node-label"
                       [attr.x]="node.x"
-                      [attr.y]="node.y + nodeRadius(node) + 14"
+                      [attr.y]="node.y + node.radius + 14"
                       text-anchor="middle"
-                    >{{ nodeLabel(node) }}</text>
+                    >{{ node.label }}</text>
                   }
                 </g>
               }
@@ -210,15 +248,76 @@
         <!-- Community legend -->
         @if (showCommunities() && communityLegend().length) {
           <div class="citgraph__legend">
-            <h5 class="citgraph__legend-title">Communities</h5>
+            <h5 class="citgraph__legend-title">Communities · click to inspect</h5>
             @for (c of communityLegend(); track c.id) {
-              <div class="citgraph__legend-item">
+              <button
+                type="button"
+                class="citgraph__legend-item"
+                [class.citgraph__legend-item--active]="selectedClusterId() === c.id"
+                (click)="inspectCluster(c.id)"
+              >
                 <span class="citgraph__legend-swatch" [style.background]="c.color"></span>
                 <span class="citgraph__legend-label">Cluster {{ c.id }}</span>
                 <span class="citgraph__legend-count">{{ c.count }}</span>
-              </div>
+              </button>
             }
           </div>
+        }
+
+        <!-- Cluster inspection panel -->
+        @if (clusterInspection(); as cluster) {
+          <aside class="citgraph__panel citgraph__panel--cluster">
+            <div class="citgraph__panel-header">
+              <h3 class="citgraph__panel-title">
+                <span class="citgraph__cluster-dot" [style.background]="cluster.color"></span>
+                Cluster {{ cluster.id }} · Level {{ cluster.level }}
+              </h3>
+              <button class="citgraph__panel-close" (click)="closeClusterPanel()">&times;</button>
+            </div>
+            <div class="citgraph__panel-body">
+              <div class="citgraph__panel-stats">
+                @if (cluster.level >= 2) {
+                  <div class="citgraph__panel-stat">
+                    <span class="citgraph__panel-stat-value">{{ cluster.subClusterCount }}</span>
+                    <span class="citgraph__panel-stat-label">Sub-clusters</span>
+                  </div>
+                }
+                <div class="citgraph__panel-stat">
+                  <span class="citgraph__panel-stat-value">{{ cluster.paperCount }}</span>
+                  <span class="citgraph__panel-stat-label">Papers</span>
+                </div>
+              </div>
+
+              @if (cluster.level >= 2 && cluster.subClusters.length) {
+                <div class="citgraph__panel-section">
+                  <h5 class="citgraph__panel-section-title">Sub-clusters (level {{ cluster.level - 1 }})</h5>
+                  <ul class="citgraph__cluster-list">
+                    @for (sc of cluster.subClusters; track sc.id) {
+                      <li class="citgraph__cluster-list-item">
+                        <span>Sub-cluster {{ sc.id }}</span>
+                        <span class="citgraph__legend-count">{{ sc.size }} {{ sc.size === 1 ? 'paper' : 'papers' }}</span>
+                      </li>
+                    }
+                  </ul>
+                </div>
+              }
+
+              <div class="citgraph__panel-section">
+                <h5 class="citgraph__panel-section-title">Papers ({{ cluster.paperCount }})</h5>
+                <ul class="citgraph__cluster-list">
+                  @for (p of cluster.papers; track p.id) {
+                    <li class="citgraph__cluster-list-item citgraph__cluster-list-item--paper">
+                      @if (p.isRepresentative) {
+                        <span style="font-weight: bold; color: #1d4ed8; margin-right: 4px;">★ Representative:</span>
+                      }
+                      {{ p.title }}
+                      <span style="color: #6b7280; font-size: 0.85em; margin-left: 4px;">(Score: {{ p.score }})</span>
+                    </li>
+                  }
+                </ul>
+              </div>
+            </div>
+          </aside>
         }
 
         <!-- Detail panel -->

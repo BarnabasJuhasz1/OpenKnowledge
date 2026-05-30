@@ -16,7 +16,14 @@ def _make_store() -> DemoCitGraphStore:
       Z is referenced by seed but absent from meta (must be skipped)
     """
     meta = {
-        pid: {"title": title, "authors": "['X']", "venue": "V", "year": "2020", "n_citation": cit}
+        pid: {
+            "title": title,
+            "abstract": f"Abstract for {title}",
+            "authors": "['X']",
+            "venue": "V",
+            "year": "2020",
+            "n_citation": cit,
+        }
         for pid, title, cit in [
             ("seed", "A digital watermark", "1359"),
             ("A", "Alpha", "10"),
@@ -107,7 +114,17 @@ async def test_node_fields_populated():
     result = await store.build("seed", k=1, max_per_hop=20)
     seed_node = next(n for n in result.nodes if n.paper_id == "seed")
     assert seed_node.title == "A digital watermark"
+    assert seed_node.abstract == "Abstract for A digital watermark"
     assert seed_node.citation_count == 1359
     assert seed_node.year == 2020
     assert seed_node.authors == ["X"]
     assert seed_node.reference_count == 3  # seed forward = [A, B, Z]
+
+
+@pytest.mark.asyncio
+async def test_blank_abstract_becomes_none():
+    store = _make_store()
+    store._index.meta["seed"]["abstract"] = ""
+    result = await store.build("seed", k=1, max_per_hop=20)
+    seed_node = next(n for n in result.nodes if n.paper_id == "seed")
+    assert seed_node.abstract is None

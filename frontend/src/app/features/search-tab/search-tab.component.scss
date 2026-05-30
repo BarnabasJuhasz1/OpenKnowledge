@@ -4,7 +4,7 @@
 
 .search-tab {
   height: calc(100vh - var(--ok-topnav-height));
-  overflow-y: auto;
+  overflow: hidden;
   background: var(--ok-bg);
 
   &__inner {

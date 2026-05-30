@@ -1,0 +1,30 @@
+.dash-home {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - var(--ok-topnav-height));
+  padding: var(--ok-space-8) var(--ok-space-6);
+  background: var(--ok-bg);
+
+  &__inner {
+    text-align: center;
+    color: var(--ok-on-surface-variant);
+  }
+
+  &__icon {
+    font-size: 56px;
+    color: var(--ok-outline-variant);
+  }
+
+  &__title {
+    margin: var(--ok-space-3) 0 var(--ok-space-2);
+    font-size: 26px;
+    font-weight: 800;
+    color: var(--ok-on-surface);
+  }
+
+  &__subtitle {
+    margin: 0;
+    font-size: 15px;
+  }
+}

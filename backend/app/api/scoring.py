@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.database import get_db
 from ..db.orm_models import DBPaper, DBPaperAuthor, DBAuthor
+from .deps import require_project
 from ..models.paper import (
     Author,
     PaperScoreResponse,
@@ -43,10 +44,13 @@ def _authors_from_db(db_paper: DBPaper) -> list[Author]:
 @router.post("/score-papers", response_model=ScorePapersResponse)
 async def score_papers(
     request: ScorePapersRequest,
+    project_id: int = Depends(require_project),
     db: AsyncSession = Depends(get_db),
 ) -> ScorePapersResponse:
-    """Bulk-score all papers in the database with the given weights."""
-    result = await db.execute(select(DBPaper))
+    """Bulk-score the active project's papers with the given weights."""
+    result = await db.execute(
+        select(DBPaper).where(DBPaper.project_id == project_id)
+    )
     db_papers: list[DBPaper] = list(result.scalars().all())
 
     if not db_papers:
@@ -110,10 +114,13 @@ async def paper_score(
     w_peer: float = Query(1.0),
     w_data: float = Query(1.0),
     w_stars: float = Query(1.0),
+    project_id: int = Depends(require_project),
     db: AsyncSession = Depends(get_db),
 ) -> PaperScoreResponse:
     """Score a single paper by fuzzy title match and return a breakdown."""
-    result = await db.execute(select(DBPaper))
+    result = await db.execute(
+        select(DBPaper).where(DBPaper.project_id == project_id)
+    )
     db_papers: list[DBPaper] = list(result.scalars().all())
 
     if not db_papers:

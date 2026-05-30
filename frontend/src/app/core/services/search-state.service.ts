@@ -92,6 +92,10 @@ export class SearchStateService {
   });
 
   readonly graphPaperIds = signal<Set<string>>(new Set());
+  /** Papers placed on the graph from outside the search results (e.g. cit-graph
+   *  cluster representatives), keyed by paperId. Rendered by the graph view in
+   *  addition to scored search results, without entering the results list. */
+  readonly externalGraphPapers = signal<Map<string, Paper>>(new Map());
   graphInitialized = false;
 
   readonly sortField = signal<SortField>('relevancy');
@@ -228,6 +232,13 @@ export class SearchStateService {
 
   readonly hasSearched = computed(() => this.rawQuery() !== '');
 
+  /** Whether the graph view has anything to render. True when a search has been
+   *  run, or when papers were placed onto the graph directly (e.g. cit-graph
+   *  cluster representatives), so the graph works without a prior search. */
+  readonly hasGraphContent = computed(
+    () => this.hasSearched() || this.externalGraphPapers().size > 0,
+  );
+
   readonly sourceStatuses = computed<SourceStatus[]>(() => {
     const loading = this.loading();
     const completed = this.sourcesCompleted();
@@ -268,6 +279,29 @@ export class SearchStateService {
       next.delete(id);
       return next;
     });
+  }
+
+  /** Add papers that are not part of the search results onto the graph. */
+  addExternalGraphPapers(papers: Paper[]): void {
+    if (!papers.length) return;
+    this.externalGraphPapers.update(prev => {
+      const next = new Map(prev);
+      for (const p of papers) next.set(paperId(p), p);
+      return next;
+    });
+    this.graphPaperIds.update(prev => {
+      const next = new Set(prev);
+      for (const p of papers) next.add(paperId(p));
+      return next;
+    });
+  }
+
+  /** Remove every node from the graph view. */
+  flushGraph(): void {
+    this.graphPaperIds.set(new Set());
+    this.externalGraphPapers.set(new Map());
+    // Keep the auto top-5 effect from immediately repopulating the graph.
+    this.graphInitialized = true;
   }
 
   /** Toggle a single database in/out of the selected set. */
@@ -322,6 +356,7 @@ export class SearchStateService {
     this.backgroundJobId.set(null);
     this.backgroundProgress.set({});
     this.graphPaperIds.set(new Set());
+    this.externalGraphPapers.set(new Map());
     this.graphInitialized = false;
     this.resetFilters();
   }

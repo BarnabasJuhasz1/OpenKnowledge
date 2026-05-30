@@ -2,11 +2,20 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { SearchRequest, SearchResponse, StreamEvent, BackgroundProgress, Paper } from '../models/paper.model';
+import { ProjectContextService } from './project-context.service';
 
 @Injectable({ providedIn: 'root' })
 export class RetrievalService {
   private readonly http = inject(HttpClient);
+  private readonly projectContext = inject(ProjectContextService);
   private readonly baseUrl = 'http://127.0.0.1:8000/api';
+
+  /** Append the active project id to a raw URL (fetch() bypasses the interceptor). */
+  private withProject(url: string): string {
+    const id = this.projectContext.activeProjectId();
+    if (id === null) return url;
+    return `${url}${url.includes('?') ? '&' : '?'}project_id=${id}`;
+  }
 
   search(request: SearchRequest): Observable<SearchResponse> {
     return this.http.post<SearchResponse>(`${this.baseUrl}/retrieval/search`, request);
@@ -20,7 +29,7 @@ export class RetrievalService {
     return new Observable<StreamEvent | { type: 'done'; data: any }>(subscriber => {
       const controller = new AbortController();
 
-      fetch(`${this.baseUrl}/retrieval/search/stream`, {
+      fetch(this.withProject(`${this.baseUrl}/retrieval/search/stream`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),

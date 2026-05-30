@@ -1,0 +1,156 @@
+// ============================================================================
+// AI prompt → keywords, with a .bib drop zone. Sits above the keyword box.
+// ============================================================================
+.prompt-kw {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ok-space-2);
+  margin-bottom: var(--ok-space-3);
+
+  // Textarea + .bib drop sit side by side and stretch to the same height.
+  &__row {
+    display: flex;
+    align-items: stretch;
+    gap: var(--ok-space-3);
+  }
+
+  &__label {
+    display: flex;
+    align-items: center;
+    gap: var(--ok-space-2);
+    font-family: var(--ok-font-label);
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--ok-on-surface-variant);
+
+    .material-symbols-outlined { font-size: 18px; color: var(--ok-primary); }
+  }
+
+  &__textarea {
+    flex: 1 1 auto;
+    min-width: 0;
+    resize: none;
+    padding: 0.7rem 0.85rem;
+    border: 1px solid var(--ok-outline-variant);
+    border-radius: var(--ok-radius-md);
+    background: var(--ok-surface);
+    color: var(--ok-on-surface);
+    font-family: var(--ok-font-body);
+    font-size: 0.95rem;
+    line-height: 1.5;
+
+    &:focus {
+      outline: none;
+      border-color: var(--ok-primary);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+    }
+
+    &:disabled { opacity: 0.6; }
+  }
+
+  &__btn {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ok-space-2);
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: var(--ok-radius-md);
+    background: var(--ok-gradient-primary);
+    color: #fff;
+    font-family: var(--ok-font-label);
+    font-weight: 700;
+    font-size: 0.85rem;
+    cursor: pointer;
+    box-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.3);
+    transition: transform var(--ok-transition), opacity var(--ok-transition);
+
+    .material-symbols-outlined { font-size: 18px; }
+
+    &:hover:not(:disabled) { transform: translateY(-1px); }
+    &:disabled { opacity: 0.5; cursor: not-allowed; }
+  }
+
+  // --- .bib drop zone --------------------------------------------------------
+  &__drop {
+    position: relative;
+    flex: 0 0 200px;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--ok-space-1);
+    padding: var(--ok-space-3);
+    text-align: center;
+    border: 1.5px dashed var(--ok-outline-variant);
+    border-radius: var(--ok-radius-md);
+    background: var(--ok-surface-container-lowest);
+    color: var(--ok-on-surface-variant);
+    transition: border-color var(--ok-transition), background var(--ok-transition);
+
+    &--active {
+      border-color: var(--ok-primary);
+      background: rgba(99, 102, 241, 0.08);
+    }
+
+    &--filled { border-style: solid; }
+  }
+
+  &__file { display: none; }
+
+  &__drop-icon {
+    font-size: 24px;
+    color: var(--ok-primary);
+  }
+
+  &__drop-text {
+    font-size: 0.78rem;
+    line-height: 1.4;
+  }
+
+  &__drop-browse {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--ok-primary);
+    font: inherit;
+    font-weight: 600;
+    text-decoration: underline;
+    cursor: pointer;
+    position: relative;
+    z-index: 1;
+  }
+
+  &__drop-name {
+    max-width: 100%;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--ok-on-surface);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__drop-clear {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    padding: 2px;
+    border: none;
+    border-radius: var(--ok-radius-full);
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--ok-on-surface-variant);
+    cursor: pointer;
+
+    .material-symbols-outlined { font-size: 16px; }
+    &:hover { color: var(--ok-on-surface); }
+  }
+}
+
+@media (max-width: 768px) {
+  .prompt-kw {
+    &__row { flex-direction: column; }
+    &__drop { flex-basis: auto; min-height: 90px; }
+  }
+}

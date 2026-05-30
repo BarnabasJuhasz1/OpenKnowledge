@@ -3,13 +3,16 @@
 // ============================================================================
 
 .library {
-  min-height: 100vh;
+  height: calc(100vh - var(--ok-topnav-height));
+  overflow: hidden;
   background: var(--ok-bg);
   display: flex;
   flex-direction: column;
 
   &__body {
     flex: 1;
+    min-height: 0;
+    overflow-y: auto;
     max-width: 800px;
     width: 100%;
     margin: 0 auto;

@@ -6,6 +6,7 @@
     </p>
 
     <div class="search-tab__search">
+      <app-prompt-keywords (generated)="onKeywordsGenerated($event)" />
       <app-query-input
         [initialQuery]="state.rawQuery()"
         [loading]="state.loading()"

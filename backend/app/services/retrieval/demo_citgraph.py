@@ -18,7 +18,7 @@ CSV_PATH = _HERE.parents[4] / "database" / "mock_papers.csv"
 CACHE_PATH = _HERE.parents[4] / "database" / "demo_citgraph_index.pkl"
 
 # Bump when the on-disk index layout changes so stale caches are rebuilt.
-_CACHE_VERSION = 1
+_CACHE_VERSION = 2
 
 _UUID_RE = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
@@ -113,6 +113,7 @@ class DemoCitGraphStore:
                 "id",
                 "references",
                 "title",
+                "abstract",
                 "authors",
                 "venue",
                 "year",
@@ -134,6 +135,7 @@ class DemoCitGraphStore:
                     reverse.setdefault(ref, []).append(pid)
             meta[pid] = {
                 "title": row.title,
+                "abstract": row.abstract,
                 "authors": row.authors,
                 "venue": row.venue,
                 "year": row.year,
@@ -191,6 +193,7 @@ class DemoCitGraphStore:
         return CitGraphNode(
             paper_id=pid,
             title=m["title"],
+            abstract=m.get("abstract") or None,
             year=_to_int(m["year"]),
             citation_count=_to_int(m["n_citation"]),
             reference_count=len(index.forward.get(pid, [])),

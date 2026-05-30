@@ -3,7 +3,8 @@
 // ============================================================================
 
 .graph-page {
-  min-height: 100vh;
+  height: calc(100vh - var(--ok-topnav-height));
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   background: var(--ok-bg);

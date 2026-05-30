@@ -7,40 +7,66 @@ export const routes: Routes = [
       import('./features/search/search.component').then(m => m.SearchComponent),
   },
   {
+    // Persistent dashboard shell — provides the left sidebar (Dashboard /
+    // My Projects / active-project features) around every child page.
     path: 'dashboard',
     loadComponent: () =>
       import('./features/dashboard/dashboard.component').then(m => m.DashboardComponent),
     children: [
-      { path: '', pathMatch: 'full', redirectTo: 'search' },
+      { path: '', pathMatch: 'full', redirectTo: 'home' },
+      // The "Dashboard" tab — an empty landing page for now.
       {
-        path: 'search',
+        path: 'home',
         loadComponent: () =>
-          import('./features/search-tab/search-tab.component').then(m => m.SearchTabComponent),
+          import('./features/dashboard-home/dashboard-home.component').then(
+            m => m.DashboardHomeComponent
+          ),
       },
+      // The "My Projects" tab — list / create / select projects.
       {
-        path: 'research',
+        path: 'projects',
         loadComponent: () =>
-          import('./features/results/results.component').then(m => m.ResultsComponent),
+          import('./features/projects/projects-landing.component').then(
+            m => m.ProjectsLandingComponent
+          ),
       },
+      // Everything inside a project is scoped by the :projectId segment.
+      // Componentless: feature pages render in the shell's outlet.
       {
-        path: 'relevancy',
-        loadComponent: () =>
-          import('./features/relevancy/relevancy.component').then(m => m.RelevancyComponent),
-      },
-      {
-        path: 'graph',
-        loadComponent: () =>
-          import('./features/graph/graph.component').then(m => m.GraphComponent),
-      },
-      {
-        path: 'library',
-        loadComponent: () =>
-          import('./features/library/library.component').then(m => m.LibraryComponent),
-      },
-      {
-        path: 'citgraph',
-        loadComponent: () =>
-          import('./features/citgraph/citgraph.component').then(m => m.CitGraphComponent),
+        path: ':projectId',
+        children: [
+          { path: '', pathMatch: 'full', redirectTo: 'search' },
+          {
+            path: 'search',
+            loadComponent: () =>
+              import('./features/search-tab/search-tab.component').then(m => m.SearchTabComponent),
+          },
+          {
+            path: 'research',
+            loadComponent: () =>
+              import('./features/results/results.component').then(m => m.ResultsComponent),
+          },
+          {
+            path: 'relevancy',
+            loadComponent: () =>
+              import('./features/relevancy/relevancy.component').then(m => m.RelevancyComponent),
+          },
+          {
+            path: 'graph',
+            loadComponent: () =>
+              import('./features/graph/graph.component').then(m => m.GraphComponent),
+          },
+          {
+            path: 'library',
+            loadComponent: () =>
+              import('./features/library/library.component').then(m => m.LibraryComponent),
+          },
+          {
+            path: 'citgraph',
+            loadComponent: () =>
+              import('./features/citgraph/citgraph.component').then(m => m.CitGraphComponent),
+          },
+        ],
       },
     ],
   },
@@ -49,11 +75,12 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./features/docs/documentation.component').then(m => m.DocumentationComponent),
   },
-  // Backwards-compatible redirects for the old top-level feature paths.
-  { path: 'results', redirectTo: 'dashboard/research' },
-  { path: 'relevancy', redirectTo: 'dashboard/relevancy' },
-  { path: 'graph', redirectTo: 'dashboard/graph' },
-  { path: 'library', redirectTo: 'dashboard/library' },
-  { path: 'citgraph', redirectTo: 'dashboard/citgraph' },
+  // Legacy feature paths can no longer resolve without a project — send the
+  // user to the project picker.
+  { path: 'results', redirectTo: 'dashboard/projects' },
+  { path: 'relevancy', redirectTo: 'dashboard/projects' },
+  { path: 'graph', redirectTo: 'dashboard/projects' },
+  { path: 'library', redirectTo: 'dashboard/projects' },
+  { path: 'citgraph', redirectTo: 'dashboard/projects' },
   { path: '**', redirectTo: '' },
 ];

@@ -7,43 +7,83 @@ from ...models.paper import Paper
 from ...db.orm_models import (
     DBAuthor, DBPaper, DBPaperAuthor, DBPaperKeyword,
     DBPaperReference, DBPaperVersion, DBRetrievalJob,
+    DBShelfItem, DBBookshelfItem, DBPaperNote,
 )
 
 
-async def flush_all(session: AsyncSession) -> None:
-    """Delete all papers and related data from the database."""
-    await session.execute(delete(DBPaperReference))
-    await session.execute(delete(DBPaperVersion))
-    await session.execute(delete(DBPaperKeyword))
-    await session.execute(delete(DBPaperAuthor))
-    await session.execute(delete(DBPaper))
-    await session.execute(delete(DBRetrievalJob))
+async def _delete_papers_for_project(session: AsyncSession, project_id: int) -> None:
+    """Delete a project's papers and their child rows (no commit)."""
+    paper_ids = (
+        await session.execute(
+            select(DBPaper.id).where(DBPaper.project_id == project_id)
+        )
+    ).scalars().all()
+    if paper_ids:
+        for child in (DBPaperReference, DBPaperVersion, DBPaperKeyword, DBPaperAuthor):
+            pid_col = (
+                child.citing_paper_id
+                if child is DBPaperReference
+                else child.paper_id
+            )
+            await session.execute(delete(child).where(pid_col.in_(paper_ids)))
+        await session.execute(delete(DBPaper).where(DBPaper.id.in_(paper_ids)))
+
+
+async def flush_all(session: AsyncSession, project_id: int) -> None:
+    """Delete a project's papers, related data, and retrieval jobs."""
+    await _delete_papers_for_project(session, project_id)
+    await session.execute(
+        delete(DBRetrievalJob).where(DBRetrievalJob.project_id == project_id)
+    )
     await session.commit()
 
 
-async def upsert_papers(session: AsyncSession, papers: list[Paper]) -> None:
-    """Persist papers to the database, upserting on DOI."""
+async def delete_project_data(session: AsyncSession, project_id: int) -> None:
+    """Remove every record owned by a project (used when deleting a project)."""
+    await _delete_papers_for_project(session, project_id)
+    await session.execute(
+        delete(DBRetrievalJob).where(DBRetrievalJob.project_id == project_id)
+    )
+    await session.execute(
+        delete(DBShelfItem).where(DBShelfItem.project_id == project_id)
+    )
+    await session.execute(
+        delete(DBBookshelfItem).where(DBBookshelfItem.project_id == project_id)
+    )
+    await session.execute(
+        delete(DBPaperNote).where(DBPaperNote.project_id == project_id)
+    )
+    await session.commit()
+
+
+async def upsert_papers(
+    session: AsyncSession, papers: list[Paper], project_id: int
+) -> None:
+    """Persist papers to the database, upserting on DOI within the project."""
     for paper in papers:
-        await _upsert_paper(session, paper)
+        await _upsert_paper(session, paper, project_id)
     await session.commit()
 
 
-async def _upsert_paper(session: AsyncSession, paper: Paper) -> DBPaper:
-    # Try to find existing record
+async def _upsert_paper(
+    session: AsyncSession, paper: Paper, project_id: int
+) -> DBPaper:
+    # Try to find an existing record within this project
+    scope = lambda stmt: stmt.where(DBPaper.project_id == project_id)
     db_paper: DBPaper | None = None
     if paper.doi:
-        result = await session.execute(select(DBPaper).where(DBPaper.doi == paper.doi))
+        result = await session.execute(scope(select(DBPaper).where(DBPaper.doi == paper.doi)))
         db_paper = result.scalar_one_or_none()
     if db_paper is None and paper.arxiv_id:
-        result = await session.execute(select(DBPaper).where(DBPaper.arxiv_id == paper.arxiv_id))
+        result = await session.execute(scope(select(DBPaper).where(DBPaper.arxiv_id == paper.arxiv_id)))
         db_paper = result.scalar_one_or_none()
     if db_paper is None and paper.semantic_scholar_id:
-        result = await session.execute(select(DBPaper).where(DBPaper.semantic_scholar_id == paper.semantic_scholar_id))
+        result = await session.execute(scope(select(DBPaper).where(DBPaper.semantic_scholar_id == paper.semantic_scholar_id)))
         db_paper = result.scalar_one_or_none()
 
     is_new = db_paper is None
     if is_new:
-        db_paper = DBPaper()
+        db_paper = DBPaper(project_id=project_id)
         session.add(db_paper)
 
     # Only fill in fields that are currently None (never overwrite with lower-quality data)
@@ -160,8 +200,10 @@ async def save_job(
     databases: list[str],
     n_results: int,
     failed_sources: list[str],
+    project_id: int,
 ) -> DBRetrievalJob:
     job = DBRetrievalJob(
+        project_id=project_id,
         query_text=" ".join(keywords),
         keywords=json.dumps(keywords),
         databases_used=json.dumps(databases),

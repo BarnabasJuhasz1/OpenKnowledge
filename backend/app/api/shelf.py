@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.database import get_db
 from ..db.orm_models import DBShelfItem
+from .deps import require_project
 
 router = APIRouter(prefix="/shelf", tags=["shelf"])
 
@@ -34,17 +35,26 @@ class ShelfItemOut(BaseModel):
 
 
 @router.get("", response_model=list[ShelfItemOut])
-async def list_shelf(db: AsyncSession = Depends(get_db)):
+async def list_shelf(
+    project_id: int = Depends(require_project), db: AsyncSession = Depends(get_db)
+):
     result = await db.execute(
-        select(DBShelfItem).order_by(DBShelfItem.last_used_at.desc())
+        select(DBShelfItem)
+        .where(DBShelfItem.project_id == project_id)
+        .order_by(DBShelfItem.last_used_at.desc())
     )
     return result.scalars().all()
 
 
 @router.get("/recent", response_model=list[ShelfItemOut])
-async def recent_shelf(limit: int = 5, db: AsyncSession = Depends(get_db)):
+async def recent_shelf(
+    limit: int = 5,
+    project_id: int = Depends(require_project),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(
         select(DBShelfItem)
+        .where(DBShelfItem.project_id == project_id)
         .order_by(DBShelfItem.last_used_at.desc())
         .limit(limit)
     )
@@ -52,14 +62,22 @@ async def recent_shelf(limit: int = 5, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("", response_model=ShelfItemOut, status_code=201)
-async def create_shelf_item(body: ShelfItemCreate, db: AsyncSession = Depends(get_db)):
+async def create_shelf_item(
+    body: ShelfItemCreate,
+    project_id: int = Depends(require_project),
+    db: AsyncSession = Depends(get_db),
+):
     query_text = body.query_text.strip()
     existing = await db.execute(
-        select(DBShelfItem).where(DBShelfItem.query_text == query_text)
+        select(DBShelfItem).where(
+            DBShelfItem.project_id == project_id,
+            DBShelfItem.query_text == query_text,
+        )
     )
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Query already on shelf")
     item = DBShelfItem(
+        project_id=project_id,
         query_text=query_text,
         label=body.label or query_text,
     )
@@ -71,9 +89,16 @@ async def create_shelf_item(body: ShelfItemCreate, db: AsyncSession = Depends(ge
 
 @router.put("/{item_id}", response_model=ShelfItemOut)
 async def update_shelf_item(
-    item_id: int, body: ShelfItemUpdate, db: AsyncSession = Depends(get_db)
+    item_id: int,
+    body: ShelfItemUpdate,
+    project_id: int = Depends(require_project),
+    db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(DBShelfItem).where(DBShelfItem.id == item_id))
+    result = await db.execute(
+        select(DBShelfItem).where(
+            DBShelfItem.id == item_id, DBShelfItem.project_id == project_id
+        )
+    )
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Shelf item not found")
@@ -87,8 +112,16 @@ async def update_shelf_item(
 
 
 @router.put("/{item_id}/use", response_model=ShelfItemOut)
-async def use_shelf_item(item_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(DBShelfItem).where(DBShelfItem.id == item_id))
+async def use_shelf_item(
+    item_id: int,
+    project_id: int = Depends(require_project),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(DBShelfItem).where(
+            DBShelfItem.id == item_id, DBShelfItem.project_id == project_id
+        )
+    )
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Shelf item not found")
@@ -100,8 +133,16 @@ async def use_shelf_item(item_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/{item_id}", status_code=204)
-async def delete_shelf_item(item_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(DBShelfItem).where(DBShelfItem.id == item_id))
+async def delete_shelf_item(
+    item_id: int,
+    project_id: int = Depends(require_project),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(DBShelfItem).where(
+            DBShelfItem.id == item_id, DBShelfItem.project_id == project_id
+        )
+    )
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Shelf item not found")
