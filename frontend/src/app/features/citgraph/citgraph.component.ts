@@ -9,6 +9,7 @@ import { Router } from '@angular/router';
 import { NotificationService } from '../../core/services/notification.service';
 import { OkGraphStateService } from '../../core/services/okgraph-state.service';
 import { ProjectContextService } from '../../core/services/project-context.service';
+import { getArchetypeIcon } from '../../shared/utils/archetype-icons';
 
 interface LayoutNode {
   id: string;
@@ -63,6 +64,10 @@ export class CitGraphComponent {
   private readonly okGraphState = inject(OkGraphStateService);
   private readonly projectContext = inject(ProjectContextService);
   private readonly elRef = inject(ElementRef);
+
+  getArchetypeIcon(archetype?: string | null): string {
+    return getArchetypeIcon(archetype);
+  }
 
   readonly bookshelfOpen = signal(false);
   readonly bookshelfItems = signal<BookshelfItem[]>([]);

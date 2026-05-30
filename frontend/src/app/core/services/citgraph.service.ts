@@ -17,6 +17,8 @@ export interface CitGraphNode {
   pdf_url: string | null;
   fields_of_study: string[];
   hop: number;
+  predicted_main_archetype?: string | null;
+  predicted_second_tier_archetype?: string | null;
 }
 
 export interface CitGraphEdge {

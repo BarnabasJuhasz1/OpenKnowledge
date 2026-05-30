@@ -49,11 +49,14 @@
 
   &__canvas {
     flex: 1;
-    overflow: auto;
-    padding: 1rem;
-  }
+    min-height: 0;
+    overflow: hidden;
+    position: relative;
+    cursor: grab;
+    user-select: none;
 
-  &__svg-wrap { flex-shrink: 0; }
+    &--panning { cursor: grabbing; }
+  }
 }
 
 // Zoom controls
@@ -135,13 +138,12 @@
     font-family: inherit;
   }
 
-  &__edge {
-    stroke: var(--ok-outline-variant);
-    stroke-width: 2;
-    transition: stroke 0.2s, opacity 0.2s;
+  &__axis-bg { fill: var(--ok-bg); }
+  &__axis-rule { stroke: var(--ok-outline-variant); stroke-width: 1; }
 
-    &--highlighted { stroke: var(--ok-primary-raw); stroke-width: 2.5; }
-    &--dimmed { opacity: 0.15; }
+  &__edge {
+    stroke-width: 2;
+    transition: stroke 0.2s;
   }
 
   &__node {
@@ -149,42 +151,26 @@
     &--dimmed { opacity: 0.25; }
   }
 
+  // Fill/stroke are bound per node (cluster colour) via attributes, so no
+  // colour is set here — CSS would otherwise override the attributes.
   &__circle {
-    fill: var(--ok-surface-container-high);
-    stroke: var(--ok-outline);
-    stroke-width: 2;
-    transition: all 0.2s;
-
-    .graph-svg__node:hover & {
-      fill: rgba(99, 102, 241, 0.15);
-      stroke: var(--ok-primary-raw);
-      stroke-width: 2.5;
-    }
-    .graph-svg__node--selected & {
-      fill: var(--ok-primary-raw);
-      stroke: #4f46e5;
-      stroke-width: 3;
-    }
-    .graph-svg__node--connected & {
-      fill: rgba(99, 102, 241, 0.15);
-      stroke: rgba(99, 102, 241, 0.5);
-      stroke-width: 2.5;
-    }
+    transition: fill 0.15s, stroke 0.15s;
   }
 
   &__node-letter {
     fill: var(--ok-on-surface);
     font-size: 15px;
     font-weight: 800;
-    font-family: inherit;
+    font-family: 'Material Symbols Outlined', inherit;
     pointer-events: none;
+
     .graph-svg__node--selected & { fill: #fff; }
   }
 
   &__node-score {
     fill: var(--ok-outline);
-    font-size: 8px;
-    font-weight: 600;
+    font-size: 10px;
+    font-weight: 700;
     font-family: inherit;
     pointer-events: none;
     .graph-svg__node--selected & { fill: rgba(255, 255, 255, 0.8); }
@@ -395,7 +381,7 @@
     border-radius: var(--ok-radius-sm);
     background: var(--ok-primary-raw);
     color: #fff;
-    font-size: 0.78rem;
+    font-size: 16px;
     font-weight: 800;
   }
 
@@ -450,6 +436,8 @@
     background: var(--ok-surface-container-high);
     color: var(--ok-on-surface-variant);
     &--venue { background: rgba(99, 102, 241, 0.15); color: var(--ok-primary); }
+    &--archetype-main { background: rgba(168, 85, 247, 0.15); color: var(--ok-secondary); border: 1px solid rgba(168, 85, 247, 0.25); }
+    &--archetype-second { background: rgba(14, 165, 233, 0.12); color: var(--ok-tertiary); border: 1px solid rgba(14, 165, 233, 0.2); }
   }
 
   &__section { display: flex; flex-direction: column; gap: 0.35rem; }
@@ -487,7 +475,7 @@
   }
 
   &__stat-value {
-    font-size: 1.05rem;
+    font-size: 1.25rem;
     font-weight: 800;
     color: var(--ok-on-surface);
     font-variant-numeric: tabular-nums;

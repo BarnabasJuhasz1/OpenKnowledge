@@ -426,6 +426,18 @@
 
       &:hover { background: rgba(99, 102, 241, 0.25); text-decoration: none; }
     }
+
+    &--archetype-main {
+      background: rgba(168, 85, 247, 0.15);
+      border: 1px solid rgba(168, 85, 247, 0.3);
+      color: var(--ok-secondary);
+    }
+
+    &--archetype-second {
+      background: rgba(14, 165, 233, 0.12);
+      border: 1px solid rgba(14, 165, 233, 0.25);
+      color: var(--ok-tertiary);
+    }
   }
 
   // Delete confirmation modal

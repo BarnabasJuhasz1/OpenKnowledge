@@ -27,6 +27,7 @@ export interface FilterState {
   codeOnly: boolean;
   peerReviewedOnly: boolean;
   openAccessOnly: boolean;
+  archetype: string | null;
 }
 
 export function paperId(p: Paper): string {
@@ -107,6 +108,7 @@ export class SearchStateService {
     codeOnly: false,
     peerReviewedOnly: false,
     openAccessOnly: false,
+    archetype: null,
   });
 
   readonly totalRaw = computed(() => {
@@ -191,6 +193,7 @@ export class SearchStateService {
       if (f.codeOnly && !p.has_public_code && !p.code_url) return false;
       if (f.peerReviewedOnly && !p.is_peer_reviewed) return false;
       if (f.openAccessOnly && !p.is_open_access) return false;
+      if (f.archetype && p.predicted_main_archetype !== f.archetype && p.predicted_second_tier_archetype !== f.archetype) return false;
       return true;
     });
 
@@ -335,6 +338,7 @@ export class SearchStateService {
       codeOnly: false,
       peerReviewedOnly: false,
       openAccessOnly: false,
+      archetype: null,
     });
     this.sortField.set('relevancy');
     this.selectedSources.set(new Set(ALL_SOURCES));

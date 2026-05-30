@@ -23,6 +23,8 @@ def _make_store() -> DemoCitGraphStore:
             "venue": "V",
             "year": "2020",
             "n_citation": cit,
+            "predicted_main_archetype": "The Combiner" if pid == "seed" else "None",
+            "predicted_second_tier_archetype": "Algorithm/Architecture" if pid == "seed" else "None",
         }
         for pid, title, cit in [
             ("seed", "A digital watermark", "1359"),
@@ -119,6 +121,12 @@ async def test_node_fields_populated():
     assert seed_node.year == 2020
     assert seed_node.authors == ["X"]
     assert seed_node.reference_count == 3  # seed forward = [A, B, Z]
+    assert seed_node.predicted_main_archetype == "The Combiner"
+    assert seed_node.predicted_second_tier_archetype == "Algorithm/Architecture"
+
+    a_node = next(n for n in result.nodes if n.paper_id == "A")
+    assert a_node.predicted_main_archetype is None
+    assert a_node.predicted_second_tier_archetype is None
 
 
 @pytest.mark.asyncio

@@ -1,22 +1,12 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
-import { OkGraphStateService } from '../../core/services/okgraph-state.service';
+import { OkGraphStateService, PlacedNode } from '../../core/services/okgraph-state.service';
 import { getCommunitiesAtLevel } from '../citgraph/louvain';
 import { Paper } from '../../core/models/paper.model';
 import { citNodeToPaper, repScore } from './cit-node';
-import { clusterColor } from './community-colors';
+import { clusterColor, lighten, withAlpha } from './community-colors';
 import { edgePath as buildEdgePath, LayoutEdge, TOP_PADDING } from '../graph/graph-layout';
-
-/** A node placed on the OK-Graph: the representative of a Louvain cluster. */
-interface PlacedNode {
-  id: string;          // representative paper_id
-  repIndex: number;    // base node index of the representative
-  level: number;       // Louvain hierarchy index the cluster lives at (-1 = leaf paper)
-  community: number;   // community id at that level (or base index for a leaf)
-  topCluster: number;  // highest-level community this node belongs to (its lane)
-  paper: Paper;
-  clusterSize: number; // number of base papers in the cluster
-}
+import { getArchetypeIcon } from '../../shared/utils/archetype-icons';
 
 interface Blob {
   topCluster: number;
@@ -34,6 +24,8 @@ interface RenderNode {
   x: number;
   y: number;
   letter: string;
+  color: string;       // cluster colour
+  colorStrong: string; // higher-contrast variant for highlights
 }
 
 interface ExpandPopup {
@@ -61,24 +53,49 @@ const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 export class OkGraphComponent {
   readonly state = inject(OkGraphStateService);
 
+  getArchetypeIcon(archetype?: string | null): string {
+    return getArchetypeIcon(archetype);
+  }
+
   readonly TOP_PADDING = TOP_PADDING;
   readonly selectedNodeId = signal<string | null>(null);
   readonly hoveredNodeId = signal<string | null>(null);
   readonly panelCollapsed = signal(false);
   readonly zoom = signal(1);
+  readonly panX = signal(0);
+  readonly panY = signal(0);
   readonly expandPopup = signal<ExpandPopup | null>(null);
+  readonly panning = signal(false);
 
   private static readonly ZOOM_MIN = 0.3;
-  private static readonly ZOOM_MAX = 2;
+  private static readonly ZOOM_MAX = 3;
   private static readonly ZOOM_STEP = 0.15;
+  private static readonly AXIS_HEIGHT = 40;
 
-  /** Nodes currently on the canvas and the manual links between them. */
-  private readonly placed = signal<PlacedNode[]>([]);
-  private readonly links = signal<LayoutEdge[]>([]);
+  readonly AXIS_HEIGHT = OkGraphComponent.AXIS_HEIGHT;
+
+  /** Transform applied to the graph content layer (pan + zoom). */
+  readonly contentTransform = computed(
+    () => `translate(${this.panX()}, ${this.panY()}) scale(${this.zoom()})`,
+  );
+
+  /** Screen-space x of a world x (for the sticky year axis). */
+  axisX(worldX: number): number {
+    return this.panX() + worldX * this.zoom();
+  }
+
+  // Drag-to-pan bookkeeping.
+  private dragging = false;
+  private dragStartX = 0;
+  private dragStartY = 0;
+  private panStartX = 0;
+  private panStartY = 0;
+
+  // Placed nodes / links live in the (persistent) OkGraphStateService so
+  // exploration survives navigating away from and back to the sub-tab.
 
   private clickTimer: ReturnType<typeof setTimeout> | null = null;
   private expandClickTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  private seededFor: unknown = null;
 
   // --- hierarchy helpers -----------------------------------------------------
 
@@ -100,11 +117,12 @@ export class OkGraphComponent {
   });
 
   constructor() {
-    // Re-seed the top-level representatives whenever a new hierarchy arrives.
+    // Seed the top-level representatives once per dataset. setHierarchy() clears
+    // placed[], so a fresh send re-seeds; returning to the tab with existing
+    // placed nodes keeps them (they persist in the service).
     effect(() => {
       const lv = this.state.louvain();
-      if (lv !== this.seededFor) {
-        this.seededFor = lv;
+      if (lv && this.state.placed().length === 0) {
         this.seedTopLevel();
       }
     }, { allowSignalWrites: true });
@@ -150,7 +168,7 @@ export class OkGraphComponent {
     this.expandPopup.set(null);
     const levels = this.levels();
     if (!levels.length || !this.baseNodes().length) {
-      this.placed.set([]); this.links.set([]); return;
+      this.state.placed.set([]); this.state.links.set([]); return;
     }
     const topLevel = levels.length - 1;
     const comm = this.communitiesAtLevel()(topLevel);
@@ -162,8 +180,8 @@ export class OkGraphComponent {
       const rep = this.repIndexOfCluster(topLevel, c);
       if (rep >= 0) placed.push(this.buildPlaced(topLevel, c, rep));
     }
-    this.placed.set(placed);
-    this.links.set([]);
+    this.state.placed.set(placed);
+    this.state.links.set([]);
   }
 
   /**
@@ -181,7 +199,7 @@ export class OkGraphComponent {
   private siblingRecommendations(node: PlacedNode): PlacedNode[] {
     const r = node.repIndex;
     if (r < 0) return [];
-    const placedIds = new Set(this.placed().map(p => p.id));
+    const placedIds = new Set(this.state.placed().map(p => p.id));
 
     for (let d = node.level; d >= 0; d--) {
       const commD = this.communitiesAtLevel()(d);
@@ -223,19 +241,19 @@ export class OkGraphComponent {
   }
 
   private addCandidate(parent: PlacedNode, cand: PlacedNode): void {
-    this.placed.update(p => [...p, cand]);
-    this.links.update(l => [...l, { fromId: parent.id, toId: cand.id }]);
+    this.state.placed.update(p => [...p, cand]);
+    this.state.links.update(l => [...l, { fromId: parent.id, toId: cand.id }]);
   }
 
   // --- swimlane layout -------------------------------------------------------
   // One horizontal lane per highest-level cluster; x is by year, y is the node's
   // lane (stacked within the lane when several share a lane + year).
 
-  private readonly placedById = computed(() => new Map(this.placed().map(p => [p.id, p])));
+  private readonly placedById = computed(() => new Map(this.state.placed().map(p => [p.id, p])));
 
   private readonly laneLayout = computed(() => {
     const levels = this.levels();
-    const placed = this.placed().filter(p => p.paper.year != null);
+    const placed = this.state.placed().filter(p => p.paper.year != null);
     const empty = {
       nodes: [] as RenderNode[], edges: [] as LayoutEdge[],
       yearColumns: [] as { year: number; x: number }[],
@@ -290,7 +308,12 @@ export class OkGraphComponent {
       members.forEach((p, j) => {
         const x = yearX.get(p.paper.year!)!;
         const y = laneCenter + (j - (k - 1) / 2) * LANE_NODE_VGAP;
-        nodes.push({ id: p.id, paper: p.paper, x, y, letter: letterOf.get(p.id) ?? '?' });
+        const color = clusterColor(p.topCluster);
+        nodes.push({
+          id: p.id, paper: p.paper, x, y,
+          letter: letterOf.get(p.id) ?? '?',
+          color, colorStrong: lighten(color),
+        });
         const b = boxes.get(p.topCluster);
         if (!b) boxes.set(p.topCluster, { minX: x, maxX: x, minY: y, maxY: y });
         else {
@@ -331,7 +354,7 @@ export class OkGraphComponent {
     const known = new Set(placed.map(p => p.id));
     const seen = new Set<string>();
     const edges: LayoutEdge[] = [];
-    for (const e of this.links()) {
+    for (const e of this.state.links()) {
       if (!known.has(e.fromId) || !known.has(e.toId)) continue;
       const key = e.fromId < e.toId ? `${e.fromId}|${e.toId}` : `${e.toId}|${e.fromId}`;
       if (seen.has(key)) continue;
@@ -358,7 +381,7 @@ export class OkGraphComponent {
   private readonly nodeMap = computed(() => new Map(this.nodes().map(n => [n.id, n])));
 
   readonly hasContent = computed(() => this.state.hasContent());
-  readonly placedCount = computed(() => this.placed().length);
+  readonly placedCount = computed(() => this.state.placed().length);
 
   readonly selectedPaper = computed<Paper | null>(() => {
     const id = this.selectedNodeId();
@@ -430,8 +453,8 @@ export class OkGraphComponent {
       nodeId: node.id,
       direction,
       candidates,
-      x: offsetX * this.zoom(),
-      y: (node.y + 16) * this.zoom(),
+      x: this.panX() + offsetX * this.zoom(),
+      y: this.panY() + (node.y + 16) * this.zoom(),
     });
   }
 
@@ -467,8 +490,8 @@ export class OkGraphComponent {
   removeSelectedNode(): void {
     const id = this.selectedNodeId();
     if (!id) return;
-    this.placed.update(p => p.filter(n => n.id !== id));
-    this.links.update(l => l.filter(e => e.fromId !== id && e.toId !== id));
+    this.state.placed.update(p => p.filter(n => n.id !== id));
+    this.state.links.update(l => l.filter(e => e.fromId !== id && e.toId !== id));
     this.selectedNodeId.set(null);
   }
 
@@ -516,21 +539,80 @@ export class OkGraphComponent {
   closePanel(): void { this.selectedNodeId.set(null); }
   togglePanel(): void { this.panelCollapsed.update(v => !v); }
 
-  zoomIn(): void {
-    this.zoom.update(z => Math.min(z + OkGraphComponent.ZOOM_STEP, OkGraphComponent.ZOOM_MAX));
+  private lastW = 800;
+  private lastH = 500;
+
+  private applyZoom(newZoom: number, cx: number, cy: number): void {
+    const z = this.zoom();
+    const clamped = Math.min(Math.max(newZoom, OkGraphComponent.ZOOM_MIN), OkGraphComponent.ZOOM_MAX);
+    if (clamped === z) return;
+    // Keep the world point under the cursor fixed on screen.
+    this.panX.set(cx - (cx - this.panX()) * (clamped / z));
+    this.panY.set(cy - (cy - this.panY()) * (clamped / z));
+    this.zoom.set(clamped);
   }
-  zoomOut(): void {
-    this.zoom.update(z => Math.max(z - OkGraphComponent.ZOOM_STEP, OkGraphComponent.ZOOM_MIN));
+
+  /** Plain wheel = zoom in/out, centred on the cursor. */
+  onWheel(event: WheelEvent): void {
+    event.preventDefault();
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    this.lastW = rect.width;
+    this.lastH = rect.height;
+    const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+    this.applyZoom(this.zoom() * factor, event.clientX - rect.left, event.clientY - rect.top);
   }
-  resetZoom(): void { this.zoom.set(1); }
+
+  onPanStart(event: MouseEvent): void {
+    const t = event.target as Element;
+    // Let nodes / arrows / controls handle their own clicks.
+    if (t.closest('.graph-svg__node') || t.closest('.zoom-controls') || t.closest('.expand-popup')) {
+      return;
+    }
+    this.expandPopup.set(null);
+    this.dragging = true;
+    this.panning.set(true);
+    this.dragStartX = event.clientX;
+    this.dragStartY = event.clientY;
+    this.panStartX = this.panX();
+    this.panStartY = this.panY();
+  }
+
+  onPanMove(event: MouseEvent): void {
+    if (!this.dragging) return;
+    this.panX.set(this.panStartX + (event.clientX - this.dragStartX));
+    this.panY.set(this.panStartY + (event.clientY - this.dragStartY));
+  }
+
+  onPanEnd(): void {
+    this.dragging = false;
+    this.panning.set(false);
+  }
+
+  zoomIn(): void { this.applyZoom(this.zoom() * 1.2, this.lastW / 2, this.lastH / 2); }
+  zoomOut(): void { this.applyZoom(this.zoom() / 1.2, this.lastW / 2, this.lastH / 2); }
+  resetZoom(): void { this.zoom.set(1); this.panX.set(0); this.panY.set(0); }
   get zoomPercent(): number { return Math.round(this.zoom() * 100); }
 
-  onCanvasWheel(event: WheelEvent): void {
-    if (!event.ctrlKey && !event.metaKey) return;
-    event.preventDefault();
-    const delta = -Math.sign(event.deltaY) * OkGraphComponent.ZOOM_STEP;
-    this.zoom.update(z =>
-      Math.min(Math.max(z + delta, OkGraphComponent.ZOOM_MIN), OkGraphComponent.ZOOM_MAX),
-    );
+  // --- cluster-coloured highlighting -----------------------------------------
+
+  nodeFill(node: RenderNode): string {
+    if (this.isSelected(node)) return node.color;       // solid, vivid
+    if (this.isConnected(node)) return withAlpha(node.color, 0.32);
+    return withAlpha(node.color, 0.15);
+  }
+
+  nodeStroke(node: RenderNode): string {
+    if (this.isSelected(node)) return node.colorStrong; // bright ring
+    if (this.isConnected(node)) return node.colorStrong;
+    return withAlpha(node.color, 0.6);
+  }
+
+  edgeStroke(edge: LayoutEdge): string {
+    const from = this.nodeMap().get(edge.fromId);
+    const color = from?.color ?? '#94a3b8';
+    const strong = from?.colorStrong ?? color;
+    if (this.isEdgeHighlighted(edge)) return strong;    // brighter highlight
+    if (this.selectedNodeId()) return withAlpha(color, 0.16);
+    return withAlpha(color, 0.45);
   }
 }

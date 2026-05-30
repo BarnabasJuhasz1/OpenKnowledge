@@ -11,7 +11,7 @@ from ...models.paper import Author, Paper
 
 logger = logging.getLogger(__name__)
 
-CSV_PATH = Path(__file__).resolve().parents[4] / "database" / "mock_papers.csv"
+CSV_PATH = Path(__file__).resolve().parents[4] / "database" / "demo_papers.csv"
 
 _NAME_RE = re.compile(r"'([^']+)'")
 
@@ -60,6 +60,8 @@ class DemoDataStore:
                 "year": "Int64",
                 "n_citation": "Int64",
                 "references": str,
+                "predicted_main_archetype": str,
+                "predicted_second_tier_archetype": str,
             },
             keep_default_na=False,
         )
@@ -69,7 +71,7 @@ class DemoDataStore:
         logger.info("Demo store ready: %d papers", len(df))
         return df
 
-    def search(self, keywords: list[str], limit: int = 200) -> list[Paper]:
+    def search(self, keywords: list[str], limit: int | None = None) -> list[Paper]:
         df = self._ensure_loaded()
 
         mask = pd.Series(True, index=df.index)
@@ -80,13 +82,27 @@ class DemoDataStore:
                 | df["_abstract_lc"].str.contains(kw_lower, regex=False)
             )
 
-        matched = df[mask].nlargest(limit, "n_citation", keep="first")
+        matched = df[mask].sort_values("n_citation", ascending=False)
+        if limit is not None:
+            matched = matched.head(limit)
         return [self._row_to_paper(row) for _, row in matched.iterrows()]
 
     @staticmethod
     def _row_to_paper(row: pd.Series) -> Paper:
         refs = _parse_references(row["references"])
         citation_count = int(row["n_citation"]) if row["n_citation"] else None
+
+        main_arch = row.get("predicted_main_archetype")
+        if not main_arch or main_arch == "None" or main_arch.strip() == "":
+            main_arch = None
+        else:
+            main_arch = main_arch.strip()
+
+        second_arch = row.get("predicted_second_tier_archetype")
+        if not second_arch or second_arch == "None" or second_arch.strip() == "":
+            second_arch = None
+        else:
+            second_arch = second_arch.strip()
 
         return Paper(
             semantic_scholar_id=str(row["id"]),
@@ -100,4 +116,6 @@ class DemoDataStore:
             references=refs,
             referenced_by=[],
             sources=["demo"],
+            predicted_main_archetype=main_arch,
+            predicted_second_tier_archetype=second_arch,
         )

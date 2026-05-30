@@ -4,7 +4,7 @@
       <div class="ok-graph-page__empty">
         <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
         <h2>OK-Graph</h2>
-        <p>Build a citation graph in the Cit-Graph tab, run Louvain clustering,
+        <p>Build a citation graph in the Cit-Graph subtab, run Louvain clustering,
           then <strong>“Send Reps to Graph”</strong>. The OK-Graph starts with the
           top-level cluster representatives; expand a node (side arrows or
           double-click) to drill into its sub-clusters — left for earlier works,
@@ -17,13 +17,21 @@
           <button class="zoom-controls__btn" (click)="zoomOut()" title="Zoom out">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
-          <button class="zoom-controls__label" (click)="resetZoom()" title="Reset zoom">{{ zoomPercent }}%</button>
+          <button class="zoom-controls__label" (click)="resetZoom()" title="Reset view">{{ zoomPercent }}%</button>
           <button class="zoom-controls__btn" (click)="zoomIn()" title="Zoom in">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
         </div>
 
-        <div class="ok-graph-page__canvas" (wheel)="onCanvasWheel($event)">
+        <div
+          class="ok-graph-page__canvas"
+          [class.ok-graph-page__canvas--panning]="panning()"
+          (wheel)="onWheel($event)"
+          (mousedown)="onPanStart($event)"
+          (mousemove)="onPanMove($event)"
+          (mouseup)="onPanEnd()"
+          (mouseleave)="onPanEnd()"
+        >
           @if (nodes().length === 0) {
             <div class="ok-graph-page__empty">
               <h2>No representatives with year data</h2>
@@ -31,19 +39,9 @@
                 representatives have no year information.</p>
             </div>
           } @else {
-            <div
-              class="ok-graph-page__svg-wrap"
-              [style.width.px]="svgWidth() * zoom()"
-              [style.height.px]="svgHeight() * zoom()"
-              [style.min-width.px]="svgWidth() * zoom()"
-            >
-              <svg
-                [attr.width]="svgWidth()"
-                [attr.height]="svgHeight()"
-                class="graph-svg"
-                [style.transform]="'scale(' + zoom() + ')'"
-                [style.transform-origin]="'0 0'"
-              >
+            <svg class="graph-svg" width="100%" height="100%">
+              <!-- Pan/zoom content layer -->
+              <g [attr.transform]="contentTransform()">
                 <!-- Cluster blobs: one per highest-level cluster, behind nodes -->
                 @for (blob of blobs(); track blob.topCluster) {
                   <rect
@@ -80,20 +78,10 @@
                   />
                 }
 
-                @for (col of yearColumns(); track col.year) {
-                  <text
-                    class="graph-svg__year-label"
-                    [attr.x]="col.x"
-                    [attr.y]="TOP_PADDING - 16"
-                    text-anchor="middle"
-                  >{{ col.year }}</text>
-                }
-
                 @for (edge of edges(); track edge.fromId + edge.toId) {
                   <path
                     class="graph-svg__edge"
-                    [class.graph-svg__edge--highlighted]="isEdgeHighlighted(edge)"
-                    [class.graph-svg__edge--dimmed]="selectedNodeId() && !isEdgeHighlighted(edge)"
+                    [attr.stroke]="edgeStroke(edge)"
                     [attr.d]="edgePath(edge)"
                     fill="none"
                   />
@@ -103,7 +91,6 @@
                   <g
                     class="graph-svg__node"
                     [class.graph-svg__node--selected]="isSelected(node)"
-                    [class.graph-svg__node--connected]="isConnected(node)"
                     [class.graph-svg__node--dimmed]="selectedNodeId() && !isSelected(node) && !isConnected(node)"
                     (click)="selectNode(node)"
                     (dblclick)="onNodeDblClick(node, $event)"
@@ -111,19 +98,28 @@
                     (mouseleave)="onNodeLeave()"
                     style="cursor: pointer"
                   >
-                    <circle class="graph-svg__circle" [attr.cx]="node.x" [attr.cy]="node.y" r="22" />
+                    <circle
+                      class="graph-svg__circle"
+                      [attr.cx]="node.x"
+                      [attr.cy]="node.y"
+                      r="22"
+                      [attr.fill]="nodeFill(node)"
+                      [attr.stroke]="nodeStroke(node)"
+                      [attr.stroke-width]="isSelected(node) ? 3 : (isConnected(node) ? 2.5 : 2)"
+                    />
                     <text
-                      class="graph-svg__node-letter"
+                      class="graph-svg__node-letter material-symbols-outlined"
                       [attr.x]="node.x"
-                      [attr.y]="node.y + 1"
+                      [attr.y]="node.y - 3"
                       text-anchor="middle"
                       dominant-baseline="central"
-                    >{{ node.letter }}</text>
+                    >{{ getArchetypeIcon(node.paper.predicted_main_archetype) }}</text>
                     <text
                       class="graph-svg__node-score"
                       [attr.x]="node.x"
-                      [attr.y]="node.y + 13"
+                      [attr.y]="node.y + 11"
                       text-anchor="middle"
+                      dominant-baseline="central"
                     >{{ (node.paper.ok_score ?? 0).toFixed(1) }}</text>
                     <text
                       class="graph-svg__node-label"
@@ -160,8 +156,22 @@
                     }
                   </g>
                 }
-              </svg>
-            </div>
+              </g>
+
+              <!-- Sticky year axis: pinned to the top, tracks horizontal pan/zoom -->
+              <g class="graph-svg__axis">
+                <rect class="graph-svg__axis-bg" x="0" y="0" width="100%" [attr.height]="AXIS_HEIGHT" />
+                <line class="graph-svg__axis-rule" x1="0" [attr.y1]="AXIS_HEIGHT" x2="100%" [attr.y2]="AXIS_HEIGHT" />
+                @for (col of yearColumns(); track col.year) {
+                  <text
+                    class="graph-svg__year-label"
+                    [attr.x]="axisX(col.x)"
+                    [attr.y]="AXIS_HEIGHT - 14"
+                    text-anchor="middle"
+                  >{{ col.year }}</text>
+                }
+              </g>
+            </svg>
           }
         </div>
 
@@ -205,7 +215,7 @@
           <aside class="detail-panel">
             <div class="detail-panel__add-section">
               <h5 class="detail-panel__section-title">Cluster Hierarchy</h5>
-              <p class="detail-panel__hint">{{ placedCount() }} nodes placed. Use a node’s side arrows or double-click it to drill into its sub-clusters.</p>
+              <p class="detail-panel__hint">{{ placedCount() }} nodes placed. Scroll to zoom, drag to pan. Use a node’s side arrows or double-click it to drill into its sub-clusters.</p>
               <button class="detail-panel__remove-btn" (click)="clearGraph()" style="margin-top: 12px; width: 100%; display: flex; justify-content: center; gap: 8px;">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                 Clear OK-Graph
@@ -215,7 +225,7 @@
             @if (selectedPaper(); as paper) {
               <div class="detail-panel__header">
                 <h3 class="detail-panel__title">
-                  <span class="detail-panel__letter">{{ selectedLetter() }}</span>
+                  <span class="detail-panel__letter material-symbols-outlined">{{ getArchetypeIcon(paper.predicted_main_archetype) }}</span>
                   Paper Details
                 </h3>
                 <button class="detail-panel__close" (click)="closePanel()">&times;</button>
@@ -243,6 +253,17 @@
                   }
                   @if (paper.journal || paper.venue) {
                     <span class="detail-panel__badge detail-panel__badge--venue">{{ paper.journal || paper.venue }}</span>
+                  }
+                  @if (paper.predicted_main_archetype) {
+                     <span class="detail-panel__badge detail-panel__badge--archetype-main">
+                       <span class="material-symbols-outlined" style="font-size: 13px; margin-right: 4px; vertical-align: middle;">
+                         {{ getArchetypeIcon(paper.predicted_main_archetype) }}
+                       </span>
+                       {{ paper.predicted_main_archetype }}
+                     </span>
+                   }
+                  @if (paper.predicted_second_tier_archetype && paper.predicted_second_tier_archetype !== 'None') {
+                    <span class="detail-panel__badge detail-panel__badge--archetype-second">{{ paper.predicted_second_tier_archetype }}</span>
                   }
                 </div>
                 @if (paper.abstract) {

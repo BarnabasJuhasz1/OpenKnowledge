@@ -5,6 +5,7 @@ import { SearchStateService, paperId as servicePaperId } from '../../core/servic
 import { Paper } from '../../core/models/paper.model';
 import { BookshelfService } from '../../core/services/bookshelf.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { getArchetypeIcon } from '../../shared/utils/archetype-icons';
 
 export interface GraphNode {
   id: string;
@@ -69,6 +70,10 @@ export class GraphComponent {
   readonly state = inject(SearchStateService);
   private readonly bookshelfSvc = inject(BookshelfService);
   private readonly notify = inject(NotificationService);
+
+  getArchetypeIcon(archetype?: string | null): string {
+    return getArchetypeIcon(archetype);
+  }
 
   readonly selectedNodeId = signal<string | null>(null);
   readonly hoveredNodeId = signal<string | null>(null);

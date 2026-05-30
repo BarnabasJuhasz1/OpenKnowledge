@@ -84,6 +84,25 @@ export class FiltersSidebarComponent {
     this.state.updateFilter({ openAccessOnly: val });
   }
 
+  readonly archetypes = [
+    'The Innovator',
+    'The Evaluator',
+    'The Combiner',
+    'The Analyst',
+    'The Synthesizer',
+    'The Translator',
+    'The Architect',
+    'The Resource Creator',
+  ];
+
+  get archetype(): string | null {
+    return this.state.filters().archetype;
+  }
+
+  set archetype(val: string | null) {
+    this.state.updateFilter({ archetype: val || null });
+  }
+
   /** Toggle the databases dropdown menu open/closed. */
   toggleDatabasesMenu(): void {
     this.databasesOpen = !this.databasesOpen;
@@ -127,6 +146,7 @@ export class FiltersSidebarComponent {
     return f.yearMin != null || f.yearMax != null
       || f.citationMin != null || f.citationMax != null
       || f.codeOnly || f.peerReviewedOnly || f.openAccessOnly
+      || f.archetype != null
       || this.state.sortField() !== 'relevancy'
       || !this.allSourcesSelected;
   }

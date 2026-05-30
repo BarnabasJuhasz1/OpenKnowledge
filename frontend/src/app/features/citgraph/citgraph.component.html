@@ -223,6 +223,17 @@
                     [attr.stroke-width]="activeDisplayId() === node.id ? 3 : 1.5"
                     fill-opacity="0.85"
                   />
+                  @if (node.kind === 'paper') {
+                    <text
+                      class="citgraph-svg__node-icon material-symbols-outlined"
+                      [attr.x]="node.x"
+                      [attr.y]="node.y"
+                      text-anchor="middle"
+                      dominant-baseline="central"
+                      [style.font-size.px]="node.radius === 18 ? 16 : 12"
+                      style="fill: #ffffff; pointer-events: none;"
+                    >{{ getArchetypeIcon(node.paper?.predicted_main_archetype) }}</text>
+                  }
                   @if (node.kind === 'cluster') {
                     <text
                       class="citgraph-svg__node-count"
@@ -245,132 +256,146 @@
           </div>
         </div>
 
-        <!-- Community legend -->
-        @if (showCommunities() && communityLegend().length) {
-          <div class="citgraph__legend">
-            <h5 class="citgraph__legend-title">Communities · click to inspect</h5>
-            @for (c of communityLegend(); track c.id) {
-              <button
-                type="button"
-                class="citgraph__legend-item"
-                [class.citgraph__legend-item--active]="selectedClusterId() === c.id"
-                (click)="inspectCluster(c.id)"
-              >
-                <span class="citgraph__legend-swatch" [style.background]="c.color"></span>
-                <span class="citgraph__legend-label">Cluster {{ c.id }}</span>
-                <span class="citgraph__legend-count">{{ c.count }}</span>
-              </button>
-            }
-          </div>
-        }
-
-        <!-- Cluster inspection panel -->
-        @if (clusterInspection(); as cluster) {
-          <aside class="citgraph__panel citgraph__panel--cluster">
-            <div class="citgraph__panel-header">
-              <h3 class="citgraph__panel-title">
-                <span class="citgraph__cluster-dot" [style.background]="cluster.color"></span>
-                Cluster {{ cluster.id }} · Level {{ cluster.level }}
-              </h3>
-              <button class="citgraph__panel-close" (click)="closeClusterPanel()">&times;</button>
-            </div>
-            <div class="citgraph__panel-body">
-              <div class="citgraph__panel-stats">
-                @if (cluster.level >= 2) {
+        <!-- Right Sidebar (Cluster details above Communities list) -->
+        <div class="citgraph__right-sidebar">
+          <!-- Cluster inspection panel -->
+          @if (clusterInspection(); as cluster) {
+            <aside class="citgraph__panel citgraph__panel--cluster">
+              <div class="citgraph__panel-header">
+                <h3 class="citgraph__panel-title">
+                  <span class="citgraph__cluster-dot" [style.background]="cluster.color"></span>
+                  Cluster {{ cluster.id }} · Level {{ cluster.level }}
+                </h3>
+                <button class="citgraph__panel-close" (click)="closeClusterPanel()">&times;</button>
+              </div>
+              <div class="citgraph__panel-body">
+                <div class="citgraph__panel-stats">
+                  @if (cluster.level >= 2) {
+                    <div class="citgraph__panel-stat">
+                      <span class="citgraph__panel-stat-value">{{ cluster.subClusterCount }}</span>
+                      <span class="citgraph__panel-stat-label">Sub-clusters</span>
+                    </div>
+                  }
                   <div class="citgraph__panel-stat">
-                    <span class="citgraph__panel-stat-value">{{ cluster.subClusterCount }}</span>
-                    <span class="citgraph__panel-stat-label">Sub-clusters</span>
+                    <span class="citgraph__panel-stat-value">{{ cluster.paperCount }}</span>
+                    <span class="citgraph__panel-stat-label">Papers</span>
+                  </div>
+                </div>
+
+                @if (cluster.level >= 2 && cluster.subClusters.length) {
+                  <div class="citgraph__panel-section">
+                    <h5 class="citgraph__panel-section-title">Sub-clusters (level {{ cluster.level - 1 }})</h5>
+                    <ul class="citgraph__cluster-list">
+                      @for (sc of cluster.subClusters; track sc.id) {
+                        <li class="citgraph__cluster-list-item">
+                          <span>Sub-cluster {{ sc.id }}</span>
+                          <span class="citgraph__legend-count">{{ sc.size }} {{ sc.size === 1 ? 'paper' : 'papers' }}</span>
+                        </li>
+                      }
+                    </ul>
                   </div>
                 }
-                <div class="citgraph__panel-stat">
-                  <span class="citgraph__panel-stat-value">{{ cluster.paperCount }}</span>
-                  <span class="citgraph__panel-stat-label">Papers</span>
-                </div>
-              </div>
 
-              @if (cluster.level >= 2 && cluster.subClusters.length) {
                 <div class="citgraph__panel-section">
-                  <h5 class="citgraph__panel-section-title">Sub-clusters (level {{ cluster.level - 1 }})</h5>
+                  <h5 class="citgraph__panel-section-title">Papers ({{ cluster.paperCount }})</h5>
                   <ul class="citgraph__cluster-list">
-                    @for (sc of cluster.subClusters; track sc.id) {
-                      <li class="citgraph__cluster-list-item">
-                        <span>Sub-cluster {{ sc.id }}</span>
-                        <span class="citgraph__legend-count">{{ sc.size }} {{ sc.size === 1 ? 'paper' : 'papers' }}</span>
+                    @for (p of cluster.papers; track p.id) {
+                      <li class="citgraph__cluster-list-item citgraph__cluster-list-item--paper">
+                        @if (p.isRepresentative) {
+                          <span style="font-weight: bold; color: #1d4ed8; margin-right: 4px;">★ Representative:</span>
+                        }
+                        {{ p.title }}
+                        <span style="color: #6b7280; font-size: 0.85em; margin-left: 4px;">(Score: {{ p.score }})</span>
                       </li>
                     }
                   </ul>
                 </div>
-              }
+              </div>
+            </aside>
+          }
 
-              <div class="citgraph__panel-section">
-                <h5 class="citgraph__panel-section-title">Papers ({{ cluster.paperCount }})</h5>
-                <ul class="citgraph__cluster-list">
-                  @for (p of cluster.papers; track p.id) {
-                    <li class="citgraph__cluster-list-item citgraph__cluster-list-item--paper">
-                      @if (p.isRepresentative) {
-                        <span style="font-weight: bold; color: #1d4ed8; margin-right: 4px;">★ Representative:</span>
-                      }
-                      {{ p.title }}
-                      <span style="color: #6b7280; font-size: 0.85em; margin-left: 4px;">(Score: {{ p.score }})</span>
-                    </li>
+          <!-- Detail panel (stationary, above the communities list) -->
+          @if (selectedNode(); as node) {
+            <aside class="citgraph__panel citgraph__panel--detail">
+              <div class="citgraph__panel-header">
+                <h3 class="citgraph__panel-title">Paper Details</h3>
+                <button class="citgraph__panel-close" (click)="closePanel()">&times;</button>
+              </div>
+              <div class="citgraph__panel-body">
+                <h4 class="citgraph__panel-paper-title">{{ node.title }}</h4>
+                @if (authorLine(node)) {
+                  <p class="citgraph__panel-authors">{{ authorLine(node) }}</p>
+                }
+                <div class="citgraph__panel-meta">
+                  @if (node.year) {
+                    <span class="citgraph__panel-badge">{{ node.year }}</span>
                   }
-                </ul>
-              </div>
-            </div>
-          </aside>
-        }
-
-        <!-- Detail panel -->
-        @if (selectedNode(); as node) {
-          <aside class="citgraph__panel">
-            <div class="citgraph__panel-header">
-              <h3 class="citgraph__panel-title">Paper Details</h3>
-              <button class="citgraph__panel-close" (click)="closePanel()">&times;</button>
-            </div>
-            <div class="citgraph__panel-body">
-              <h4 class="citgraph__panel-paper-title">{{ node.title }}</h4>
-              @if (authorLine(node)) {
-                <p class="citgraph__panel-authors">{{ authorLine(node) }}</p>
-              }
-              <div class="citgraph__panel-meta">
-                @if (node.year) {
-                  <span class="citgraph__panel-badge">{{ node.year }}</span>
-                }
-                @if (node.journal) {
-                  <span class="citgraph__panel-badge citgraph__panel-badge--venue">{{ node.journal }}</span>
-                }
-                <span class="citgraph__panel-badge citgraph__panel-badge--hop">Hop {{ node.hop }}</span>
-              </div>
-              @if (node.abstract) {
-                <div class="citgraph__panel-section">
-                  <h5 class="citgraph__panel-section-title">Abstract</h5>
-                  <p class="citgraph__panel-abstract">{{ node.abstract }}</p>
-                </div>
-              }
-              <div class="citgraph__panel-stats">
-                @if (node.citation_count !== null) {
-                  <div class="citgraph__panel-stat">
-                    <span class="citgraph__panel-stat-value">{{ node.citation_count | number }}</span>
-                    <span class="citgraph__panel-stat-label">Citations</span>
-                  </div>
-                }
-                @if (node.reference_count !== null) {
-                  <div class="citgraph__panel-stat">
-                    <span class="citgraph__panel-stat-value">{{ node.reference_count | number }}</span>
-                    <span class="citgraph__panel-stat-label">References</span>
-                  </div>
-                }
-              </div>
-              @if (node.fields_of_study.length) {
-                <div class="citgraph__panel-fields">
-                  @for (f of node.fields_of_study; track f) {
-                    <span class="citgraph__panel-field">{{ f }}</span>
+                  @if (node.journal) {
+                    <span class="citgraph__panel-badge citgraph__panel-badge--venue">{{ node.journal }}</span>
+                  }
+                  <span class="citgraph__panel-badge citgraph__panel-badge--hop">Hop {{ node.hop }}</span>
+                   @if (node.predicted_main_archetype) {
+                     <span class="citgraph__panel-badge citgraph__panel-badge--archetype-main">
+                       <span class="material-symbols-outlined" style="font-size: 13px; margin-right: 4px; vertical-align: middle;">
+                         {{ getArchetypeIcon(node.predicted_main_archetype) }}
+                       </span>
+                       {{ node.predicted_main_archetype }}
+                     </span>
+                   }
+                  @if (node.predicted_second_tier_archetype && node.predicted_second_tier_archetype !== 'None') {
+                    <span class="citgraph__panel-badge citgraph__panel-badge--archetype-second">{{ node.predicted_second_tier_archetype }}</span>
                   }
                 </div>
+                @if (node.abstract) {
+                  <div class="citgraph__panel-section">
+                    <h5 class="citgraph__panel-section-title">Abstract</h5>
+                    <p class="citgraph__panel-abstract">{{ node.abstract }}</p>
+                  </div>
+                }
+                <div class="citgraph__panel-stats">
+                  @if (node.citation_count !== null) {
+                    <div class="citgraph__panel-stat">
+                      <span class="citgraph__panel-stat-value">{{ node.citation_count | number }}</span>
+                      <span class="citgraph__panel-stat-label">Citations</span>
+                    </div>
+                  }
+                  @if (node.reference_count !== null) {
+                    <div class="citgraph__panel-stat">
+                      <span class="citgraph__panel-stat-value">{{ node.reference_count | number }}</span>
+                      <span class="citgraph__panel-stat-label">References</span>
+                    </div>
+                  }
+                </div>
+                @if (node.fields_of_study.length) {
+                  <div class="citgraph__panel-fields">
+                    @for (f of node.fields_of_study; track f) {
+                      <span class="citgraph__panel-field">{{ f }}</span>
+                    }
+                  </div>
+                }
+              </div>
+            </aside>
+          }
+
+          <!-- Community legend -->
+          @if (showCommunities() && communityLegend().length) {
+            <div class="citgraph__legend">
+              <h5 class="citgraph__legend-title">Communities · click to inspect</h5>
+              @for (c of communityLegend(); track c.id) {
+                <button
+                  type="button"
+                  class="citgraph__legend-item"
+                  [class.citgraph__legend-item--active]="selectedClusterId() === c.id"
+                  (click)="inspectCluster(c.id)"
+                >
+                  <span class="citgraph__legend-swatch" [style.background]="c.color"></span>
+                  <span class="citgraph__legend-label">Cluster {{ c.id }}</span>
+                  <span class="citgraph__legend-count">{{ c.count }}</span>
+                </button>
               }
             </div>
-          </aside>
-        }
+          }
+        </div>
       </div>
     }
   </div>

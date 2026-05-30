@@ -5,6 +5,7 @@ import { SearchStateService, paperId } from '../../../core/services/search-state
 import { DemoModeService } from '../../../core/services/demo-mode.service';
 import { NotificationService } from '../../../core/services/notification.service';
 import { BookshelfService } from '../../../core/services/bookshelf.service';
+import { getArchetypeIcon } from '../../../shared/utils/archetype-icons';
 
 @Component({
   selector: 'app-paper-card',
@@ -19,6 +20,19 @@ export class PaperCardComponent implements OnInit {
   private readonly notify = inject(NotificationService);
   private readonly bookshelfSvc = inject(BookshelfService);
   @Input({ required: true }) paper!: Paper;
+
+  getArchetypeIcon(archetype?: string | null): string {
+    return getArchetypeIcon(archetype);
+  }
+
+  getArchetypeClassSuffix(archetype?: string | null): string {
+    if (!archetype) return '';
+    const name = archetype.toLowerCase();
+    if (name.startsWith('the ')) {
+      return name.substring(4).replace(/ /g, '-');
+    }
+    return name.replace(/ /g, '-');
+  }
 
   abstractExpanded = signal(false);
   bibtexCopied = signal(false);

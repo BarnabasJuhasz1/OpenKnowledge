@@ -164,6 +164,17 @@
                           <p class="library__detail-abstract">{{ p.abstract }}</p>
                         }
                         <div class="library__detail-badges">
+                          @if (p.predicted_main_archetype) {
+                            <span class="library__badge library__badge--archetype-main">
+                              <span class="material-symbols-outlined" style="font-size: 13px; margin-right: 4px; vertical-align: middle;">
+                                {{ getArchetypeIcon(p.predicted_main_archetype) }}
+                              </span>
+                              {{ p.predicted_main_archetype }}
+                            </span>
+                          }
+                          @if (p.predicted_second_tier_archetype && p.predicted_second_tier_archetype !== 'None') {
+                            <span class="library__badge library__badge--archetype-second">{{ p.predicted_second_tier_archetype }}</span>
+                          }
                           @if (p.citation_count !== null) {
                             <span class="library__badge">{{ p.citation_count | number }} cited by</span>
                           }

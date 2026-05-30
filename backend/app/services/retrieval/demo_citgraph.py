@@ -14,11 +14,11 @@ from .citgraph_builder import CitGraphEdge, CitGraphNode, CitGraphResult
 logger = logging.getLogger(__name__)
 
 _HERE = Path(__file__).resolve()
-CSV_PATH = _HERE.parents[4] / "database" / "mock_papers.csv"
+CSV_PATH = _HERE.parents[4] / "database" / "demo_papers.csv"
 CACHE_PATH = _HERE.parents[4] / "database" / "demo_citgraph_index.pkl"
 
 # Bump when the on-disk index layout changes so stale caches are rebuilt.
-_CACHE_VERSION = 2
+_CACHE_VERSION = 3
 
 _UUID_RE = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
@@ -118,6 +118,8 @@ class DemoCitGraphStore:
                 "venue",
                 "year",
                 "n_citation",
+                "predicted_main_archetype",
+                "predicted_second_tier_archetype",
             ],
         )
 
@@ -140,6 +142,8 @@ class DemoCitGraphStore:
                 "venue": row.venue,
                 "year": row.year,
                 "n_citation": row.n_citation,
+                "predicted_main_archetype": getattr(row, "predicted_main_archetype", None),
+                "predicted_second_tier_archetype": getattr(row, "predicted_second_tier_archetype", None),
             }
             tl = row.title.strip().lower()
             # Keep the first occurrence so resolution is deterministic.
@@ -190,6 +194,18 @@ class DemoCitGraphStore:
 
     def _node(self, index: _Index, pid: str, hop: int) -> CitGraphNode:
         m = index.meta[pid]
+        main_arch = m.get("predicted_main_archetype")
+        if not main_arch or main_arch == "None" or main_arch.strip() == "":
+            main_arch = None
+        else:
+            main_arch = main_arch.strip()
+
+        second_arch = m.get("predicted_second_tier_archetype")
+        if not second_arch or second_arch == "None" or second_arch.strip() == "":
+            second_arch = None
+        else:
+            second_arch = second_arch.strip()
+
         return CitGraphNode(
             paper_id=pid,
             title=m["title"],
@@ -201,6 +217,8 @@ class DemoCitGraphStore:
             journal=m["venue"] or None,
             fields_of_study=[],
             hop=hop,
+            predicted_main_archetype=main_arch,
+            predicted_second_tier_archetype=second_arch,
         )
 
     async def build(

@@ -102,6 +102,17 @@
     </label>
   </section>
 
+  <!-- Archetype -->
+  <section class="sidebar__section">
+    <h4 class="sidebar__label">Archetype</h4>
+    <select class="sidebar__select" [(ngModel)]="archetype">
+      <option [ngValue]="null">All archetypes</option>
+      @for (arch of archetypes; track arch) {
+        <option [value]="arch">{{ arch }}</option>
+      }
+    </select>
+  </section>
+
   <!-- Databases / source filter (multi-select dropdown) -->
   <section class="sidebar__section sidebar__section--databases">
     <h4 class="sidebar__label">Databases</h4>

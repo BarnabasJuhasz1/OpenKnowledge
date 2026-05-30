@@ -1,45 +1,130 @@
 <div class="docs">
-  <div class="docs__inner">
-    <header class="docs__header">
+  <!-- Left Sidebar -->
+  <aside class="docs__sidebar">
+    <div class="docs__sidebar-header">
       <span class="docs__eyebrow">Documentation</span>
-      <h1 class="docs__title">Using OpenKnowledge</h1>
-      <p class="docs__lead">
-        OpenKnowledge is a free, open-source platform for automating literature
-        reviews — discovering papers across major academic databases, scoring their
-        relevance, and mapping how the research connects.
-      </p>
-    </header>
+    </div>
+    <nav class="docs__nav">
+      <button 
+        type="button" 
+        class="docs__nav-item" 
+        [class.docs__nav-item--active]="activeTab === 'guide'" 
+        (click)="activeTab = 'guide'"
+      >
+        <span class="material-symbols-outlined">menu_book</span>
+        General Guide
+      </button>
+      <button 
+        type="button" 
+        class="docs__nav-item" 
+        [class.docs__nav-item--active]="activeTab === 'archetypes'" 
+        (click)="activeTab = 'archetypes'"
+      >
+        <span class="material-symbols-outlined">psychology</span>
+        Archetypes
+      </button>
+    </nav>
+  </aside>
 
-    <section class="docs__section">
-      <h2 class="docs__section-title">Getting started</h2>
-      <ol class="docs__steps">
-        <li>Open <a routerLink="/dashboard/projects">My Projects</a> from the Dashboard and create a project.</li>
-        <li>Inside your project, pick a feature from the left panel and describe what you are looking for in the search bar.</li>
-        <li>Refine results with the OK-score weights, then save what matters to your Library.</li>
-      </ol>
-    </section>
+  <!-- Main Content Area -->
+  <main class="docs__main">
+    <div class="docs__inner">
+      @if (activeTab === 'guide') {
+        <header class="docs__header">
+          <h1 class="docs__title">Using OpenKnowledge</h1>
+          <p class="docs__lead">
+            OpenKnowledge is a free, open-source platform for literature
+            reviews — discovering papers across major academic databases, scoring
+            their relevance, and mapping how the research connects.
+          </p>
+        </header>
 
-    <section class="docs__section">
-      <h2 class="docs__section-title">Features</h2>
-      <div class="docs__features">
-        @for (feature of features; track feature.title) {
-          <article class="docs__feature">
-            <span class="material-symbols-outlined docs__feature-icon">{{ feature.icon }}</span>
-            <div>
-              <h3 class="docs__feature-title">{{ feature.title }}</h3>
-              <p class="docs__feature-body">{{ feature.body }}</p>
-            </div>
-          </article>
-        }
-      </div>
-    </section>
+        <section class="docs__section">
+          <h2 class="docs__section-title">Getting started</h2>
+          <ol class="docs__steps">
+            <li>Open <a routerLink="/dashboard/projects">My Projects</a> from the Dashboard and create a project.</li>
+            <li>Inside your project, pick a feature from the left panel and describe what you are looking for in the search bar.</li>
+            <li>Refine results with the OK-score weights, then save what matters to your Library.</li>
+          </ol>
+        </section>
 
-    <section class="docs__cta">
-      <h2 class="docs__cta-title">Ready to dive in?</h2>
-      <a class="docs__cta-btn" routerLink="/dashboard">
-        Open the Dashboard
-        <span class="material-symbols-outlined">arrow_forward</span>
-      </a>
-    </section>
-  </div>
+        <section class="docs__section">
+          <h2 class="docs__section-title">Features</h2>
+          <div class="docs__features">
+            @for (feature of features; track feature.title) {
+              <article class="docs__feature">
+                <span class="material-symbols-outlined docs__feature-icon">{{ feature.icon }}</span>
+                <div>
+                  <h3 class="docs__feature-title">{{ feature.title }}</h3>
+                  <p class="docs__feature-body">{{ feature.body }}</p>
+                </div>
+              </article>
+            }
+          </div>
+        </section>
+
+        <section class="docs__cta">
+          <h2 class="docs__cta-title">Ready to dive in?</h2>
+          <a class="docs__cta-btn" routerLink="/dashboard">
+            Open the Dashboard
+            <span class="material-symbols-outlined">arrow_forward</span>
+          </a>
+        </section>
+      } @else if (activeTab === 'archetypes') {
+        <header class="docs__header">
+          <h1 class="docs__title">Contribution Archetypes</h1>
+          <p class="docs__lead">
+            OpenKnowledge automatically classifies academic research papers into 8 universal contribution archetypes based on their primary intellectual value. This classification is visible directly on paper cards, in side details panels, and can be used for advanced filtering of search results.
+          </p>
+        </header>
+
+        <section class="docs__section">
+          <h2 class="docs__section-title">Dataset Distribution</h2>
+          <p class="docs__lead" style="font-size: 15px; margin-bottom: var(--ok-space-4); max-width: 600px;">
+            Real distribution of contribution archetypes across the 827,533 papers in the demo database.
+          </p>
+          <div class="docs__distribution">
+            @for (dist of distributionData; track dist.name) {
+              <div class="docs__dist-row">
+                <div class="docs__dist-info">
+                  <span class="material-symbols-outlined docs__dist-icon" [style.color]="dist.color">{{ dist.icon }}</span>
+                  <span class="docs__dist-name">{{ dist.name }}</span>
+                  <span class="docs__dist-count">{{ dist.count.toLocaleString() }} papers</span>
+                  <span class="docs__dist-pct">{{ dist.percentage }}%</span>
+                </div>
+                <div class="docs__dist-bar-bg">
+                  <div class="docs__dist-bar-fill" [style.width.%]="dist.percentage" [style.background]="dist.gradient"></div>
+                </div>
+              </div>
+            }
+          </div>
+        </section>
+
+        <section class="docs__section">
+          <h2 class="docs__section-title">Universal Taxonomies</h2>
+          <div class="docs__archetypes-grid">
+            @for (arch of archetypesList; track arch.name) {
+              <article class="docs__archetype-card docs__archetype-card--{{ arch.badgeClass }}">
+                <header class="docs__archetype-card-header">
+                  <span class="material-symbols-outlined docs__archetype-icon">{{ arch.icon }}</span>
+                  <h3 class="docs__archetype-name">{{ arch.name }}</h3>
+                </header>
+                <p class="docs__archetype-desc">{{ arch.description }}</p>
+                @if (arch.subtypes && arch.subtypes.length > 0) {
+                  <div class="docs__archetype-subtypes">
+                    <span class="docs__archetype-subtypes-label">Subcategories (AI/CS):</span>
+                    <div class="docs__archetype-subtypes-list">
+                      @for (sub of arch.subtypes; track sub) {
+                        <span class="docs__archetype-subtype-badge">{{ sub }}</span>
+                      }
+                    </div>
+                  </div>
+                }
+              </article>
+            }
+          </div>
+        </section>
+      }
+    </div>
+  </main>
 </div>

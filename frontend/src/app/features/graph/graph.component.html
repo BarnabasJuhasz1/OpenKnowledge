@@ -4,7 +4,7 @@
       <div class="graph-page__empty">
         <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
         <h2>Citation Network Graph</h2>
-        <p>Search for papers first, then the top 5 results by OK-score will appear here as an interactive citation network. Cluster representatives sent from the Cit-Graph tab appear in the OK-Graph sub-tab.</p>
+        <p>Search for papers first, then the top 5 results by OK-score will appear here as an interactive citation network. Cluster representatives sent from the Cit-Graph subtab appear in the OK-Graph subtab.</p>
       </div>
     } @else {
       <div class="graph-page__canvas-wrap">
@@ -92,17 +92,18 @@
                     r="22"
                   />
                   <text
-                    class="graph-svg__node-letter"
+                    class="graph-svg__node-letter material-symbols-outlined"
                     [attr.x]="node.x"
-                    [attr.y]="node.y + 1"
+                    [attr.y]="node.y - 3"
                     text-anchor="middle"
                     dominant-baseline="central"
-                  >{{ node.letter }}</text>
+                  >{{ getArchetypeIcon(node.paper.predicted_main_archetype) }}</text>
                   <text
                     class="graph-svg__node-score"
                     [attr.x]="node.x"
-                    [attr.y]="node.y + 13"
+                    [attr.y]="node.y + 11"
                     text-anchor="middle"
+                    dominant-baseline="central"
                   >{{ (node.paper.ok_score ?? 0).toFixed(1) }}</text>
                   <text
                     class="graph-svg__node-label"
@@ -231,7 +232,7 @@
           @if (selectedPaper(); as paper) {
             <div class="detail-panel__header">
               <h3 class="detail-panel__title">
-                <span class="detail-panel__letter">{{ selectedLetter() }}</span>
+                <span class="detail-panel__letter material-symbols-outlined">{{ getArchetypeIcon(paper.predicted_main_archetype) }}</span>
                 Paper Details
               </h3>
               <button class="detail-panel__close" (click)="closePanel()">&times;</button>
@@ -252,6 +253,17 @@
                 }
                 @if (paper.is_open_access) {
                   <span class="detail-panel__badge detail-panel__badge--oa">Open Access</span>
+                }
+                @if (paper.predicted_main_archetype) {
+                  <span class="detail-panel__badge detail-panel__badge--archetype-main">
+                    <span class="material-symbols-outlined" style="font-size: 13px; margin-right: 4px; vertical-align: middle;">
+                      {{ getArchetypeIcon(paper.predicted_main_archetype) }}
+                    </span>
+                    {{ paper.predicted_main_archetype }}
+                  </span>
+                }
+                @if (paper.predicted_second_tier_archetype && paper.predicted_second_tier_archetype !== 'None') {
+                  <span class="detail-panel__badge detail-panel__badge--archetype-second">{{ paper.predicted_second_tier_archetype }}</span>
                 }
               </div>
 

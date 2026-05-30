@@ -17,6 +17,15 @@
     transform: translateY(-1px);
   }
 
+  &--innovator { border-left: 3px solid rgba(168, 85, 247, 0.7); }
+  &--synthesizer { border-left: 3px solid rgba(59, 130, 246, 0.7); }
+  &--combiner { border-left: 3px solid rgba(245, 158, 11, 0.7); }
+  &--architect { border-left: 3px solid rgba(16, 185, 129, 0.7); }
+  &--translator { border-left: 3px solid rgba(236, 72, 153, 0.7); }
+  &--evaluator { border-left: 3px solid rgba(14, 165, 233, 0.7); }
+  &--analyst { border-left: 3px solid rgba(239, 68, 68, 0.7); }
+  &--resource-creator { border-left: 3px solid rgba(79, 70, 229, 0.7); }
+
   &__top {
     display: flex;
     align-items: flex-start;
@@ -145,18 +154,22 @@
     margin: 0.6rem 0 0.1rem;
   }
 
-  &__footer {
+  &__info-row {
     display: flex;
-    justify-content: flex-end;
-    margin-top: 0.65rem;
-    padding-top: 0.55rem;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-top: 0.75rem;
+    padding-top: 0.65rem;
     border-top: 1px solid var(--ok-outline-variant);
+    gap: 1rem;
   }
 
-  &__citations {
+  &__archetypes-stack {
     display: flex;
-    align-items: center;
-    gap: 0.75rem;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+    flex-shrink: 0;
   }
 
   &__cite-badge {
@@ -215,12 +228,25 @@
     svg { flex-shrink: 0; }
   }
 
-  &__graph-row {
+  &__meta-stack {
     display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.5rem;
+    flex: 1;
+  }
+
+  &__badges-row {
+    display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
     gap: 0.4rem;
-    margin-top: 0.5rem;
-    padding-top: 0.4rem;
+  }
+
+  &__actions-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
   }
 
   &__graph-btn {
@@ -289,6 +315,123 @@
       background: rgba(234, 179, 8, 0.15);
       border-color: rgba(234, 179, 8, 0.4);
       color: #eab308;
+    }
+  }
+
+  &__archetypes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.6rem;
+  }
+
+  &__archetype {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-family: var(--ok-font-label);
+    font-size: 0.74rem;
+    font-weight: 600;
+    padding: 0.15rem 0.55rem;
+    border-radius: 9999px;
+    white-space: nowrap;
+
+    svg {
+      flex-shrink: 0;
+    }
+
+    &--main {
+      background: var(--ok-surface-container-high);
+      border: 1px solid var(--ok-outline-variant);
+      color: var(--ok-on-surface);
+
+      &--innovator {
+        background: rgba(168, 85, 247, 0.15);
+        border: 1px solid rgba(168, 85, 247, 0.3);
+        color: #c084fc;
+      }
+      &--synthesizer {
+        background: rgba(59, 130, 246, 0.15);
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        color: #60a5fa;
+      }
+      &--combiner {
+        background: rgba(245, 158, 11, 0.15);
+        border: 1px solid rgba(245, 158, 11, 0.3);
+        color: #fbbf24;
+      }
+      &--architect {
+        background: rgba(16, 185, 129, 0.15);
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        color: #34d399;
+      }
+      &--translator {
+        background: rgba(236, 72, 153, 0.15);
+        border: 1px solid rgba(236, 72, 153, 0.3);
+        color: #f472b6;
+      }
+      &--evaluator {
+        background: rgba(14, 165, 233, 0.15);
+        border: 1px solid rgba(14, 165, 233, 0.3);
+        color: #38bdf8;
+      }
+      &--analyst {
+        background: rgba(239, 68, 68, 0.15);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        color: #f87171;
+      }
+      &--resource-creator {
+        background: rgba(79, 70, 229, 0.15);
+        border: 1px solid rgba(79, 70, 229, 0.3);
+        color: #818cf8;
+      }
+    }
+
+    &--second {
+      background: var(--ok-surface-container);
+      border: 1px solid var(--ok-outline-variant);
+      color: var(--ok-on-surface-variant);
+
+      &--innovator {
+        background: rgba(168, 85, 247, 0.08);
+        border: 1px solid rgba(168, 85, 247, 0.18);
+        color: rgba(192, 132, 252, 0.85);
+      }
+      &--synthesizer {
+        background: rgba(59, 130, 246, 0.08);
+        border: 1px solid rgba(59, 130, 246, 0.18);
+        color: rgba(96, 165, 250, 0.85);
+      }
+      &--combiner {
+        background: rgba(245, 158, 11, 0.08);
+        border: 1px solid rgba(245, 158, 11, 0.18);
+        color: rgba(251, 191, 36, 0.85);
+      }
+      &--architect {
+        background: rgba(16, 185, 129, 0.08);
+        border: 1px solid rgba(16, 185, 129, 0.18);
+        color: rgba(52, 211, 153, 0.85);
+      }
+      &--translator {
+        background: rgba(236, 72, 153, 0.08);
+        border: 1px solid rgba(236, 72, 153, 0.18);
+        color: rgba(244, 114, 182, 0.85);
+      }
+      &--evaluator {
+        background: rgba(14, 165, 233, 0.08);
+        border: 1px solid rgba(14, 165, 233, 0.18);
+        color: rgba(56, 189, 248, 0.85);
+      }
+      &--analyst {
+        background: rgba(239, 68, 68, 0.08);
+        border: 1px solid rgba(239, 68, 68, 0.18);
+        color: rgba(248, 113, 113, 0.85);
+      }
+      &--resource-creator {
+        background: rgba(79, 70, 229, 0.08);
+        border: 1px solid rgba(79, 70, 229, 0.18);
+        color: rgba(129, 140, 248, 0.85);
+      }
     }
   }
 }

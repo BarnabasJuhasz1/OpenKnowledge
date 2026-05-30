@@ -385,20 +385,39 @@
     flex-shrink: 0;
   }
 
-  // Legend
-  &__legend {
+  &__right-sidebar {
     position: absolute;
     top: 4rem;
     right: 1rem;
     z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    width: 320px;
+    max-height: calc(100% - 5rem);
+    pointer-events: none;
+  }
+
+  // Legend
+  &__legend {
     background: #fff;
     border: 1px solid #e5e7eb;
     border-radius: 10px;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
     padding: 0.75rem;
-    max-height: 300px;
+    max-height: 250px;
     overflow-y: auto;
-    min-width: 160px;
+    width: 100%;
+    pointer-events: auto;
+  }
+
+  &__panel--cluster,
+  &__panel--detail {
+    position: static;
+    z-index: auto;
+    width: 100%;
+    max-height: 380px;
+    pointer-events: auto;
   }
 
   &__legend-title {
@@ -452,9 +471,9 @@
     font-variant-numeric: tabular-nums;
   }
 
-  // Cluster inspection — reuses the left detail-panel slot (the legend stays
-  // clickable on the right; the paper-detail and cluster panels are mutually
-  // exclusive, so they never collide).
+  // Cluster inspection — sits in the right sidebar, stationary above the
+  // communities list. The paper-detail and cluster panels share this slot and
+  // are mutually exclusive, so they never collide.
   &__cluster-dot {
     display: inline-block;
     width: 10px;
@@ -577,6 +596,8 @@
 
     &--venue { background: #eff6ff; color: #1d4ed8; }
     &--hop { background: #f5f3ff; color: #7c3aed; }
+    &--archetype-main { background: rgba(168, 85, 247, 0.15); color: var(--ok-secondary); border: 1px solid rgba(168, 85, 247, 0.25); }
+    &--archetype-second { background: rgba(14, 165, 233, 0.12); color: var(--ok-tertiary); border: 1px solid rgba(14, 165, 233, 0.2); }
   }
 
   &__panel-section {
@@ -750,11 +771,16 @@
     font-family: inherit;
     pointer-events: none;
   }
+
+  &__node-icon {
+    font-family: 'Material Symbols Outlined' !important;
+  }
 }
 
 @media (max-width: 800px) {
   .citgraph__panel,
-  .citgraph__legend {
+  .citgraph__legend,
+  .citgraph__right-sidebar {
     position: static;
     width: auto;
     margin: 0.5rem 1rem;

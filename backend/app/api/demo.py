@@ -11,7 +11,7 @@ async def demo_search(request: SearchRequest) -> SearchResponse:
         raise HTTPException(status_code=422, detail="At least one keyword is required.")
 
     store = DemoDataStore.get()
-    papers = store.search(request.keywords, limit=request.max_initial_results)
+    papers = store.search(request.keywords, limit=None)
 
     return SearchResponse(
         papers=papers,

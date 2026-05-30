@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { ShelfService, ShelfItem } from '../../core/services/shelf.service';
 import { BookshelfService, BookshelfItem } from '../../core/services/bookshelf.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { getArchetypeIcon } from '../../shared/utils/archetype-icons';
 
 type PendingDelete =
   | { kind: 'query'; item: ShelfItem; name: string }
@@ -22,6 +23,10 @@ export class LibraryComponent implements OnInit {
   private readonly bookshelf = inject(BookshelfService);
   private readonly router = inject(Router);
   private readonly notifications = inject(NotificationService);
+
+  getArchetypeIcon(archetype?: string | null): string {
+    return getArchetypeIcon(archetype);
+  }
 
   activeTab = signal<'shelf' | 'bookshelf'>('shelf');
 

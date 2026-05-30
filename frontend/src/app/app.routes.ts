@@ -67,17 +67,18 @@ export const routes: Routes = [
                 loadComponent: () =>
                   import('./features/okgraph/okgraph.component').then(m => m.OkGraphComponent),
               },
+              {
+                path: 'clustering',
+                loadComponent: () =>
+                  import('./features/citgraph/citgraph.component').then(m => m.CitGraphComponent),
+              },
+              { path: 'citgraph', redirectTo: 'clustering' },
             ],
           },
           {
             path: 'library',
             loadComponent: () =>
               import('./features/library/library.component').then(m => m.LibraryComponent),
-          },
-          {
-            path: 'citgraph',
-            loadComponent: () =>
-              import('./features/citgraph/citgraph.component').then(m => m.CitGraphComponent),
           },
         ],
       },
@@ -95,5 +96,6 @@ export const routes: Routes = [
   { path: 'graph', redirectTo: 'dashboard/projects' },
   { path: 'library', redirectTo: 'dashboard/projects' },
   { path: 'citgraph', redirectTo: 'dashboard/projects' },
+  { path: 'clustering', redirectTo: 'dashboard/projects' },
   { path: '**', redirectTo: '' },
 ];

@@ -113,7 +113,6 @@ export class ResultsComponent implements OnInit, OnDestroy {
     this.demoSub = this.retrieval.demoSearch({
       keywords,
       raw_query: query,
-      max_initial_results: 200,
     }).subscribe({
       next: (res) => {
         this.state.rawPapersBySource.set({ demo: res.papers });

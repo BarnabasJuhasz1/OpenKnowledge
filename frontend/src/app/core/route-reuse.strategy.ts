@@ -17,7 +17,7 @@ import {
 @Injectable()
 export class CachedRouteReuseStrategy implements RouteReuseStrategy {
   /** Route `path`s whose component instances should survive navigation. */
-  private static readonly CACHED_PATHS = new Set<string>(['citgraph']);
+  private static readonly CACHED_PATHS = new Set<string>(['clustering']);
 
   private readonly handlers = new Map<string, DetachedRouteHandle>();
 

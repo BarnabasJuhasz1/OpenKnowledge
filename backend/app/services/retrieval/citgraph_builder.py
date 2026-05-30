@@ -41,6 +41,8 @@ class CitGraphNode:
     pdf_url: str | None = None
     fields_of_study: list[str] = field(default_factory=list)
     hop: int = 0
+    predicted_main_archetype: str | None = None
+    predicted_second_tier_archetype: str | None = None
 
 
 @dataclass
