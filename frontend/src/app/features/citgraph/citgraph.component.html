@@ -111,11 +111,11 @@
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
               {{ louvainActive() ? 'Re-run Louvain' : 'Louvain Clusters' }}
             </button>
-            @if (showCommunities()) {
+            @if (louvainActive()) {
               <button
                 class="citgraph__toolbar-btn"
                 (click)="sendRepresentativesToGraph()"
-                title="Send the highest OK-score paper from each visible cluster to the Graph tab"
+                title="Send the cluster hierarchy to the OK-Graph sub-tab"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
                 Send Reps to Graph

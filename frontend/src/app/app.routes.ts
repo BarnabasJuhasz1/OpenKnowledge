@@ -54,7 +54,20 @@ export const routes: Routes = [
           {
             path: 'graph',
             loadComponent: () =>
-              import('./features/graph/graph.component').then(m => m.GraphComponent),
+              import('./features/graph-shell/graph-shell.component').then(m => m.GraphShellComponent),
+            children: [
+              { path: '', pathMatch: 'full', redirectTo: 'standard' },
+              {
+                path: 'standard',
+                loadComponent: () =>
+                  import('./features/graph/graph.component').then(m => m.GraphComponent),
+              },
+              {
+                path: 'ok',
+                loadComponent: () =>
+                  import('./features/okgraph/okgraph.component').then(m => m.OkGraphComponent),
+              },
+            ],
           },
           {
             path: 'library',

@@ -5,10 +5,10 @@ import { CitGraphService, CitGraphNode, CitGraphEdge, CitGraphResponse } from '.
 import { DemoModeService } from '../../core/services/demo-mode.service';
 import { BookshelfService, BookshelfItem } from '../../core/services/bookshelf.service';
 import { louvain, getCommunitiesAtLevel, LouvainResult } from './louvain';
-import { SearchStateService } from '../../core/services/search-state.service';
 import { Router } from '@angular/router';
-import { Paper } from '../../core/models/paper.model';
 import { NotificationService } from '../../core/services/notification.service';
+import { OkGraphStateService } from '../../core/services/okgraph-state.service';
+import { ProjectContextService } from '../../core/services/project-context.service';
 
 interface LayoutNode {
   id: string;
@@ -58,9 +58,10 @@ export class CitGraphComponent {
   private readonly citgraphSvc = inject(CitGraphService);
   private readonly demo = inject(DemoModeService);
   private readonly bookshelfSvc = inject(BookshelfService);
-  private readonly searchState = inject(SearchStateService);
   private readonly router = inject(Router);
   private readonly notify = inject(NotificationService);
+  private readonly okGraphState = inject(OkGraphStateService);
+  private readonly projectContext = inject(ProjectContextService);
   private readonly elRef = inject(ElementRef);
 
   readonly bookshelfOpen = signal(false);
@@ -571,44 +572,22 @@ export class CitGraphComponent {
   }
 
   sendRepresentativesToGraph(): void {
-    if (!this.showCommunities()) return;
-    const nodes = this.layoutNodes();
-    const groups = new Map<number, LayoutNode[]>();
-    for (const n of nodes) {
-      let arr = groups.get(n.community);
-      if (!arr) { arr = []; groups.set(n.community, arr); }
-      arr.push(n);
+    const result = this.louvainResult();
+    if (!result || result.levels.length === 0) {
+      this.notify.show('Run Louvain clustering first');
+      return;
     }
-    const reps: Paper[] = [];
-    for (const [, members] of groups) {
-      if (!members.length) continue;
-      const sorted = members.map(m => {
-        const score = +(1.0 * Math.log10(1 + (m.data.citation_count || 0))).toFixed(2);
-        return { member: m, score };
-      }).sort((a, b) => b.score - a.score);
-      const repNode = sorted[0].member.data;
-      reps.push({
-        title: repNode.title,
-        authors: repNode.authors.map(a => ({ name: a, is_corresponding: false })),
-        abstract: repNode.abstract,
-        url: '',
-        year: repNode.year,
-        citation_count: repNode.citation_count,
-        reference_count: repNode.reference_count,
-        openalex_id: repNode.paper_id,
-        semantic_scholar_id: repNode.paper_id,
-        ok_score: sorted[0].score,
-        // Make sure required Paper fields have defaults
-        has_public_code: false,
-        is_peer_reviewed: false,
-        has_dataset: false,
-        repo_stars: 0,
-        is_open_access: false,
-      } as unknown as Paper);
+
+    // Hand the OK-Graph the full hierarchy (base nodes in Louvain index order +
+    // the dendrogram); it computes representatives and drills down itself.
+    const baseNodes = this.layoutNodes().map(n => n.data);
+    this.okGraphState.setHierarchy(baseNodes, result);
+    this.notify.show('Sent cluster hierarchy to OK-Graph');
+
+    const projectId = this.projectContext.activeProjectId();
+    if (projectId !== null) {
+      this.router.navigate(['/dashboard', projectId, 'graph', 'ok']);
     }
-    this.searchState.addExternalGraphPapers(reps);
-    this.notify.show(`Sent ${reps.length} representatives to Graph`);
-    this.router.navigate(['/graph']);
   }
 }
 
