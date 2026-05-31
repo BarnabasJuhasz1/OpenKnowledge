@@ -1,12 +1,18 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { OkGraphStateService, PlacedNode } from '../../core/services/okgraph-state.service';
-import { getCommunitiesAtLevel } from '../citgraph/louvain';
+import { getCommunitiesAtLevel, louvain } from '../citgraph/louvain';
 import { Paper } from '../../core/models/paper.model';
 import { citNodeToPaper, repScore } from './cit-node';
-import { clusterColor, lighten, withAlpha } from './community-colors';
+import { clusterColor, lighten, withAlpha, MISC_COLOR } from './community-colors';
 import { edgePath as buildEdgePath, LayoutEdge, TOP_PADDING } from '../graph/graph-layout';
 import { getArchetypeIcon } from '../../shared/utils/archetype-icons';
+import { SearchStateService, paperId } from '../../core/services/search-state.service';
+import { CitGraphService } from '../../core/services/citgraph.service';
+import { DemoModeService } from '../../core/services/demo-mode.service';
+import { NotificationService } from '../../core/services/notification.service';
+import { parseQuery } from '../../shared/utils/query-parser';
 
 interface Blob {
   topCluster: number;
@@ -15,6 +21,8 @@ interface Blob {
   w: number;
   h: number;
   color: string;
+  isMisc: boolean;
+  label: string;
 }
 
 /** A positioned node on the canvas. */
@@ -48,12 +56,160 @@ const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 @Component({
   selector: 'app-ok-graph',
   standalone: true,
-  imports: [DecimalPipe],
+  imports: [DecimalPipe, FormsModule],
   templateUrl: './okgraph.component.html',
   styleUrl: './okgraph.component.scss',
 })
 export class OkGraphComponent {
   readonly state = inject(OkGraphStateService);
+  private readonly searchState = inject(SearchStateService);
+  private readonly citgraphSvc = inject(CitGraphService);
+  private readonly demo = inject(DemoModeService);
+  private readonly notify = inject(NotificationService);
+
+  // Setup options
+  readonly useOnlySelected = signal(true);
+  readonly includeNonMatching = signal(true);
+
+  // Exploration states
+  readonly explorationLoading = signal(false);
+  readonly explorationError = signal<string | null>(null);
+
+  // The exploration direction the user has picked (null until one is selected).
+  // Picking a direction only highlights the button; the actual exploration is
+  // kicked off separately by the "Explore" CTA.
+  readonly selectedDirection = signal<'past' | 'both' | 'future' | null>(null);
+
+  /** Pick (or toggle off) an exploration direction. */
+  selectDirection(direction: 'past' | 'both' | 'future'): void {
+    this.selectedDirection.update(cur => (cur === direction ? null : direction));
+  }
+
+  /** True once the user can proceed: a direction is chosen and seeds exist. */
+  readonly canExplore = computed(() => this.selectedDirection() !== null && this.hasSourcePapers());
+
+  /** Continue with the picked direction. Functionality intentionally not wired
+   *  up yet — the button only becomes active so the flow can be designed. */
+  onExplore(): void {
+    // TODO: trigger exploreSurrounding(this.selectedDirection()!) once approved.
+  }
+
+  // Selected papers from graph selection list
+  readonly selectedPapers = computed(() => {
+    const ids = this.searchState.graphPaperIds();
+    const all = this.searchState.allScoredPapers();
+    const external = this.searchState.externalGraphPapers();
+    const idMap = new Map(all.map(p => [paperId(p), p]));
+    for (const [id, p] of external) idMap.set(id, p);
+    const result: Paper[] = [];
+    for (const id of ids) {
+      const p = idMap.get(id);
+      if (p) result.push(p);
+    }
+    return result;
+  });
+
+  // Count of all retrieved papers
+  readonly retrievedPapersCount = computed(() => {
+    return this.searchState.filteredPapers().length;
+  });
+
+  // Search query text
+  readonly currentQueryText = computed(() => {
+    return this.searchState.rawQuery() || 'None';
+  });
+
+  // Determines whether we have valid papers to explore
+  readonly hasSourcePapers = computed(() => {
+    if (this.useOnlySelected()) {
+      return this.selectedPapers().length > 0;
+    }
+    return this.retrievedPapersCount() > 0;
+  });
+
+  paperId(paper: Paper): string {
+    return paperId(paper);
+  }
+
+  removePaper(paper: Paper): void {
+    this.searchState.removeFromGraph(paperId(paper));
+  }
+
+  exploreSurrounding(direction: 'past' | 'future' | 'both'): void {
+    const seeds = this.useOnlySelected() ? this.selectedPapers() : this.searchState.filteredPapers();
+    if (!seeds.length) {
+      this.notify.show('No seed papers available to build from.');
+      return;
+    }
+
+    this.explorationLoading.set(true);
+    this.explorationError.set(null);
+
+    const seedIds = seeds.map(p => paperId(p));
+    const keywords = parseQuery(this.searchState.rawQuery());
+
+    const req = this.demo.enabled()
+      ? this.citgraphSvc.exploreDemo({
+          paper_ids: seedIds,
+          direction,
+          include_non_matching: this.includeNonMatching(),
+          keywords,
+          max_per_hop: 20
+        })
+      : this.citgraphSvc.explore({
+          paper_ids: seedIds,
+          direction,
+          include_non_matching: this.includeNonMatching(),
+          keywords,
+          max_per_hop: 20
+        });
+
+    req.subscribe({
+      next: (res) => {
+        const baseNodes = res.nodes;
+        const edges = res.edges;
+
+        if (!baseNodes.length) {
+          this.explorationLoading.set(false);
+          this.explorationError.set('No surrounding papers found matching your configuration.');
+          return;
+        }
+
+        // Louvain re-indexing
+        const indexOf = new Map(baseNodes.map((n, i) => [n.paper_id, i]));
+        const mappedEdges = edges
+          .map(e => ({
+            source: indexOf.get(e.source) ?? -1,
+            target: indexOf.get(e.target) ?? -1
+          }))
+          .filter(e => e.source >= 0 && e.target >= 0);
+
+        const louvainResult = louvain(baseNodes.length, mappedEdges, {
+          resolution: 1,
+          maxLevels: 10,
+        });
+
+        this.state.setHierarchy({
+          nodes: baseNodes,
+          louvain: louvainResult,
+          edges: edges,
+          resolution: 1,
+          maxLevels: 10,
+          keywords,
+          seedId: res.seed_id || (baseNodes[0]?.paper_id ?? ''),
+          prefiltered: false
+        });
+
+        this.explorationLoading.set(false);
+        this.notify.show(`Successfully built surrounding graph with ${baseNodes.length} nodes!`);
+      },
+      error: (err) => {
+        this.explorationLoading.set(false);
+        this.explorationError.set(err.error?.detail || err.message || 'An error occurred while exploring literature.');
+        this.notify.show('Failed to build surrounding graph');
+      }
+    });
+  }
 
   getArchetypeIcon(archetype?: string | null): string {
     return getArchetypeIcon(archetype);
@@ -154,6 +310,24 @@ export class OkGraphComponent {
   private readonly baseNodes = computed(() => this.state.nodes());
   private readonly levels = computed(() => this.state.louvain()?.levels ?? []);
   private readonly topLevel = computed(() => this.levels().length - 1);
+
+  /** Highest-level cluster id that holds the disconnected "Miscellaneous" group,
+   *  or null when the graph has none. `louvain().miscCommunity` is the group's
+   *  level-0 community id; compose it up through the hierarchy (it never merges)
+   *  to get the top-level lane/blob it lands in. */
+  private readonly miscTopCluster = computed<number | null>(() => {
+    const lv = this.state.louvain();
+    if (!lv || lv.miscCommunity == null) return null;
+    const levels = lv.levels;
+    let c = lv.miscCommunity; // a level-0 community id
+    for (let l = 1; l < levels.length; l++) c = levels[l][c];
+    return c;
+  });
+
+  /** Cluster colour, with the Miscellaneous cluster forced to neutral grey. */
+  private clusterColorFor(topCluster: number): string {
+    return topCluster === this.miscTopCluster() ? MISC_COLOR : clusterColor(topCluster);
+  }
 
   /** Memoised community assignment per hierarchy level (recreated per dataset). */
   private readonly communitiesAtLevel = computed(() => {
@@ -365,7 +539,7 @@ export class OkGraphComponent {
       members.forEach((p, j) => {
         const x = yearX.get(p.paper.year!)!;
         const y = laneCenter + (j - (k - 1) / 2) * LANE_NODE_VGAP;
-        const color = clusterColor(p.topCluster);
+        const color = this.clusterColorFor(p.topCluster);
         nodes.push({
           id: p.id, paper: p.paper, x, y,
           letter: letterOf.get(p.id) ?? '?',
@@ -384,15 +558,19 @@ export class OkGraphComponent {
 
     // One coloured blob per highest-level cluster, around its representatives.
     const PAD_X = 38, PAD_TOP = 40, PAD_BOTTOM = 50;
+    const misc = this.miscTopCluster();
     const blobs: Blob[] = [];
     for (const [topCluster, b] of boxes) {
+      const isMisc = topCluster === misc;
       blobs.push({
         topCluster,
         x: b.minX - PAD_X,
         y: b.minY - PAD_TOP,
         w: (b.maxX - b.minX) + 2 * PAD_X,
         h: (b.maxY - b.minY) + PAD_TOP + PAD_BOTTOM,
-        color: clusterColor(topCluster),
+        color: this.clusterColorFor(topCluster),
+        isMisc,
+        label: isMisc ? 'Miscellaneous' : '',
       });
     }
 

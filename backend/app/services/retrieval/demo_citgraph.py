@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .citgraph_builder import CitGraphEdge, CitGraphNode, CitGraphResult
+from .citgraph_builder import CitGraphEdge, CitGraphNode, CitGraphResult, matches_keywords
 
 logger = logging.getLogger(__name__)
 
@@ -259,6 +259,60 @@ class DemoCitGraphStore:
                         next_frontier.append(neighbour)
             frontier = next_frontier
 
+        return CitGraphResult(
+            nodes=list(visited.values()), edges=edges, seed_id=seed_id
+        )
+
+    async def explore(
+        self,
+        seeds: list[str],
+        direction: str,  # 'past', 'future', 'both'
+        include_non_matching: bool = True,
+        keywords: list[str] = [],
+        max_per_hop: int = 20,
+    ) -> CitGraphResult:
+        index = await self._ensure_loaded()
+
+        resolved_seeds = []
+        for s in seeds:
+            sid = self._resolve(index, s)
+            if sid is not None and sid in index.meta:
+                resolved_seeds.append(sid)
+
+        if not resolved_seeds:
+            return CitGraphResult(nodes=[], edges=[], seed_id="")
+
+        visited: dict[str, CitGraphNode] = {}
+        for sid in resolved_seeds:
+            visited[sid] = self._node(index, sid, 0)
+
+        edges: list[CitGraphEdge] = []
+        edge_set: set[tuple[str, str]] = set()
+
+        for pid in resolved_seeds:
+            refs = index.forward.get(pid, [])[:max_per_hop] if direction in ('past', 'both') else []
+            cits = index.reverse.get(pid, [])[:max_per_hop] if direction in ('future', 'both') else []
+
+            for neighbour, edge in (
+                [(r, (pid, r)) for r in refs]
+                + [(c, (c, pid)) for c in cits]
+            ):
+                if neighbour not in index.meta:
+                    continue
+
+                if not include_non_matching:
+                    m = index.meta[neighbour]
+                    if not matches_keywords(m.get("title"), m.get("abstract"), keywords):
+                        continue
+
+                if edge not in edge_set:
+                    edge_set.add(edge)
+                    edges.append(CitGraphEdge(source=edge[0], target=edge[1]))
+
+                if neighbour not in visited:
+                    visited[neighbour] = self._node(index, neighbour, 1)
+
+        seed_id = resolved_seeds[0] if resolved_seeds else ""
         return CitGraphResult(
             nodes=list(visited.values()), edges=edges, seed_id=seed_id
         )

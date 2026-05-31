@@ -4,7 +4,7 @@ import os
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from ..services.retrieval.citgraph_builder import build_citation_graph, UpstreamError
+from ..services.retrieval.citgraph_builder import build_citation_graph, UpstreamError, explore_citation_graph
 from ..services.retrieval.demo_citgraph import DemoCitGraphStore
 from ..services import archetype
 
@@ -14,6 +14,14 @@ router = APIRouter(prefix="/citgraph", tags=["citgraph"])
 class CitGraphRequest(BaseModel):
     paper_id: str
     k: int = Field(default=1, ge=1, le=3)
+    max_per_hop: int = Field(default=20, ge=1, le=50)
+
+
+class CitGraphExploreRequest(BaseModel):
+    paper_ids: list[str]
+    direction: str  # 'past', 'future', 'both'
+    include_non_matching: bool = True
+    keywords: list[str] = Field(default_factory=list)
     max_per_hop: int = Field(default=20, ge=1, le=50)
 
 
@@ -115,6 +123,53 @@ async def build_graph_demo(body: CitGraphRequest):
     if not result.nodes:
         raise HTTPException(
             status_code=404, detail="Paper not found in demo dataset"
+        )
+
+    await archetype.classify_citgraph_nodes(result.nodes)
+    return _to_response(result)
+
+
+@router.post("/explore", response_model=CitGraphResponse)
+async def explore_graph(body: CitGraphExploreRequest):
+    api_key = os.getenv("SEMANTIC_SCHOLAR_API_KEY")
+    try:
+        result = await explore_citation_graph(
+            seeds=body.paper_ids,
+            direction=body.direction,
+            include_non_matching=body.include_non_matching,
+            keywords=body.keywords,
+            max_per_hop=body.max_per_hop,
+            api_key=api_key,
+        )
+    except UpstreamError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to explore graph: {e}")
+
+    if not result.nodes:
+        raise HTTPException(status_code=404, detail="No papers found or no data available")
+
+    await archetype.classify_citgraph_nodes(result.nodes)
+    return _to_response(result)
+
+
+@router.post("/demo/explore", response_model=CitGraphResponse)
+async def explore_graph_demo(body: CitGraphExploreRequest):
+    store = DemoCitGraphStore.get()
+    try:
+        result = await store.explore(
+            seeds=body.paper_ids,
+            direction=body.direction,
+            include_non_matching=body.include_non_matching,
+            keywords=body.keywords,
+            max_per_hop=body.max_per_hop,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to explore graph: {e}")
+
+    if not result.nodes:
+        raise HTTPException(
+            status_code=404, detail="No papers found in demo dataset"
         )
 
     await archetype.classify_citgraph_nodes(result.nodes)

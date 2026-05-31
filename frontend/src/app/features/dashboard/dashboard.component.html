@@ -72,9 +72,18 @@
       </p>
     }
 
-    <!-- Settings (pinned to the bottom of the sidebar) -->
-    <nav class="dashboard__settings" aria-label="Settings">
+    <!-- Documentation + Settings (pinned to the bottom of the sidebar) -->
+    <nav class="dashboard__settings" aria-label="Help and settings">
       <hr class="dashboard__divider" />
+      <a
+        class="dashboard__nav-link"
+        routerLink="/docs"
+        routerLinkActive="dashboard__nav-link--active"
+        [title]="collapsed() ? 'Documentation' : null"
+      >
+        <span class="material-symbols-outlined dashboard__nav-icon">description</span>
+        <span class="dashboard__nav-label">Documentation</span>
+      </a>
       <a
         class="dashboard__nav-link"
         routerLink="/dashboard/settings"

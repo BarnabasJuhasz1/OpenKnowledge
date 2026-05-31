@@ -14,6 +14,11 @@ export function clusterColor(id: number): string {
   return COMMUNITY_COLORS[((id % n) + n) % n];
 }
 
+/** Neutral grey reserved for the "Miscellaneous" cluster — the catch-all that
+ *  holds every disconnected node. Deliberately outside COMMUNITY_COLORS so it
+ *  never collides with a real cluster's hue. */
+export const MISC_COLOR = '#6b7280';
+
 function parseHex(hex: string): [number, number, number] {
   const h = hex.replace('#', '');
   return [

@@ -1,7 +1,123 @@
-<div class="dash-home">
-  <div class="dash-home__inner">
-    <span class="material-symbols-outlined dash-home__icon">dashboard</span>
-    <h1 class="dash-home__title">Dashboard</h1>
-    <p class="dash-home__subtitle">Nothing here yet — this space is coming soon.</p>
+<div class="dash">
+  <div class="dash__inner">
+    <!-- Header -->
+    <header class="dash__header">
+      <div>
+        <h1 class="dash__title">Dashboard</h1>
+        <p class="dash__subtitle">A high-level overview of all your research projects.</p>
+      </div>
+      <button
+        class="dash__refresh"
+        type="button"
+        (click)="fetch()"
+        [disabled]="loading()"
+        title="Refresh"
+      >
+        <span class="material-symbols-outlined">refresh</span>
+      </button>
+    </header>
+
+    @if (loading()) {
+      <div class="dash__state">
+        <span class="material-symbols-outlined dash__state-spin">progress_activity</span>
+        <p>Loading your overview…</p>
+      </div>
+    } @else if (error()) {
+      <div class="dash__state">
+        <span class="material-symbols-outlined dash__state-icon">cloud_off</span>
+        <p>Couldn't load dashboard stats. Is the backend running?</p>
+        <button class="dash__cta" type="button" (click)="fetch()">Retry</button>
+      </div>
+    } @else if (!hasProjects()) {
+      <div class="dash__state">
+        <span class="material-symbols-outlined dash__state-icon">rocket_launch</span>
+        <p>You don't have any projects yet. Create one to start your literature review.</p>
+        <button class="dash__cta" type="button" (click)="goToProjects()">
+          <span class="material-symbols-outlined">add</span> New project
+        </button>
+      </div>
+    } @else {
+      <!-- KPI cards -->
+      <section class="kpis">
+        @for (kpi of kpis(); track kpi.label) {
+          <div class="kpi" [class.kpi--accent]="kpi.accent">
+            <span class="material-symbols-outlined kpi__icon">{{ kpi.icon }}</span>
+            <div class="kpi__body">
+              <span class="kpi__value">{{ kpi.value }}</span>
+              <span class="kpi__label">{{ kpi.label }}</span>
+            </div>
+          </div>
+        }
+      </section>
+
+      <div class="dash__grid">
+        <!-- Project comparison -->
+        <section class="panel">
+          <header class="panel__header">
+            <h2 class="panel__title">Project comparison</h2>
+            <span class="panel__hint">by library size</span>
+          </header>
+
+          <ul class="bars">
+            @for (p of rankedProjects(); track p.id) {
+              <li class="bar-row" (click)="openProject(p.id)">
+                <div class="bar-row__head">
+                  <span class="bar-row__dot" [style.background]="p.color || '#6366f1'"></span>
+                  <span class="bar-row__name">{{ p.name }}</span>
+                  <span class="bar-row__count">{{ p.library_papers }}</span>
+                </div>
+                <div class="bar-row__track">
+                  <div
+                    class="bar-row__fill"
+                    [style.width.%]="barWidth(p.library_papers)"
+                    [style.background]="p.color || '#6366f1'"
+                  ></div>
+                </div>
+                <div class="bar-row__meta">
+                  <span title="Saved searches">
+                    <span class="material-symbols-outlined">bookmark</span>{{ p.saved_searches }}
+                  </span>
+                  <span title="Searches run">
+                    <span class="material-symbols-outlined">search</span>{{ p.searches_run }}
+                  </span>
+                  <span title="Last activity" class="bar-row__time">
+                    {{ relativeTime(p.last_activity) }}
+                  </span>
+                </div>
+              </li>
+            }
+          </ul>
+        </section>
+
+        <!-- Recent activity -->
+        <section class="panel">
+          <header class="panel__header">
+            <h2 class="panel__title">Recent activity</h2>
+          </header>
+
+          @if (activity().length === 0) {
+            <p class="panel__empty">No activity yet.</p>
+          } @else {
+            <ul class="feed">
+              @for (a of activity(); track trackActivity($index, a)) {
+                <li class="feed__item">
+                  <span class="material-symbols-outlined feed__icon">{{ iconFor(a.kind) }}</span>
+                  <div class="feed__body">
+                    <p class="feed__line">
+                      <span class="feed__verb">{{ verbFor(a.kind) }}</span>
+                      <span class="feed__title">{{ a.title }}</span>
+                    </p>
+                    <p class="feed__sub">
+                      <span class="feed__dot" [style.background]="a.project_color || '#6366f1'"></span>
+                      {{ a.project_name }} · {{ relativeTime(a.timestamp) }}
+                    </p>
+                  </div>
+                </li>
+              }
+            </ul>
+          }
+        </section>
+      </div>
+    }
   </div>
 </div>

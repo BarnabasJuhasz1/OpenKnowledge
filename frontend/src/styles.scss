@@ -242,14 +242,14 @@
   --ok-outline:                  #9aa0ac;
   --ok-outline-variant:          #d4d7df;
 
-  // — Primary (Indigo, saturated for white backgrounds) —
-  --ok-primary:                  #4f46e5;
+  // — Primary (Orange-yellow, saturated for white backgrounds) —
+  --ok-primary:                  #d97706;
   --ok-on-primary:               #ffffff;
-  --ok-primary-container:        #e0e0ff;
-  --ok-on-primary-container:     #1a1a8a;
-  --ok-primary-raw:              #6366f1;
-  --ok-primary-raw-hover:        #4f46e5;
-  --ok-primary-rgb:              99, 102, 241;
+  --ok-primary-container:        #ffedd5;
+  --ok-on-primary-container:     #7c2d12;
+  --ok-primary-raw:              #f59e0b;
+  --ok-primary-raw-hover:        #d97706;
+  --ok-primary-rgb:              245, 158, 11;
 
   // — Secondary (Purple) —
   --ok-secondary:                #9333ea;
@@ -273,20 +273,20 @@
   // — Inverse —
   --ok-inverse-surface:          #2d3044;
   --ok-inverse-on-surface:       #f0f0f5;
-  --ok-inverse-primary:          #c0c1ff;
+  --ok-inverse-primary:          #ffd9a8;
 
   // — Surface tint —
-  --ok-surface-tint:             #6366f1;
+  --ok-surface-tint:             #f59e0b;
 
-  // — Gradients (Indigo → Purple) —
-  --ok-gradient-primary:         linear-gradient(135deg, #6366f1, #a855f7);
-  --ok-gradient-primary-hover:   linear-gradient(135deg, #4f46e5, #9333ea);
+  // — Gradients (Amber → Orange) —
+  --ok-gradient-primary:         linear-gradient(135deg, #f59e0b, #f97316);
+  --ok-gradient-primary-hover:   linear-gradient(135deg, #d97706, #ea580c);
 
   // — Theme-aware accents (lighter tints on white) —
-  --ok-shadow-primary:           rgba(99, 102, 241, 0.25);
-  --ok-selection-bg:             rgba(99, 102, 241, 0.18);
-  --ok-mesh-1:                   rgba(99, 102, 241, 0.08);
-  --ok-mesh-2:                   rgba(168, 85, 247, 0.06);
+  --ok-shadow-primary:           rgba(245, 158, 11, 0.25);
+  --ok-selection-bg:             rgba(245, 158, 11, 0.18);
+  --ok-mesh-1:                   rgba(245, 158, 11, 0.08);
+  --ok-mesh-2:                   rgba(249, 115, 22, 0.06);
   --ok-mesh-3:                   rgba(14, 165, 233, 0.05);
 
   // — Hover / elevation overlay (black on light surfaces) —
@@ -297,7 +297,7 @@
   --ok-glass-bg:                 rgba(255, 255, 255, 0.70);
   --ok-glass-border:             rgba(0, 0, 0, 0.06);
   --ok-glass-bg-floating:        rgba(255, 255, 255, 0.85);
-  --ok-glass-glow:               0 0 30px rgba(99, 102, 241, 0.08);
+  --ok-glass-glow:               0 0 30px rgba(245, 158, 11, 0.08);
 
   // — Top navigation chrome (lighter gray than the page) —
   --ok-topnav-bg:                rgba(236, 238, 242, 0.85);

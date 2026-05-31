@@ -52,15 +52,21 @@
 
     <!-- Results (show as soon as papers start arriving) -->
     @if (!state.error() && state.totalRaw() > 0) {
-      <app-results-meta
-        [totalFound]="state.totalFound()"
-        [totalRaw]="state.totalRaw()"
-        [deduplicatesRemoved]="state.deduplicatesRemoved()"
-        [activeFilter]="state.activeFilter()"
-        [sourcesQueried]="state.sourcesQueried()"
-        [sourcesFailed]="state.sourcesFailed()"
-        [sourceErrors]="state.sourceErrors()"
-      />
+      <div class="results-page__header">
+        <app-results-meta
+          [totalFound]="state.totalFound()"
+          [totalRaw]="state.totalRaw()"
+          [deduplicatesRemoved]="state.deduplicatesRemoved()"
+          [activeFilter]="state.activeFilter()"
+          [sourcesQueried]="state.sourcesQueried()"
+          [sourcesFailed]="state.sourcesFailed()"
+          [sourceErrors]="state.sourceErrors()"
+        />
+        <a class="ok-graph-cta-btn" routerLink="../graph/ok">
+          <span class="material-symbols-outlined">workspaces</span>
+          <span>Go to OK-Graph</span>
+        </a>
+      </div>
 
       @if (state.activeFilter()) {
         <div class="filter-info">

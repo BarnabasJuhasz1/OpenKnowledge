@@ -138,3 +138,47 @@ async def test_blank_abstract_becomes_none():
     result = await store.build("seed", k=1, max_per_hop=20)
     seed_node = next(n for n in result.nodes if n.paper_id == "seed")
     assert seed_node.abstract is None
+
+
+@pytest.mark.asyncio
+async def test_explore_past():
+    store = _make_store()
+    result = await store.explore(["seed"], direction="past", include_non_matching=True)
+    node_ids = {n.paper_id for n in result.nodes}
+    assert node_ids == {"seed", "A", "B"}
+    edges = {(e.source, e.target) for e in result.edges}
+    assert edges == {("seed", "A"), ("seed", "B")}
+
+
+@pytest.mark.asyncio
+async def test_explore_future():
+    store = _make_store()
+    result = await store.explore(["seed"], direction="future", include_non_matching=True)
+    node_ids = {n.paper_id for n in result.nodes}
+    assert node_ids == {"seed", "C", "D"}
+    edges = {(e.source, e.target) for e in result.edges}
+    assert edges == {("C", "seed"), ("D", "seed")}
+
+
+@pytest.mark.asyncio
+async def test_explore_both():
+    store = _make_store()
+    result = await store.explore(["seed"], direction="both", include_non_matching=True)
+    node_ids = {n.paper_id for n in result.nodes}
+    assert node_ids == {"seed", "A", "B", "C", "D"}
+    edges = {(e.source, e.target) for e in result.edges}
+    assert edges == {("seed", "A"), ("seed", "B"), ("C", "seed"), ("D", "seed")}
+
+
+@pytest.mark.asyncio
+async def test_explore_keyword_filter():
+    store = _make_store()
+    # A matches "Alpha", B does not. So A is included, B is skipped.
+    result = await store.explore(
+        ["seed"], direction="past", include_non_matching=False, keywords=["alpha"]
+    )
+    node_ids = {n.paper_id for n in result.nodes}
+    assert node_ids == {"seed", "A"}
+    edges = {(e.source, e.target) for e in result.edges}
+    assert edges == {("seed", "A")}
+

@@ -10,6 +10,28 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
 
 
+class DBUser(Base):
+    """A person authenticated through a 3rd-party OAuth provider.
+
+    There is no password store — the only way to obtain a row here is to complete
+    an OAuth sign-in. A user is uniquely identified by the (provider,
+    provider_account_id) pair, so the same email arriving via two providers yields
+    two distinct accounts (the providers vouch for different identities).
+    """
+
+    __tablename__ = "users"
+    __table_args__ = (UniqueConstraint("provider", "provider_account_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String, nullable=False)  # google|microsoft|apple|github
+    provider_account_id: Mapped[str] = mapped_column(String, nullable=False)
+    email: Mapped[str | None] = mapped_column(String, index=True)
+    name: Mapped[str | None] = mapped_column(String)
+    avatar_url: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    last_login_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
+
+
 class DBProject(Base):
     __tablename__ = "projects"
 

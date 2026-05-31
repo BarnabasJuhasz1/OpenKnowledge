@@ -1,14 +1,196 @@
 <div class="ok-graph-page">
   <div class="ok-graph-page__body">
     @if (!hasContent()) {
-      <div class="ok-graph-page__empty">
-        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-        <h2>OK-Graph</h2>
-        <p>Build a citation graph in the Cit-Graph subtab, run Louvain clustering,
-          then <strong>“Send Reps to Graph”</strong>. The OK-Graph starts with the
-          top-level cluster representatives; expand a node (side arrows or
-          double-click) to drill into its sub-clusters — left for earlier works,
-          right for later ones.</p>
+      <div class="ok-graph-page__setup">
+        <div class="setup-container">
+          <header class="setup-header">
+            <h1 class="setup-header__title">
+              <span class="material-symbols-outlined setup-header__icon">workspaces</span>
+              Explore Surrounding Literature
+            </h1>
+            <p class="setup-header__subtitle">
+              Map and cluster the papers, historical roots, or downstream impacts of your selected literature.
+            </p>
+          </header>
+
+          <div class="setup-grid">
+            <!-- Left panel: Seed Papers -->
+            <div class="setup-panel setup-panel--papers">
+              <h2 class="setup-section-title">
+                <span class="material-symbols-outlined">description</span>
+                1. Seed Papers
+              </h2>
+
+              <div class="selected-papers-list">
+                @if (useOnlySelected()) {
+                  @if (selectedPapers().length === 0) {
+                    <div class="papers-list-empty">
+                      <span class="material-symbols-outlined">info</span>
+                      <p>
+                        No papers selected. Go to the <a routerLink="../../research">Literature Search</a> tab to select papers by adding them to the graph, or uncheck "Only Selected Papers" to use all retrieved search results.
+                      </p>
+                    </div>
+                  } @else {
+                    <div class="papers-scroll-container">
+                      @for (paper of selectedPapers(); track paperId(paper)) {
+                        <div class="paper-item">
+                          <span class="material-symbols-outlined paper-item__icon">description</span>
+                          <div class="paper-item__details">
+                            <span class="paper-item__title" [title]="paper.title">{{ paper.title }}</span>
+                            <span class="paper-item__meta">
+                              {{ paper.year || '—' }} · {{ paper.authors[0]?.name || 'Unknown Author' }}
+                            </span>
+                          </div>
+                          <button class="paper-item__remove" (click)="removePaper(paper)" title="Remove from selection">
+                            <span class="material-symbols-outlined">close</span>
+                          </button>
+                        </div>
+                      }
+                    </div>
+                  }
+                } @else {
+                  @if (retrievedPapersCount() === 0) {
+                    <div class="papers-list-empty">
+                      <span class="material-symbols-outlined">info</span>
+                      <p>No retrieved papers available. Run a query in the <a routerLink="../../search">Search</a> tab first.</p>
+                    </div>
+                  } @else {
+                    <div class="papers-list-info">
+                      <span class="material-symbols-outlined">check_circle</span>
+                      <p>Using all {{ retrievedPapersCount() }} retrieved papers from query: <br><code>{{ currentQueryText() }}</code></p>
+                    </div>
+                  }
+                }
+              </div>
+            </div>
+
+            <!-- Right panel: Configuration -->
+            <div class="setup-panel setup-panel--config">
+              <h2 class="setup-section-title">
+                <span class="material-symbols-outlined">settings</span>
+                2. Configuration
+              </h2>
+
+              <div class="filter-toggles">
+                <label class="filter-toggle">
+                  <input type="checkbox" [ngModel]="useOnlySelected()" (ngModelChange)="useOnlySelected.set($event)" />
+                  <span class="filter-toggle__box"></span>
+                  <div class="filter-toggle__details">
+                    <span class="filter-toggle__label">Only Selected Papers</span>
+                    <span class="filter-toggle__description">
+                      Start only from papers you specifically selected ({{ selectedPapers().length }}). If unchecked, uses all retrieved search results ({{ retrievedPapersCount() }}).
+                    </span>
+                  </div>
+                </label>
+
+                <label class="filter-toggle">
+                  <input type="checkbox" [ngModel]="includeNonMatching()" (ngModelChange)="includeNonMatching.set($event)" />
+                  <span class="filter-toggle__box"></span>
+                  <div class="filter-toggle__details">
+                    <span class="filter-toggle__label">Include Unmatched Citations</span>
+                    <span class="filter-toggle__description">
+                      Allow papers in the surrounding graph that do not match the current search keywords but are relevant citations.
+                    </span>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom: Action Buttons / Explore Directions -->
+          <div class="setup-panel setup-panel--actions">
+            <h2 class="setup-section-title">
+              <span class="material-symbols-outlined">explore</span>
+              3. Explore Surrounding Literature
+            </h2>
+
+            @if (explorationLoading()) {
+              <div class="exploration-loader">
+                <div class="exploration-loader__spinner"></div>
+                <p class="exploration-loader__text">Building citation graph and running community clustering...</p>
+              </div>
+            } @else {
+              @if (explorationError()) {
+                <div class="exploration-error">
+                  <span class="material-symbols-outlined">error</span>
+                  <span>{{ explorationError() }}</span>
+                </div>
+              }
+
+              <div class="direction-buttons">
+                <!-- Left Button: Explore Past -->
+                <button
+                  class="direction-btn"
+                  [class.direction-btn--selected]="selectedDirection() === 'past'"
+                  [disabled]="!hasSourcePapers()"
+                  (click)="selectDirection('past')"
+                >
+                  @if (selectedDirection() === 'past') {
+                    <span class="material-symbols-outlined direction-btn__check">check_circle</span>
+                  }
+                  <div class="direction-btn__icon-wrapper direction-btn__icon-wrapper--past">
+                    <span class="material-symbols-outlined">history</span>
+                  </div>
+                  <span class="direction-btn__title">Explore Past</span>
+                  <span class="direction-btn__desc">
+                    Discover literature ancestry: how the ideas, events, and historical papers led to the birth of these works.
+                  </span>
+                </button>
+
+                <!-- Middle Button: Explore Context -->
+                <button
+                  class="direction-btn"
+                  [class.direction-btn--selected]="selectedDirection() === 'both'"
+                  [disabled]="!hasSourcePapers()"
+                  (click)="selectDirection('both')"
+                >
+                  @if (selectedDirection() === 'both') {
+                    <span class="material-symbols-outlined direction-btn__check">check_circle</span>
+                  }
+                  <div class="direction-btn__icon-wrapper direction-btn__icon-wrapper--context">
+                    <span class="material-symbols-outlined">compare_arrows</span>
+                  </div>
+                  <span class="direction-btn__title">Explore Context</span>
+                  <span class="direction-btn__desc">
+                    Map the surrounding literature: analyze the immediate citation ecosystem in both past and future directions.
+                  </span>
+                </button>
+
+                <!-- Right Button: Explore Future -->
+                <button
+                  class="direction-btn"
+                  [class.direction-btn--selected]="selectedDirection() === 'future'"
+                  [disabled]="!hasSourcePapers()"
+                  (click)="selectDirection('future')"
+                >
+                  @if (selectedDirection() === 'future') {
+                    <span class="material-symbols-outlined direction-btn__check">check_circle</span>
+                  }
+                  <div class="direction-btn__icon-wrapper direction-btn__icon-wrapper--future">
+                    <span class="material-symbols-outlined">trending_up</span>
+                  </div>
+                  <span class="direction-btn__title">Explore Future</span>
+                  <span class="direction-btn__desc">
+                    Track subsequent impact: discover how ideas emerged, branched out, and influenced downstream literature.
+                  </span>
+                </button>
+              </div>
+
+              <div class="explore-cta">
+                <p class="explore-hint">
+                  @if (hasSourcePapers() && !selectedDirection()) {
+                    Pick a direction above to continue.
+                  }
+                </p>
+                <button class="explore-btn" [disabled]="!canExplore()" (click)="onExplore()">
+                  <span class="material-symbols-outlined">explore</span>
+                  Explore
+                </button>
+              </div>
+            }
+          </div>
+
+        </div>
       </div>
     } @else {
       <div class="ok-graph-page__canvas-wrap">
@@ -159,6 +341,7 @@
                 @for (blob of blobs(); track blob.topCluster) {
                   <rect
                     class="graph-svg__blob"
+                    [class.graph-svg__blob--misc]="blob.isMisc"
                     [attr.x]="blob.x"
                     [attr.y]="blob.y"
                     [attr.width]="blob.w"
@@ -168,6 +351,14 @@
                     [attr.fill]="blob.color"
                     [attr.stroke]="blob.color"
                   />
+                  @if (blob.label) {
+                    <text
+                      class="graph-svg__blob-label"
+                      [attr.x]="blob.x + 16"
+                      [attr.y]="blob.y + 22"
+                      [attr.fill]="blob.color"
+                    >{{ blob.label }}</text>
+                  }
                 }
 
                 @for (div of dividers(); track div.x) {

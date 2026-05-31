@@ -52,4 +52,24 @@ export class CitGraphService {
       max_per_hop: maxPerHop ?? 20,
     });
   }
+
+  explore(req: {
+    paper_ids: string[];
+    direction: 'past' | 'future' | 'both';
+    include_non_matching: boolean;
+    keywords: string[];
+    max_per_hop?: number;
+  }): Observable<CitGraphResponse> {
+    return this.http.post<CitGraphResponse>(`${this.baseUrl}/explore`, req);
+  }
+
+  exploreDemo(req: {
+    paper_ids: string[];
+    direction: 'past' | 'future' | 'both';
+    include_non_matching: boolean;
+    keywords: string[];
+    max_per_hop?: number;
+  }): Observable<CitGraphResponse> {
+    return this.http.post<CitGraphResponse>(`${this.baseUrl}/demo/explore`, req);
+  }
 }

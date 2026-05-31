@@ -51,6 +51,11 @@ const COMMUNITY_COLORS = [
   '#be123c', '#0d9488', '#b45309', '#7e22ce', '#c2410c',
 ];
 
+// Neutral grey for the "Miscellaneous" cluster (every disconnected node).
+// Kept identical to the OK-Graph's MISC_COLOR so the same group reads grey in
+// both views; deliberately outside COMMUNITY_COLORS so it never collides.
+const MISC_COLOR = '#6b7280';
+
 @Component({
   selector: 'app-citgraph',
   standalone: true,
@@ -128,6 +133,31 @@ export class CitGraphComponent {
     return this.layoutNodes().find(n => n.id === id)?.data ?? null;
   });
 
+  /** The "Miscellaneous" community id at the *active* display level, or null
+   *  when the graph has no disconnected nodes / no clusters are shown.
+   *  `louvain().miscCommunity` is the group's level-0 community id; compose it up
+   *  to the active hierarchy index (display level L → index L-1). It never merges,
+   *  so it keeps travelling as a single community. */
+  readonly miscCommunityAtLevel = computed<number | null>(() => {
+    const result = this.louvainResult();
+    const level = this.louvainLevel();
+    if (!result || result.miscCommunity == null || level < 1) return null;
+    let c = result.miscCommunity;
+    for (let l = 1; l <= level - 1; l++) c = result.levels[l][c];
+    return c;
+  });
+
+  /** Cluster colour, with the Miscellaneous cluster forced to neutral grey. */
+  private communityColor(id: number): string {
+    if (id === this.miscCommunityAtLevel()) return MISC_COLOR;
+    return COMMUNITY_COLORS[id % COMMUNITY_COLORS.length];
+  }
+
+  /** Cluster display name — "Miscellaneous" for the disconnected catch-all. */
+  communityName(id: number): string {
+    return id === this.miscCommunityAtLevel() ? 'Miscellaneous' : `Cluster ${id}`;
+  }
+
   readonly communityLegend = computed(() => {
     if (!this.showCommunities()) return [];
     const nodes = this.layoutNodes();
@@ -140,7 +170,8 @@ export class CitGraphComponent {
       .map(([id, count]) => ({
         id,
         count,
-        color: COMMUNITY_COLORS[id % COMMUNITY_COLORS.length],
+        color: this.communityColor(id),
+        name: this.communityName(id),
       }));
   });
 
@@ -184,7 +215,8 @@ export class CitGraphComponent {
 
     return {
       id: cid,
-      color: COMMUNITY_COLORS[cid % COMMUNITY_COLORS.length],
+      color: this.communityColor(cid),
+      name: this.communityName(cid),
       level,
       paperCount: papers.length,
       subClusterCount: level >= 2 ? subClusters.length : papers.length,
@@ -227,8 +259,8 @@ export class CitGraphComponent {
         x: cx,
         y: cy,
         radius: Math.min(46, 12 + Math.sqrt(members.length) * 4),
-        color: COMMUNITY_COLORS[cid % COMMUNITY_COLORS.length],
-        label: `Cluster ${cid} · ${members.length}`,
+        color: this.communityColor(cid),
+        label: `${this.communityName(cid)} · ${members.length}`,
         kind: 'cluster' as const,
         paper: null,
         clusterId: cid,

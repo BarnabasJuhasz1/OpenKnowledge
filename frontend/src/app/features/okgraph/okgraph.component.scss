@@ -23,20 +23,572 @@
     flex-direction: column;
   }
 
-  &__empty {
+  &__setup {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;          // the setup screen never scrolls; content is sized to fit
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: var(--ok-space-5) var(--ok-margin-desktop);
+    background: radial-gradient(circle at top, var(--ok-mesh-1) 0%, transparent 70%);
+  }
+
+  .setup-container {
+    width: 100%;
+    max-width: 1000px;
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: var(--ok-space-4);
+  }
+
+  .setup-header {
+    text-align: left;
+    margin-bottom: 0;
+    animation: ok-fade-in var(--ok-transition-slow);
+
+    &__icon {
+      font-size: 1.9rem;
+      background: var(--ok-gradient-primary);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      flex-shrink: 0;
+    }
+
+    &__title {
+      font-family: var(--ok-font-headline);
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--ok-on-surface);
+      margin: 0 0 var(--ok-space-1);
+      letter-spacing: -0.01em;
+      display: flex;
+      align-items: center;
+      gap: var(--ok-space-2);
+    }
+
+    &__subtitle {
+      font-size: 0.92rem;
+      color: var(--ok-on-surface-variant);
+      margin: 0;
+      max-width: 600px;
+      line-height: 1.5;
+    }
+  }
+
+  .setup-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--ok-space-4);
+    animation: ok-slide-up var(--ok-transition-slow);
+    min-height: 0;
+  }
+
+  .setup-panel {
+    background: var(--ok-glass-bg);
+    backdrop-filter: blur(var(--ok-glass-blur));
+    border: 1px solid var(--ok-glass-border);
+    border-radius: var(--ok-radius-lg);
+    padding: var(--ok-space-5);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    transition: transform var(--ok-transition), box-shadow var(--ok-transition);
+
+    &:hover {
+      box-shadow: var(--ok-glass-glow);
+    }
+
+    &--actions {
+      grid-column: span 2;
+    }
+  }
+
+  .setup-section-title {
+    font-family: var(--ok-font-label);
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--ok-on-surface);
+    margin: 0 0 var(--ok-space-3);
+    display: flex;
+    align-items: center;
+    gap: var(--ok-space-2);
+
+    span {
+      color: var(--ok-primary);
+      font-size: 1.25rem;
+    }
+  }
+
+  // --- Configuration filters ---
+  .filter-toggles {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ok-space-4);
+  }
+
+  .filter-toggle {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--ok-space-3);
+    cursor: pointer;
+    padding: var(--ok-space-3);
+    border-radius: var(--ok-radius);
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid transparent;
+    transition: background var(--ok-transition), border var(--ok-transition);
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--ok-outline-variant);
+    }
+
+    input {
+      display: none;
+    }
+
+    &__box {
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--ok-outline);
+      border-radius: 4px;
+      margin-top: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background var(--ok-transition-fast), border-color var(--ok-transition-fast);
+
+      &::after {
+        content: "";
+        width: 9px;
+        height: 5px;
+        border-left: 2px solid var(--ok-on-primary);
+        border-bottom: 2px solid var(--ok-on-primary);
+        transform: rotate(-45deg) translate(1px, -1px);
+        opacity: 0;
+        transition: opacity var(--ok-transition-fast);
+      }
+    }
+
+    // The native input is hidden, so the checked state is mirrored onto the box.
+    // Use the high-contrast accent (--ok-primary) + its on-colour for the tick so
+    // it stays clearly visible against the glass panel in every appearance mode
+    // (the mid-tone --ok-primary-raw used to blend into the indigo midnight panel).
+    // NOTE: use the literal `.filter-toggle__box` here, not `&__box` — `&` expands
+    // to the full `.ok-graph-page .filter-toggle` chain, which would push the
+    // wrapper class past the `+` combinator and break the selector entirely.
+    input:checked + .filter-toggle__box {
+      background: var(--ok-primary);
+      border-color: var(--ok-primary);
+
+      &::after {
+        opacity: 1;
+      }
+    }
+
+    &__details {
+      display: flex;
+      flex-direction: column;
+      gap: var(--ok-space-1);
+    }
+
+    &__label {
+      font-family: var(--ok-font-label);
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--ok-on-surface);
+    }
+
+    &__description {
+      font-size: 0.8rem;
+      color: var(--ok-on-surface-variant);
+      line-height: 1.4;
+    }
+  }
+
+  // --- Seed papers list ---
+  // Fixed height so switching between the empty / list / info states never
+  // changes the panel's size — otherwise the grid row would grow/shrink and
+  // push the config panel and the actions panel below it around.
+  .selected-papers-list {
+    display: flex;
+    flex-direction: column;
+    height: 210px;
+  }
+
+  .papers-list-empty {
     flex: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.75rem;
-    color: var(--ok-outline);
     text-align: center;
-    padding: 3rem 1.5rem;
+    gap: var(--ok-space-2);
+    padding: var(--ok-space-4);
+    border: 1px dashed var(--ok-outline-variant);
+    border-radius: var(--ok-radius);
+    color: var(--ok-on-surface-variant);
 
-    svg { color: var(--ok-outline-variant); }
-    h2 { font-family: var(--ok-font-headline); font-size: 1.25rem; font-weight: 700; color: var(--ok-on-surface-variant); margin: 0; }
-    p { font-size: 0.9rem; max-width: 440px; line-height: 1.6; margin: 0; }
+    span {
+      font-size: 1.5rem;
+      color: var(--ok-outline);
+    }
+
+    p {
+      font-size: 0.85rem;
+      margin: 0;
+      line-height: 1.5;
+      max-width: 320px;
+    }
+
+    a {
+      color: var(--ok-primary);
+      text-decoration: none;
+      font-weight: 600;
+
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+  }
+
+  .papers-list-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: var(--ok-space-2);
+    padding: var(--ok-space-4);
+    background: rgba(var(--ok-primary-rgb), 0.05);
+    border: 1px solid rgba(var(--ok-primary-rgb), 0.15);
+    border-radius: var(--ok-radius);
+    color: var(--ok-on-surface);
+
+    span {
+      font-size: 1.5rem;
+      color: var(--ok-primary);
+    }
+
+    p {
+      font-size: 0.85rem;
+      margin: 0;
+      line-height: 1.5;
+      max-width: 320px;
+
+      code {
+        background: rgba(0, 0, 0, 0.2);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: monospace;
+      }
+    }
+  }
+
+  .papers-scroll-container {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--ok-space-2);
+    padding-right: 4px;
+
+    &::-webkit-scrollbar {
+      width: 4px;
+    }
+    &::-webkit-scrollbar-thumb {
+      background: var(--ok-outline-variant);
+      border-radius: 4px;
+    }
+  }
+
+  .paper-item {
+    display: flex;
+    align-items: center;
+    gap: var(--ok-space-3);
+    padding: var(--ok-space-2) var(--ok-space-3);
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: var(--ok-radius);
+    transition: background var(--ok-transition);
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    &__icon {
+      font-size: 1.25rem;
+      color: var(--ok-primary);
+      flex-shrink: 0;
+    }
+
+    &__details {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    &__title {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--ok-on-surface);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    &__meta {
+      font-size: 0.75rem;
+      color: var(--ok-on-surface-variant);
+      margin-top: 1px;
+    }
+
+    &__remove {
+      background: none;
+      border: none;
+      color: var(--ok-outline);
+      cursor: pointer;
+      padding: var(--ok-space-1);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background var(--ok-transition), color var(--ok-transition);
+
+      span {
+        font-size: 1rem;
+      }
+
+      &:hover {
+        background: rgba(255, 180, 171, 0.1);
+        color: var(--ok-error);
+      }
+    }
+  }
+
+  // --- Exploration Actions (3 Large Direction Buttons) ---
+  .direction-buttons {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--ok-space-4);
+    margin-top: var(--ok-space-2);
+  }
+
+  .direction-btn {
+    position: relative;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: var(--ok-radius-md);
+    padding: var(--ok-space-5) var(--ok-space-4);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    cursor: pointer;
+    transition: all var(--ok-transition-smooth);
+
+    &__icon-wrapper {
+      width: 44px;
+      height: 44px;
+      border-radius: var(--ok-radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: var(--ok-space-3);
+      transition: transform var(--ok-transition-smooth);
+
+      span {
+        font-size: 24px;
+      }
+
+      &--past {
+        background: rgba(var(--ok-tertiary-rgb), 0.15);
+        color: var(--ok-tertiary);
+      }
+
+      &--context {
+        background: rgba(var(--ok-primary-rgb), 0.15);
+        color: var(--ok-primary);
+      }
+
+      &--future {
+        background: rgba(var(--ok-secondary-rgb), 0.15);
+        color: var(--ok-secondary);
+      }
+    }
+
+    &__title {
+      font-family: var(--ok-font-label);
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--ok-on-surface);
+      margin-bottom: var(--ok-space-2);
+    }
+
+    &__desc {
+      font-size: 0.8rem;
+      color: var(--ok-on-surface-variant);
+      line-height: 1.5;
+    }
+
+    &:hover:not([disabled]) {
+      background: rgba(255, 255, 255, 0.04);
+      transform: translateY(-4px);
+      box-shadow: var(--ok-glass-glow);
+
+      .direction-btn__icon-wrapper {
+        transform: scale(1.1);
+      }
+
+      &.direction-btn {
+        border-color: rgba(var(--ok-primary-rgb), 0.3);
+      }
+    }
+
+    &:active:not([disabled]) {
+      transform: translateY(-2px);
+    }
+
+    &[disabled] {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    // Picked direction — strongly highlighted with the active appearance mode's
+    // main accent (--ok-primary changes per theme: midnight / dark / light).
+    &--selected,
+    &--selected:hover:not([disabled]) {
+      background: rgba(var(--ok-primary-rgb), 0.14);
+      border-color: var(--ok-primary);
+      box-shadow:
+        0 0 0 2px var(--ok-primary),
+        0 0 26px rgba(var(--ok-primary-rgb), 0.4);
+
+      .direction-btn__title {
+        color: var(--ok-primary);
+      }
+
+      .direction-btn__icon-wrapper {
+        transform: scale(1.08);
+      }
+    }
+
+    &__check {
+      position: absolute;
+      top: var(--ok-space-3);
+      right: var(--ok-space-3);
+      font-size: 20px;
+      color: var(--ok-primary);
+    }
+  }
+
+  // --- Explore CTA (continues once a direction is picked) ---
+  .explore-cta {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--ok-space-2);
+    margin-top: var(--ok-space-5);
+  }
+
+  .explore-hint {
+    font-size: 0.8rem;
+    color: var(--ok-on-surface-variant);
+    margin: 0;
+    // Always reserve one line of space so toggling the hint on/off never
+    // shifts the Explore button below it.
+    min-height: 1.2em;
+  }
+
+  .explore-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--ok-space-2);
+    padding: var(--ok-space-3) var(--ok-space-8);
+    border: none;
+    border-radius: var(--ok-radius-md);
+    background: var(--ok-gradient-primary);
+    color: #fff;
+    font-family: var(--ok-font-label);
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(var(--ok-primary-rgb), 0.35);
+    transition: transform var(--ok-transition), box-shadow var(--ok-transition), filter var(--ok-transition);
+
+    span {
+      font-size: 20px;
+    }
+
+    &:hover:not([disabled]) {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(var(--ok-primary-rgb), 0.45);
+      filter: brightness(1.05);
+    }
+
+    &:active:not([disabled]) {
+      transform: translateY(0);
+    }
+
+    &[disabled] {
+      opacity: 0.45;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+  }
+
+  // --- Loader & Error ---
+  .exploration-loader {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--ok-space-8);
+    gap: var(--ok-space-3);
+
+    &__spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid rgba(var(--ok-primary-rgb), 0.15);
+      border-top-color: var(--ok-primary);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    &__text {
+      font-size: 0.85rem;
+      color: var(--ok-primary);
+      margin: 0;
+      font-family: var(--ok-font-label);
+      font-weight: 500;
+    }
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .exploration-error {
+    background: var(--ok-error-container);
+    border: 1px solid rgba(255, 180, 171, 0.3);
+    color: var(--ok-error);
+    border-radius: var(--ok-radius);
+    padding: var(--ok-space-3) var(--ok-space-4);
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: var(--ok-space-2);
+    margin-bottom: var(--ok-space-4);
+
+    span {
+      font-size: 1.2rem;
+    }
   }
 
   &__canvas-wrap {
@@ -268,6 +820,23 @@
     fill-opacity: 0.09;
     stroke-opacity: 0.45;
     stroke-width: 1.5;
+
+    // The Miscellaneous catch-all reads as a muted, dashed lane so it is clearly
+    // not one of the "real" topic clusters.
+    &--misc {
+      fill-opacity: 0.06;
+      stroke-opacity: 0.55;
+      stroke-dasharray: 8 6;
+    }
+  }
+
+  &__blob-label {
+    font-size: 12px;
+    font-weight: 700;
+    font-family: inherit;
+    fill-opacity: 0.85;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
 
   &__year-label {

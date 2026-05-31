@@ -10,7 +10,9 @@ export interface ThemeOption {
   swatch: [string, string];
 }
 
-const STORAGE_KEY = 'ok_theme';
+// Bumped to v2 so the previous indigo-default era's stored 'midnight'
+// preference is retired and users fall back to the new 'light' default.
+const STORAGE_KEY = 'ok_theme_v2';
 
 @Injectable({ providedIn: 'root' })
 export class ThemeService {
@@ -32,7 +34,7 @@ export class ThemeService {
       id: 'light',
       label: 'Light',
       description: 'Clean white',
-      swatch: ['#ffffff', '#6366f1'],
+      swatch: ['#ffffff', '#f59e0b'],
     },
   ];
 
@@ -76,6 +78,6 @@ export class ThemeService {
     } catch {
       /* storage unavailable — ignore */
     }
-    return 'midnight';
+    return 'light';
   }
 }

@@ -276,7 +276,7 @@
               <div class="citgraph__panel-header">
                 <h3 class="citgraph__panel-title">
                   <span class="citgraph__cluster-dot" [style.background]="cluster.color"></span>
-                  Cluster {{ cluster.id }} · Level {{ cluster.level }}
+                  {{ cluster.name }} · Level {{ cluster.level }}
                 </h3>
                 <button class="citgraph__panel-close" (click)="closeClusterPanel()">&times;</button>
               </div>
@@ -401,7 +401,7 @@
                   (click)="inspectCluster(c.id)"
                 >
                   <span class="citgraph__legend-swatch" [style.background]="c.color"></span>
-                  <span class="citgraph__legend-label">Cluster {{ c.id }}</span>
+                  <span class="citgraph__legend-label">{{ c.name }}</span>
                   <span class="citgraph__legend-count">{{ c.count }}</span>
                 </button>
               }

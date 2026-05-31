@@ -5,11 +5,6 @@
       <span class="top-nav__logo-text">OpenKnowledge</span>
     </a>
 
-    <nav class="top-nav__tabs" aria-label="Primary">
-      <a class="top-nav__tab" routerLink="/dashboard" routerLinkActive="top-nav__tab--active">Dashboard</a>
-      <a class="top-nav__tab" routerLink="/docs" routerLinkActive="top-nav__tab--active">Documentation</a>
-    </nav>
-
     <div class="top-nav__actions">
       <a
         class="top-nav__btn top-nav__btn--ghost"
@@ -35,6 +30,28 @@
           </span>
         }
       </a>
+
+      @if (auth.isAuthenticated()) {
+        <div class="top-nav__user">
+          @if (auth.user()?.avatar_url) {
+            <img class="top-nav__avatar" [src]="auth.user()!.avatar_url" alt="" />
+          } @else {
+            <span class="material-symbols-outlined top-nav__avatar-icon">account_circle</span>
+          }
+          <span class="top-nav__user-name">{{ displayName() }}</span>
+        </div>
+        <button class="top-nav__btn top-nav__btn--ghost" type="button" (click)="logout()">
+          <span class="material-symbols-outlined top-nav__logout-icon">logout</span>
+          <span>Log Out</span>
+        </button>
+      } @else {
+        <button class="top-nav__btn top-nav__btn--login" type="button" (click)="openLogin()">
+          <span class="material-symbols-outlined top-nav__logout-icon">login</span>
+          <span>Log In</span>
+        </button>
+      }
     </div>
   </div>
 </nav>
+
+<app-login-modal [open]="loginOpen()" (closed)="closeLogin()" />

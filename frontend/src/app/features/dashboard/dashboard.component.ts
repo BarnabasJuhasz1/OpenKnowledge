@@ -43,9 +43,9 @@ export class DashboardComponent implements OnInit {
   readonly features: FeatureLink[] = [
     { path: 'search', label: 'Search', icon: 'search' },
     { path: 'research', label: 'Results', icon: 'list_alt' },
-    { path: 'relevancy', label: 'OK-score', icon: 'analytics' },
     { path: 'graph', label: 'Graph', icon: 'hub' },
     { path: 'library', label: 'Library', icon: 'menu_book' },
+    { path: 'project-settings', label: 'Project Settings', icon: 'tune' },
   ];
 
   ngOnInit(): void {

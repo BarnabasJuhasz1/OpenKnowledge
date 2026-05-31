@@ -1,4 +1,5 @@
 import { Routes } from '@angular/router';
+import { authGuard, authGuardChild } from './core/guards/auth.guard';
 
 export const routes: Routes = [
   {
@@ -12,6 +13,10 @@ export const routes: Routes = [
     path: 'dashboard',
     loadComponent: () =>
       import('./features/dashboard/dashboard.component').then(m => m.DashboardComponent),
+    // Every feature lives under /dashboard — gate the shell and all children
+    // behind authentication. Typing any sub-URL while signed out redirects home.
+    canActivate: [authGuard],
+    canActivateChild: [authGuardChild],
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'home' },
       // The "Dashboard" tab — an empty landing page for now.
@@ -55,16 +60,11 @@ export const routes: Routes = [
               import('./features/results/results.component').then(m => m.ResultsComponent),
           },
           {
-            path: 'relevancy',
-            loadComponent: () =>
-              import('./features/relevancy/relevancy.component').then(m => m.RelevancyComponent),
-          },
-          {
             path: 'graph',
             loadComponent: () =>
               import('./features/graph-shell/graph-shell.component').then(m => m.GraphShellComponent),
             children: [
-              { path: '', pathMatch: 'full', redirectTo: 'standard' },
+              { path: '', pathMatch: 'full', redirectTo: 'ok' },
               {
                 path: 'standard',
                 loadComponent: () =>
@@ -87,6 +87,13 @@ export const routes: Routes = [
             path: 'library',
             loadComponent: () =>
               import('./features/library/library.component').then(m => m.LibraryComponent),
+          },
+          {
+            path: 'project-settings',
+            loadComponent: () =>
+              import('./features/project-settings/project-settings.component').then(
+                m => m.ProjectSettingsComponent
+              ),
           },
         ],
       },
