@@ -89,6 +89,11 @@ export function louvain(
     let improved = true;
     let iterations = 0;
 
+    const commDegrees = new Float64Array(currentNodes);
+    for (let i = 0; i < currentNodes; i++) {
+      commDegrees[currentComm[i]] += currentKDeg[i];
+    }
+
     while (improved && iterations < 20) {
       improved = false;
       iterations++;
@@ -113,7 +118,7 @@ export function louvain(
 
         // Cost of removing i from its own community: the community's total
         // degree must exclude i itself (Σtot of ci \ {i}).
-        const sigmaTotCI = _sigmaTot(currentComm, currentKDeg, ci, currentNodes) - ki;
+        const sigmaTotCI = commDegrees[ci] - ki;
         const removeCost = selfComm - (resolution * sigmaTotCI * ki) / currentM2;
 
         let bestComm = ci;
@@ -121,7 +126,7 @@ export function louvain(
 
         for (const [cj, wj] of commWeights) {
           if (cj === ci) continue;
-          const sigmaTotCJ = _sigmaTot(currentComm, currentKDeg, cj, currentNodes);
+          const sigmaTotCJ = commDegrees[cj];
           const gain = wj - (resolution * sigmaTotCJ * ki) / currentM2 - removeCost;
           if (gain > bestGain) {
             bestGain = gain;
@@ -130,6 +135,8 @@ export function louvain(
         }
 
         if (bestComm !== ci) {
+          commDegrees[ci] -= ki;
+          commDegrees[bestComm] += ki;
           currentComm[i] = bestComm;
           improved = true;
         }
@@ -200,13 +207,6 @@ export function louvain(
   return { levels, communities: finalComm, modularity: mod, miscCommunity };
 }
 
-function _sigmaTot(comm: number[], kDeg: Float64Array, c: number, n: number): number {
-  let sum = 0;
-  for (let i = 0; i < n; i++) {
-    if (comm[i] === c) sum += kDeg[i];
-  }
-  return sum;
-}
 
 function _modularity(
   adj: Map<number, Map<number, number>>,

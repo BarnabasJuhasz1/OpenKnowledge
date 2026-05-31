@@ -1,7 +1,7 @@
 <nav class="top-nav">
   <div class="top-nav__inner">
     <a class="top-nav__logo" routerLink="/">
-      <img class="top-nav__logo-icon" src="openknowledge_icon.svg" alt="" />
+      <img class="top-nav__logo-icon" [src]="themeSvc.theme() === 'light' ? 'openknowledge_icon.svg' : 'openknowledge_icon_white.svg'" alt="" />
       <span class="top-nav__logo-text">OpenKnowledge</span>
     </a>
 
@@ -32,14 +32,6 @@
       </a>
 
       @if (auth.isAuthenticated()) {
-        <div class="top-nav__user">
-          @if (auth.user()?.avatar_url) {
-            <img class="top-nav__avatar" [src]="auth.user()!.avatar_url" alt="" />
-          } @else {
-            <span class="material-symbols-outlined top-nav__avatar-icon">account_circle</span>
-          }
-          <span class="top-nav__user-name">{{ displayName() }}</span>
-        </div>
         <button class="top-nav__btn top-nav__btn--ghost" type="button" (click)="logout()">
           <span class="material-symbols-outlined top-nav__logout-icon">logout</span>
           <span>Log Out</span>

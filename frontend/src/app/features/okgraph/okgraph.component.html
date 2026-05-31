@@ -17,7 +17,7 @@
             <!-- Left panel: Seed Papers -->
             <div class="setup-panel setup-panel--papers">
               <h2 class="setup-section-title">
-                <span class="material-symbols-outlined">description</span>
+                <span class="material-symbols-outlined" style="color: #4caf50; font-variation-settings: 'FILL' 1;">eco</span>
                 1. Seed Papers
               </h2>
 
@@ -27,14 +27,14 @@
                     <div class="papers-list-empty">
                       <span class="material-symbols-outlined">info</span>
                       <p>
-                        No papers selected. Go to the <a routerLink="../../research">Literature Search</a> tab to select papers by adding them to the graph, or uncheck "Only Selected Papers" to use all retrieved search results.
+                        No papers selected. Go to the <a routerLink="../../research">Literature Search</a> tab to select papers by marking them as seed papers, or uncheck "Only Selected Papers" to use all retrieved search results.
                       </p>
                     </div>
                   } @else {
                     <div class="papers-scroll-container">
                       @for (paper of selectedPapers(); track paperId(paper)) {
                         <div class="paper-item">
-                          <span class="material-symbols-outlined paper-item__icon">description</span>
+                          <span class="material-symbols-outlined paper-item__icon">eco</span>
                           <div class="paper-item__details">
                             <span class="paper-item__title" [title]="paper.title">{{ paper.title }}</span>
                             <span class="paper-item__meta">
@@ -84,12 +84,12 @@
                 </label>
 
                 <label class="filter-toggle">
-                  <input type="checkbox" [ngModel]="includeNonMatching()" (ngModelChange)="includeNonMatching.set($event)" />
+                  <input type="checkbox" [ngModel]="keywordFiltering()" (ngModelChange)="keywordFiltering.set($event)" />
                   <span class="filter-toggle__box"></span>
                   <div class="filter-toggle__details">
-                    <span class="filter-toggle__label">Include Unmatched Citations</span>
+                    <span class="filter-toggle__label">Keyword Filtering</span>
                     <span class="filter-toggle__description">
-                      Allow papers in the surrounding graph that do not match the current search keywords but are relevant citations.
+                      Filter out all papers whose title or abstract do not match the search keywords before applying clustering.
                     </span>
                   </div>
                 </label>
@@ -259,6 +259,26 @@
                 </button>
               </label>
 
+              <div class="graph-settings__subhead">Seed markers</div>
+              <label class="graph-settings__row">
+                <span class="graph-settings__label">
+                  <span class="graph-settings__label-line">
+                    <span class="graph-settings__seed material-symbols-outlined">eco</span>
+                    Seed icons
+                  </span>
+                  <span class="graph-settings__hint">indicate selected seed papers</span>
+                </span>
+                <button
+                  class="graph-settings__switch"
+                  [class.graph-settings__switch--on]="showSeedMarkers()"
+                  (click)="showSeedMarkers.set(!showSeedMarkers())"
+                  role="switch"
+                  [attr.aria-checked]="showSeedMarkers()"
+                >
+                  <span class="graph-settings__knob"></span>
+                </button>
+              </label>
+
               <div class="graph-settings__subhead">Filter graph by tier</div>
               <label class="graph-settings__row">
                 <span class="graph-settings__label">
@@ -286,6 +306,23 @@
                   (click)="onlySilverNodes.set(!onlySilverNodes())"
                   role="switch"
                   [attr.aria-checked]="onlySilverNodes()"
+                >
+                  <span class="graph-settings__knob"></span>
+                </button>
+              </label>
+
+              <div class="graph-settings__subhead">Cluster blobs</div>
+              <label class="graph-settings__row">
+                <span class="graph-settings__label">
+                  Blobby shapes
+                  <span class="graph-settings__hint">toggle for smooth curves vs. square-like rectangles</span>
+                </span>
+                <button
+                  class="graph-settings__switch"
+                  [class.graph-settings__switch--on]="blobbyShapes()"
+                  (click)="blobbyShapes.set(!blobbyShapes())"
+                  role="switch"
+                  [attr.aria-checked]="blobbyShapes()"
                 >
                   <span class="graph-settings__knob"></span>
                 </button>
@@ -339,23 +376,33 @@
               <g [attr.transform]="contentTransform()">
                 <!-- Cluster blobs: one per highest-level cluster, behind nodes -->
                 @for (blob of blobs(); track blob.topCluster) {
-                  <rect
-                    class="graph-svg__blob"
-                    [class.graph-svg__blob--misc]="blob.isMisc"
-                    [attr.x]="blob.x"
-                    [attr.y]="blob.y"
-                    [attr.width]="blob.w"
-                    [attr.height]="blob.h"
-                    rx="26"
-                    ry="26"
-                    [attr.fill]="blob.color"
-                    [attr.stroke]="blob.color"
-                  />
+                  @if (blobbyShapes()) {
+                    <path
+                      class="graph-svg__blob"
+                      [class.graph-svg__blob--misc]="blob.isMisc"
+                      [attr.d]="blob.path"
+                      [attr.fill]="blob.color"
+                      [attr.stroke]="blob.color"
+                    />
+                  } @else {
+                    <rect
+                      class="graph-svg__blob"
+                      [class.graph-svg__blob--misc]="blob.isMisc"
+                      [attr.x]="blob.rectX"
+                      [attr.y]="blob.rectY"
+                      [attr.width]="blob.rectW"
+                      [attr.height]="blob.rectH"
+                      rx="26"
+                      ry="26"
+                      [attr.fill]="blob.color"
+                      [attr.stroke]="blob.color"
+                    />
+                  }
                   @if (blob.label) {
                     <text
                       class="graph-svg__blob-label"
-                      [attr.x]="blob.x + 16"
-                      [attr.y]="blob.y + 22"
+                      [attr.x]="blobbyShapes() ? blob.x + 16 : blob.rectX + 16"
+                      [attr.y]="blobbyShapes() ? blob.y + 22 : blob.rectY + 22"
                       [attr.fill]="blob.color"
                     >{{ blob.label }}</text>
                   }
@@ -443,7 +490,7 @@
                       text-anchor="middle"
                     >{{ nodeLabel(node) }}</text>
 
-                    @if ((node.star === 'gold' && showGoldStars()) || (node.star === 'silver' && showSilverStars())) {
+                     @if ((node.star === 'gold' && showGoldStars()) || (node.star === 'silver' && showSilverStars())) {
                       <text
                         class="graph-svg__star material-symbols-outlined"
                         [class.graph-svg__star--gold]="node.star === 'gold'"
@@ -453,6 +500,16 @@
                         text-anchor="middle"
                         dominant-baseline="central"
                       >star</text>
+                    }
+
+                    @if (isSeedNode(node) && showSeedMarkers()) {
+                      <text
+                        class="graph-svg__seed-icon material-symbols-outlined"
+                        [attr.x]="node.x - 17"
+                        [attr.y]="node.y - 17"
+                        text-anchor="middle"
+                        dominant-baseline="central"
+                      >eco</text>
                     }
 
                     @if (showExpandButtons(node)) {

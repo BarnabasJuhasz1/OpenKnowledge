@@ -32,8 +32,9 @@ export class SearchComponent implements OnInit, AfterViewInit {
 
   ngOnInit(): void {
     this.http
-      .get<{ stargazers_count: number }>(`https://api.github.com/repos/${GITHUB_REPO}`)
+      .get<{ stargazers_count: number }>(`/api/github/stars/${GITHUB_REPO}`)
       .subscribe({
+
         next: (repo) => this.stars.set(repo.stargazers_count),
         error: () => this.stars.set(null),
       });

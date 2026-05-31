@@ -9,17 +9,23 @@ import { clusterColor, lighten, withAlpha, MISC_COLOR } from './community-colors
 import { edgePath as buildEdgePath, LayoutEdge, TOP_PADDING } from '../graph/graph-layout';
 import { getArchetypeIcon } from '../../shared/utils/archetype-icons';
 import { SearchStateService, paperId } from '../../core/services/search-state.service';
-import { CitGraphService } from '../../core/services/citgraph.service';
+import { CitGraphService, CitGraphNode, CitGraphEdge } from '../../core/services/citgraph.service';
 import { DemoModeService } from '../../core/services/demo-mode.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { parseQuery } from '../../shared/utils/query-parser';
+import { matchesNodeKeywords } from '../../shared/utils/keyword-match';
+import { ProjectContextService } from '../../core/services/project-context.service';
+import { ProjectGraphSettingsService } from '../../core/services/project-graph-settings.service';
 
 interface Blob {
   topCluster: number;
   x: number;
   y: number;
-  w: number;
-  h: number;
+  path: string;
+  rectX: number;
+  rectY: number;
+  rectW: number;
+  rectH: number;
   color: string;
   isMisc: boolean;
   label: string;
@@ -66,10 +72,12 @@ export class OkGraphComponent {
   private readonly citgraphSvc = inject(CitGraphService);
   private readonly demo = inject(DemoModeService);
   private readonly notify = inject(NotificationService);
+  private readonly projectContext = inject(ProjectContextService);
+  private readonly graphStore = inject(ProjectGraphSettingsService);
 
   // Setup options
   readonly useOnlySelected = signal(true);
-  readonly includeNonMatching = signal(true);
+  readonly keywordFiltering = signal(false);
 
   // Exploration states
   readonly explorationLoading = signal(false);
@@ -88,10 +96,10 @@ export class OkGraphComponent {
   /** True once the user can proceed: a direction is chosen and seeds exist. */
   readonly canExplore = computed(() => this.selectedDirection() !== null && this.hasSourcePapers());
 
-  /** Continue with the picked direction. Functionality intentionally not wired
-   *  up yet — the button only becomes active so the flow can be designed. */
   onExplore(): void {
-    // TODO: trigger exploreSurrounding(this.selectedDirection()!) once approved.
+    const dir = this.selectedDirection();
+    if (!dir) return;
+    this.exploreSurrounding(dir);
   }
 
   // Selected papers from graph selection list
@@ -148,20 +156,123 @@ export class OkGraphComponent {
     const seedIds = seeds.map(p => paperId(p));
     const keywords = parseQuery(this.searchState.rawQuery());
 
+    const projectId = this.projectContext.activeProjectId();
+    const settings = this.graphStore.load(projectId);
+    const kHops = settings.kHops;
+    const maxPerHop = settings.maxPerHop !== null ? settings.maxPerHop : 100000;
+    const resolution = settings.resolution;
+
+    if (!this.useOnlySelected()) {
+      // Build citation graph using only the retrieved papers on the client side
+      const nodes: CitGraphNode[] = seeds.map(p => ({
+        paper_id: paperId(p),
+        doi: p.doi,
+        arxiv_id: p.arxiv_id,
+        title: p.title,
+        abstract: p.abstract,
+        year: p.year,
+        citation_count: p.citation_count,
+        reference_count: p.reference_count,
+        authors: p.authors.map(a => a.name),
+        journal: p.journal,
+        is_open_access: p.is_open_access,
+        pdf_url: p.pdf_url,
+        fields_of_study: p.fields_of_study || [],
+        hop: 0,
+        predicted_main_archetype: p.predicted_main_archetype ?? null,
+        predicted_second_tier_archetype: p.predicted_second_tier_archetype ?? null,
+      }));
+
+      const identifierToId = new Map<string, string>();
+      for (const p of seeds) {
+        const pId = paperId(p);
+        if (p.doi) identifierToId.set(p.doi.toLowerCase(), pId);
+        if (p.arxiv_id) identifierToId.set(p.arxiv_id.toLowerCase(), pId);
+        if (p.semantic_scholar_id) identifierToId.set(p.semantic_scholar_id.toLowerCase(), pId);
+        if (p.openalex_id) identifierToId.set(p.openalex_id.toLowerCase(), pId);
+        if (p.pubmed_id) identifierToId.set(p.pubmed_id.toLowerCase(), pId);
+      }
+
+      const edgeSeen = new Set<string>();
+      const edges: CitGraphEdge[] = [];
+      for (const p of seeds) {
+        const sourceId = paperId(p);
+        for (const ref of (p.references ?? [])) {
+          const targetId = identifierToId.get(ref.toLowerCase());
+          if (targetId && targetId !== sourceId) {
+            const key = `${sourceId} ${targetId}`;
+            if (!edgeSeen.has(key)) {
+              edgeSeen.add(key);
+              edges.push({ source: sourceId, target: targetId });
+            }
+          }
+        }
+        for (const ref of (p.referenced_by ?? [])) {
+          const targetId = identifierToId.get(ref.toLowerCase());
+          if (targetId && targetId !== sourceId) {
+            const key = `${targetId} ${sourceId}`;
+            if (!edgeSeen.has(key)) {
+              edgeSeen.add(key);
+              edges.push({ source: targetId, target: sourceId });
+            }
+          }
+        }
+      }
+
+      let finalNodes = nodes;
+      let finalEdges = edges;
+      const hasKeywords = keywords.length > 0;
+      if (this.keywordFiltering() && hasKeywords) {
+        finalNodes = nodes.filter(
+          n => matchesNodeKeywords(n, keywords)
+        );
+        const kept = new Set(finalNodes.map(n => n.paper_id));
+        finalEdges = edges.filter(e => kept.has(e.source) && kept.has(e.target));
+      }
+
+      const indexOf = new Map(finalNodes.map((n, i) => [n.paper_id, i]));
+      const mappedEdges = finalEdges
+        .map(e => ({ source: indexOf.get(e.source) ?? -1, target: indexOf.get(e.target) ?? -1 }))
+        .filter(e => e.source >= 0 && e.target >= 0);
+
+      const louvainResult = louvain(finalNodes.length, mappedEdges, {
+        resolution: resolution,
+        maxLevels: 10,
+      });
+
+      this.state.setHierarchy({
+        nodes: finalNodes,
+        louvain: louvainResult,
+        edges: finalEdges,
+        resolution: resolution,
+        maxLevels: 10,
+        keywords,
+        seedId: '',
+        prefiltered: this.keywordFiltering() && hasKeywords,
+        initialSeedIds: [],
+      });
+
+      this.explorationLoading.set(false);
+      this.notify.show(`Successfully built surrounding graph with ${finalNodes.length} nodes!`);
+      return;
+    }
+
     const req = this.demo.enabled()
       ? this.citgraphSvc.exploreDemo({
           paper_ids: seedIds,
           direction,
-          include_non_matching: this.includeNonMatching(),
+          include_non_matching: !this.keywordFiltering(),
           keywords,
-          max_per_hop: 20
+          k: kHops,
+          max_per_hop: maxPerHop
         })
       : this.citgraphSvc.explore({
           paper_ids: seedIds,
           direction,
-          include_non_matching: this.includeNonMatching(),
+          include_non_matching: !this.keywordFiltering(),
           keywords,
-          max_per_hop: 20
+          k: kHops,
+          max_per_hop: maxPerHop
         });
 
     req.subscribe({
@@ -185,7 +296,7 @@ export class OkGraphComponent {
           .filter(e => e.source >= 0 && e.target >= 0);
 
         const louvainResult = louvain(baseNodes.length, mappedEdges, {
-          resolution: 1,
+          resolution: resolution,
           maxLevels: 10,
         });
 
@@ -193,11 +304,12 @@ export class OkGraphComponent {
           nodes: baseNodes,
           louvain: louvainResult,
           edges: edges,
-          resolution: 1,
+          resolution: resolution,
           maxLevels: 10,
           keywords,
           seedId: res.seed_id || (baseNodes[0]?.paper_id ?? ''),
-          prefiltered: false
+          prefiltered: this.keywordFiltering() && keywords.length > 0,
+          initialSeedIds: seedIds,
         });
 
         this.explorationLoading.set(false);
@@ -230,12 +342,18 @@ export class OkGraphComponent {
   // Star-marker visibility (icons only; nodes stay on the canvas).
   readonly showGoldStars = signal(true);
   readonly showSilverStars = signal(true);
+  readonly showSeedMarkers = signal(true);
   // Node filters: restrict the canvas to a star tier (re-lays out when on).
   readonly onlyGoldNodes = signal(false);
   readonly onlySilverNodes = signal(false);
+  readonly blobbyShapes = signal(true);
 
   toggleSettings(): void { this.settingsOpen.update(v => !v); }
   closeSettings(): void { this.settingsOpen.set(false); }
+
+  isSeedNode(node: RenderNode): boolean {
+    return this.state.initialSeedIds().has(paperId(node.paper));
+  }
 
   /**
    * Gold / silver ok-score thresholds over ALL papers in the graph (the active
@@ -560,14 +678,91 @@ export class OkGraphComponent {
     const PAD_X = 38, PAD_TOP = 40, PAD_BOTTOM = 50;
     const misc = this.miscTopCluster();
     const blobs: Blob[] = [];
-    for (const [topCluster, b] of boxes) {
+
+    // Group placed nodes by topCluster to easily find their years.
+    const clusterNodesMap = new Map<number, PlacedNode[]>();
+    for (const p of placed) {
+      let arr = clusterNodesMap.get(p.topCluster);
+      if (!arr) {
+        arr = [];
+        clusterNodesMap.set(p.topCluster, arr);
+      }
+      arr.push(p);
+    }
+
+    for (const [topCluster, members] of clusterNodesMap) {
+      const yearsInCluster = members.map(m => m.paper.year!);
+      const minYear = Math.min(...yearsInCluster);
+      const maxYear = Math.max(...yearsInCluster);
+
+      const clusterYears = years.filter(y => y >= minYear && y <= maxYear);
+
+      const lane = laneIndex.get(topCluster) ?? 0;
+      const laneCenter = TOP_PADDING + lane * laneHeight + laneHeight / 2;
+
+      const points: { x: number; topY: number; bottomY: number }[] = [];
+      for (const y of clusterYears) {
+        const x = yearX.get(y)!;
+        const cellMembers = cells.get(`${lane}|${y}`);
+        const k = cellMembers ? cellMembers.length : 0;
+
+        // If there are no papers in this cluster for this year, treat it as 1 paper height
+        // to maintain a continuous lane connection.
+        const effectiveK = k > 0 ? k : 1;
+
+        const minY_node = laneCenter - ((effectiveK - 1) / 2) * LANE_NODE_VGAP;
+        const maxY_node = laneCenter + ((effectiveK - 1) / 2) * LANE_NODE_VGAP;
+
+        const topY = minY_node - PAD_TOP;
+        const bottomY = maxY_node + PAD_BOTTOM;
+
+        points.push({ x, topY, bottomY });
+      }
+
+      // Now build the SVG path.
+      let path = '';
+      if (points.length > 0) {
+        const n = points.length - 1;
+        const dx = 70; // horizontal control point offset for smooth S-curves
+        const capDx = PAD_X * 1.33; // control point offset for rounded end caps
+
+        path = `M ${points[0].x} ${points[0].topY}`;
+
+        // Top edge curve
+        for (let i = 0; i < n; i++) {
+          path += ` C ${points[i].x + dx} ${points[i].topY}, ${points[i+1].x - dx} ${points[i+1].topY}, ${points[i+1].x} ${points[i+1].topY}`;
+        }
+
+        // Right cap curve
+        path += ` C ${points[n].x + capDx} ${points[n].topY}, ${points[n].x + capDx} ${points[n].bottomY}, ${points[n].x} ${points[n].bottomY}`;
+
+        // Bottom edge curve
+        for (let i = n; i > 0; i--) {
+          path += ` C ${points[i].x - dx} ${points[i].bottomY}, ${points[i-1].x + dx} ${points[i-1].bottomY}, ${points[i-1].x} ${points[i-1].bottomY}`;
+        }
+
+        // Left cap curve
+        path += ` C ${points[0].x - capDx} ${points[0].bottomY}, ${points[0].x - capDx} ${points[0].topY}, ${points[0].x} ${points[0].topY}`;
+
+        path += ' Z';
+      }
+
+      const b = boxes.get(topCluster);
+      const rectX = b ? b.minX - PAD_X : points[0].x - PAD_X;
+      const rectY = b ? b.minY - PAD_TOP : points[0].topY;
+      const rectW = b ? (b.maxX - b.minX) + 2 * PAD_X : 2 * PAD_X;
+      const rectH = b ? (b.maxY - b.minY) + PAD_TOP + PAD_BOTTOM : points[0].bottomY - points[0].topY;
+
       const isMisc = topCluster === misc;
       blobs.push({
         topCluster,
-        x: b.minX - PAD_X,
-        y: b.minY - PAD_TOP,
-        w: (b.maxX - b.minX) + 2 * PAD_X,
-        h: (b.maxY - b.minY) + PAD_TOP + PAD_BOTTOM,
+        x: points[0].x - PAD_X,
+        y: points[0].topY,
+        path,
+        rectX,
+        rectY,
+        rectW,
+        rectH,
         color: this.clusterColorFor(topCluster),
         isMisc,
         label: isMisc ? 'Miscellaneous' : '',

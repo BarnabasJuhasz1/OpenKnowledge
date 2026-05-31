@@ -323,7 +323,8 @@
 
     &__icon {
       font-size: 1.25rem;
-      color: var(--ok-primary);
+      color: #4caf50;
+      font-variation-settings: 'FILL' 1;
       flex-shrink: 0;
     }
 
@@ -770,6 +771,14 @@
     &--silver { color: #cbd2da; }
   }
 
+  &__seed {
+    font-family: 'Material Symbols Outlined', inherit;
+    font-size: 14px;
+    font-variation-settings: 'FILL' 1;
+    line-height: 1;
+    color: #4caf50;
+  }
+
   &__switch {
     position: relative;
     flex-shrink: 0;
@@ -912,6 +921,17 @@
 
     &--gold { fill: #f5b400; }
     &--silver { fill: #cbd2da; }
+  }
+
+  &__seed-icon {
+    font-family: 'Material Symbols Outlined', inherit;
+    font-size: 17px;
+    font-variation-settings: 'FILL' 1;
+    pointer-events: none;
+    paint-order: stroke;
+    stroke: rgba(0, 0, 0, 0.45);
+    stroke-width: 0.6px;
+    fill: #4caf50;
   }
 
   &__expand-btn {

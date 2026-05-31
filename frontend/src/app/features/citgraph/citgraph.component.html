@@ -1,139 +1,10 @@
 <div class="citgraph">
   <div class="citgraph__body">
-    <!-- Input bar -->
-    <div class="citgraph__controls">
-      <div class="citgraph__input-group">
-        <label class="citgraph__label">Paper title or ID (DOI, S2 ID, or arXiv ID)</label>
-        <div class="citgraph__input-wrap">
-          <input
-            class="citgraph__input"
-            type="text"
-            placeholder="e.g. Attention Is All You Need or 10.1145/3292500.3330919"
-            [value]="paperId()"
-            (input)="paperId.set($any($event.target).value)"
-            (keydown.enter)="buildGraph()"
-            (keydown.escape)="bookshelfOpen.set(false)"
-          />
-          <button
-            class="citgraph__shelf-btn"
-            type="button"
-            (click)="toggleBookshelf()"
-            title="Use a paper from your bookshelf"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-          </button>
-
-          @if (bookshelfOpen()) {
-            <div class="citgraph__shelf-dropdown">
-              @if (bookshelfItems().length === 0) {
-                <div class="citgraph__shelf-empty">No papers in your bookshelf yet</div>
-              } @else {
-                @for (item of bookshelfItems(); track item.id) {
-                  <button class="citgraph__shelf-item" type="button" (click)="pickBookshelfItem(item)">
-                    <span class="citgraph__shelf-item-title">{{ item.title }}</span>
-                    <span class="citgraph__shelf-item-meta">
-                      {{ item.authors[0] || 'Unknown' }}@if (item.authors.length > 1) { et al.}@if (item.year) { · {{ item.year }}}
-                    </span>
-                  </button>
-                }
-              }
-            </div>
-          }
-        </div>
-      </div>
-      <div class="citgraph__param-group">
-        <div class="citgraph__param">
-          <label class="citgraph__label">K hops</label>
-          <select
-            class="citgraph__select"
-            [value]="kHops()"
-            (change)="kHops.set(+$any($event.target).value)"
-          >
-            <option value="1">1</option>
-            <option value="2">2</option>
-            <option value="3">3</option>
-          </select>
-        </div>
-        <div class="citgraph__param">
-          <label class="citgraph__label">Max/hop</label>
-          <input
-            class="citgraph__input citgraph__input--small"
-            type="number"
-            min="1"
-            max="50"
-            [value]="maxPerHop()"
-            (input)="maxPerHop.set(+$any($event.target).value)"
-          />
-        </div>
-        <div class="citgraph__param">
-          <label class="citgraph__label" title="Resolution γ — higher splits into more, smaller communities; lower merges into fewer, larger ones.">Resolution</label>
-          <input
-            class="citgraph__input citgraph__input--small"
-            type="number"
-            min="0.1"
-            step="0.1"
-            [value]="resolution()"
-            (change)="setResolution(+$any($event.target).value)"
-          />
-        </div>
-        <div class="citgraph__param">
-          <label class="citgraph__label" title="Maximum hierarchy levels — clustering stops at this depth even if a further merge would raise modularity.">Max levels</label>
-          <input
-            class="citgraph__input citgraph__input--small"
-            type="number"
-            min="1"
-            step="1"
-            [value]="maxLevels()"
-            (change)="setMaxLevels(+$any($event.target).value)"
-          />
-        </div>
-      </div>
-      <div class="citgraph__param citgraph__param--filter">
-        <label
-          class="citgraph__label"
-          [title]="canFilter()
-            ? 'Discard papers whose title + abstract match none of your ' + keywords().length + ' keyword(s) before clustering'
-            : 'Run a keyword search first to enable filtering'"
-        >Keyword filter</label>
-        <button
-          type="button"
-          class="citgraph__filter-toggle"
-          [class.citgraph__filter-toggle--on]="filterByKeywords() && canFilter()"
-          [disabled]="!canFilter()"
-          (click)="toggleKeywordFilter()"
-          role="switch"
-          [attr.aria-checked]="filterByKeywords() && canFilter()"
-        >
-          <span class="citgraph__filter-knob"></span>
-          <span class="citgraph__filter-text">
-            @if (!canFilter()) { no query }
-            @else if (filterByKeywords()) { on · {{ keywords().length }} kw }
-            @else { off }
-          </span>
-        </button>
-      </div>
-      <button
-        class="citgraph__build-btn"
-        [disabled]="loading() || !paperId().trim()"
-        (click)="buildGraph()"
-      >
-        @if (loading()) {
-          Building...
-        } @else {
-          Build Graph
-        }
-      </button>
-    </div>
-
-    @if (error()) {
-      <div class="citgraph__error">{{ error() }}</div>
-    }
-
-    @if (!graphData() && !loading()) {
+    @if (!graphData()) {
       <div class="citgraph__empty">
         <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-        <h2>K-Hop Citation Graph</h2>
-        <p>Enter a paper DOI or Semantic Scholar ID, set the hop and clustering parameters, then press Build Graph — the network is fetched and clustered in one step.</p>
+        <h2>Louvain Community Clustering</h2>
+        <p>No graph has been constructed yet. Go to the <a routerLink="../ok">OK-Graph</a> tab to explore surrounding literature and generate the community clusters.</p>
       </div>
     }
 
@@ -149,17 +20,6 @@
                 {{ layoutNodes().length }} nodes, {{ layoutEdges().length }} edges
               }
             </span>
-            @if (louvainActive()) {
-              <button
-                class="citgraph__toolbar-btn"
-                (click)="sendRepresentativesToGraph()"
-                title="Send the cluster hierarchy to the OK-Graph sub-tab"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-                Send Reps to Graph
-              </button>
-            }
-
             @if (louvainActive()) {
               <div class="citgraph__level-select">
                 <label class="citgraph__label">Level:</label>

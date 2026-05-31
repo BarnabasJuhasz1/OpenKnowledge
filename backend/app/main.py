@@ -21,6 +21,7 @@ from .api.bookshelf import router as bookshelf_router
 from .api.citgraph import router as citgraph_router
 from .api.dashboard import router as dashboard_router
 from .api.auth import router as auth_router
+from .api.github import router as github_router
 
 
 @asynccontextmanager
@@ -74,6 +75,8 @@ app.include_router(bookshelf_router, prefix="/api")
 app.include_router(citgraph_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
+app.include_router(github_router, prefix="/api")
+
 
 
 @app.get("/health")

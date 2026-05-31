@@ -1,5 +1,6 @@
 import { Component, HostListener, computed, inject, input, output } from '@angular/core';
 import { AuthService, PROVIDER_LABELS } from '../../core/services/auth.service';
+import { ThemeService } from '../../core/services/theme.service';
 
 /**
  * Modal provider chooser. Renders one button per *configured* provider
@@ -14,6 +15,7 @@ import { AuthService, PROVIDER_LABELS } from '../../core/services/auth.service';
 })
 export class LoginModalComponent {
   private readonly auth = inject(AuthService);
+  protected readonly themeSvc = inject(ThemeService);
 
   /** Controls visibility — bound from the host (top-nav). */
   readonly open = input(false);

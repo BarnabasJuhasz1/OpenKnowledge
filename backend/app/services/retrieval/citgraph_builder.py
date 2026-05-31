@@ -306,6 +306,7 @@ async def explore_citation_graph(
     direction: str,  # 'past', 'future', 'both'
     include_non_matching: bool = True,
     keywords: list[str] = [],
+    k: int = 1,
     max_per_hop: int = 20,
     api_key: str | None = None,
 ) -> CitGraphResult:
@@ -332,6 +333,8 @@ async def explore_citation_graph(
 
         if not resolved_seeds:
             return CitGraphResult(nodes=[], edges=[], seed_id="")
+
+        frontier = list(resolved_seeds)
 
         # 2. Fetch references / citations for each seed
         headers = {}
@@ -362,37 +365,41 @@ async def explore_citation_graph(
                 cits = await _get(cits_url)
             return refs, cits
 
-        # Fetch consecutively with a small delay to respect rate limits
-        for paper_id in resolved_seeds:
-            refs, cits = await fetch_neighbors(paper_id)
-            await asyncio.sleep(0.1)
+        for hop in range(1, k + 1):
+            next_frontier = []
+            for paper_id in frontier:
+                refs, cits = await fetch_neighbors(paper_id)
+                await asyncio.sleep(0.1)
 
-            combined = refs[:max_per_hop] + cits[:max_per_hop]
-            for item in combined:
-                cited_paper = item.get("citedPaper") or item.get("citingPaper")
-                if not cited_paper:
-                    continue
-                node = _normalize_node(cited_paper, 1)
-                if not node:
-                    continue
-
-                # Keyword filtering on neighbors
-                if not include_non_matching:
-                    if not matches_keywords(node.title, node.abstract, keywords):
+                combined = refs[:max_per_hop] + cits[:max_per_hop]
+                for item in combined:
+                    cited_paper = item.get("citedPaper") or item.get("citingPaper")
+                    if not cited_paper:
+                        continue
+                    node = _normalize_node(cited_paper, hop)
+                    if not node:
                         continue
 
-                is_ref = "citedPaper" in item
-                if is_ref:
-                    edge_key = (paper_id, node.paper_id)
-                else:
-                    edge_key = (node.paper_id, paper_id)
+                    # Keyword filtering on neighbors
+                    if not include_non_matching:
+                        if not matches_keywords(node.title, node.abstract, keywords):
+                            continue
 
-                if edge_key not in edge_set:
-                    edge_set.add(edge_key)
-                    edges.append(CitGraphEdge(source=edge_key[0], target=edge_key[1]))
+                    is_ref = "citedPaper" in item
+                    if is_ref:
+                        edge_key = (paper_id, node.paper_id)
+                    else:
+                        edge_key = (node.paper_id, paper_id)
 
-                if node.paper_id not in visited:
-                    visited[node.paper_id] = node
+                    if edge_key not in edge_set:
+                        edge_set.add(edge_key)
+                        edges.append(CitGraphEdge(source=edge_key[0], target=edge_key[1]))
+
+                    if node.paper_id not in visited:
+                        visited[node.paper_id] = node
+                        next_frontier.append(node.paper_id)
+
+            frontier = next_frontier
 
         seed_id = resolved_seeds[0] if resolved_seeds else ""
         return CitGraphResult(

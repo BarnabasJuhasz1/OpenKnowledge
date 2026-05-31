@@ -1,6 +1,6 @@
 <header class="app-header">
   <a class="app-header__logo" routerLink="/">
-    <img class="app-header__logo-icon" src="openknowledge_icon.svg" alt="" />
+    <img class="app-header__logo-icon" [src]="themeSvc.theme() === 'light' ? 'openknowledge_icon.svg' : 'openknowledge_icon_white.svg'" alt="" />
     <span class="app-header__logo-text">OpenKnowledge</span>
   </a>
   <nav class="app-header__nav" aria-label="Main navigation">

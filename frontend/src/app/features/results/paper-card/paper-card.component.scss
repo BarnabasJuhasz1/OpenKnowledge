@@ -265,8 +265,6 @@
     white-space: nowrap;
     transition: background var(--ok-transition-fast), border-color var(--ok-transition-fast);
 
-    svg { flex-shrink: 0; }
-
     &:hover {
       background: rgba(var(--ok-primary-rgb), 0.2);
       border-color: rgba(var(--ok-primary-rgb), 0.5);
@@ -283,8 +281,19 @@
     font-weight: 600;
     color: #10b981;
     white-space: nowrap;
+  }
 
-    svg { flex-shrink: 0; }
+  &__graph-icon {
+    font-family: 'Material Symbols Outlined', inherit;
+    font-size: 14px;
+    font-variation-settings: 'FILL' 1;
+    line-height: 1;
+    flex-shrink: 0;
+    vertical-align: middle;
+
+    &--active {
+      color: #4caf50;
+    }
   }
 
   &__bookmark-btn {

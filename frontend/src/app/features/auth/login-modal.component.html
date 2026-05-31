@@ -11,7 +11,7 @@
         <span class="material-symbols-outlined">close</span>
       </button>
 
-      <img class="login-card__logo" src="openknowledge_icon.svg" alt="" />
+      <img class="login-card__logo" [src]="themeSvc.theme() === 'light' ? 'openknowledge_icon.svg' : 'openknowledge_icon_white.svg'" alt="" />
       <h2 class="login-card__title" id="login-title">Sign in to OpenKnowledge</h2>
       <p class="login-card__subtitle">Continue with one of your accounts.</p>
 

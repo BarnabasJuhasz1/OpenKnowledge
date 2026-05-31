@@ -269,6 +269,7 @@ class DemoCitGraphStore:
         direction: str,  # 'past', 'future', 'both'
         include_non_matching: bool = True,
         keywords: list[str] = [],
+        k: int = 1,
         max_per_hop: int = 20,
     ) -> CitGraphResult:
         index = await self._ensure_loaded()
@@ -289,28 +290,35 @@ class DemoCitGraphStore:
         edges: list[CitGraphEdge] = []
         edge_set: set[tuple[str, str]] = set()
 
-        for pid in resolved_seeds:
-            refs = index.forward.get(pid, [])[:max_per_hop] if direction in ('past', 'both') else []
-            cits = index.reverse.get(pid, [])[:max_per_hop] if direction in ('future', 'both') else []
+        frontier: list[str] = list(resolved_seeds)
 
-            for neighbour, edge in (
-                [(r, (pid, r)) for r in refs]
-                + [(c, (c, pid)) for c in cits]
-            ):
-                if neighbour not in index.meta:
-                    continue
+        for hop in range(1, k + 1):
+            next_frontier: list[str] = []
+            for pid in frontier:
+                refs = index.forward.get(pid, [])[:max_per_hop] if direction in ('past', 'both') else []
+                cits = index.reverse.get(pid, [])[:max_per_hop] if direction in ('future', 'both') else []
 
-                if not include_non_matching:
-                    m = index.meta[neighbour]
-                    if not matches_keywords(m.get("title"), m.get("abstract"), keywords):
+                for neighbour, edge in (
+                    [(r, (pid, r)) for r in refs]
+                    + [(c, (c, pid)) for c in cits]
+                ):
+                    if neighbour not in index.meta:
                         continue
 
-                if edge not in edge_set:
-                    edge_set.add(edge)
-                    edges.append(CitGraphEdge(source=edge[0], target=edge[1]))
+                    if not include_non_matching:
+                        m = index.meta[neighbour]
+                        if not matches_keywords(m.get("title"), m.get("abstract"), keywords):
+                            continue
 
-                if neighbour not in visited:
-                    visited[neighbour] = self._node(index, neighbour, 1)
+                    if edge not in edge_set:
+                        edge_set.add(edge)
+                        edges.append(CitGraphEdge(source=edge[0], target=edge[1]))
+
+                    if neighbour not in visited:
+                        visited[neighbour] = self._node(index, neighbour, hop)
+                        next_frontier.append(neighbour)
+
+            frontier = next_frontier
 
         seed_id = resolved_seeds[0] if resolved_seeds else ""
         return CitGraphResult(

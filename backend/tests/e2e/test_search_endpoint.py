@@ -15,8 +15,14 @@ PROBLEMATIC_QUERY = '("large language model" OR LLM) AND compression AND RAG OR 
 async def test_stream_endpoint_returns_papers():
     """POST to search/stream with the problematic query should return papers from at least one source."""
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        # Create a project first to satisfy require_project dependency
+        proj_resp = await client.post("/api/projects", json={"name": "Test Search Project"})
+        assert proj_resp.status_code == 201
+        pid = proj_resp.json()["id"]
+
         response = await client.post(
             "/api/retrieval/search/stream",
+            params={"project_id": pid},
             json={
                 "keywords": ["large language model", "compression", "RAG"],
                 "raw_query": PROBLEMATIC_QUERY,
@@ -46,8 +52,14 @@ async def test_stream_endpoint_returns_papers():
 async def test_stream_endpoint_semantic_scholar_not_failed():
     """Semantic Scholar should not fail with the query."""
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        # Create a project first to satisfy require_project dependency
+        proj_resp = await client.post("/api/projects", json={"name": "Test SS Project"})
+        assert proj_resp.status_code == 201
+        pid = proj_resp.json()["id"]
+
         response = await client.post(
             "/api/retrieval/search/stream",
+            params={"project_id": pid},
             json={
                 "keywords": ["large language model", "compression", "RAG"],
                 "raw_query": PROBLEMATIC_QUERY,
