@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from ..services.retrieval.citgraph_builder import build_citation_graph, UpstreamError
 from ..services.retrieval.demo_citgraph import DemoCitGraphStore
+from ..services import archetype
 
 router = APIRouter(prefix="/citgraph", tags=["citgraph"])
 
@@ -31,6 +32,8 @@ class CitGraphNodeOut(BaseModel):
     pdf_url: str | None = None
     fields_of_study: list[str]
     hop: int
+    predicted_main_archetype: str | None = None
+    predicted_second_tier_archetype: str | None = None
 
 
 class CitGraphEdgeOut(BaseModel):
@@ -62,6 +65,8 @@ def _to_response(result) -> CitGraphResponse:
                 pdf_url=n.pdf_url,
                 fields_of_study=n.fields_of_study,
                 hop=n.hop,
+                predicted_main_archetype=getattr(n, "predicted_main_archetype", None),
+                predicted_second_tier_archetype=getattr(n, "predicted_second_tier_archetype", None),
             )
             for n in result.nodes
         ],
@@ -92,6 +97,7 @@ async def build_graph(body: CitGraphRequest):
     if not result.nodes:
         raise HTTPException(status_code=404, detail="Paper not found or no data available")
 
+    await archetype.classify_citgraph_nodes(result.nodes)
     return _to_response(result)
 
 
@@ -111,4 +117,5 @@ async def build_graph_demo(body: CitGraphRequest):
             status_code=404, detail="Paper not found in demo dataset"
         )
 
+    await archetype.classify_citgraph_nodes(result.nodes)
     return _to_response(result)

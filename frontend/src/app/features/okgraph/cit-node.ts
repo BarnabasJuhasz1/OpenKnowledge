@@ -23,6 +23,8 @@ export function citNodeToPaper(n: CitGraphNode, okScore: number): Paper {
     arxiv_id: n.arxiv_id,
     openalex_id: n.paper_id,
     semantic_scholar_id: n.paper_id,
+    predicted_main_archetype: n.predicted_main_archetype ?? undefined,
+    predicted_second_tier_archetype: n.predicted_second_tier_archetype ?? undefined,
     ok_score: okScore,
     has_public_code: false,
     is_peer_reviewed: false,

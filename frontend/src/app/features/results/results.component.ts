@@ -145,6 +145,11 @@ export class ResultsComponent implements OnInit, OnDestroy {
           return;
         }
 
+        if ('type' in event && event.type === 'archetypes') {
+          this.state.applyArchetypes(event.data);
+          return;
+        }
+
         const e = event as any;
         // Store raw papers keyed by source
         if (!e.failed && e.papers.length > 0) {

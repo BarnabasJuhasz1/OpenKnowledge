@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,6 +7,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from .db.database import init_db
+from .services import archetype
+from .services.archetype.config import load_config as load_archetype_config
 from .api.projects import router as projects_router
 from .api.keywords import router as keywords_router
 from .api.retrieval import router as retrieval_router
@@ -19,7 +22,19 @@ from .api.citgraph import router as citgraph_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+
+    # Preload the archetype classifier in the background so the model is warm
+    # before the first search — the user never waits on the cold model load.
+    cfg = load_archetype_config()
+    preload_task = None
+    if cfg and cfg.get("preload_on_startup", True):
+        preload_task = asyncio.create_task(archetype.preload())
+
     yield
+
+    if preload_task and not preload_task.done():
+        preload_task.cancel()
+    await archetype.shutdown_worker()
 
 
 app = FastAPI(

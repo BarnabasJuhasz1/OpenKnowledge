@@ -38,14 +38,14 @@
 
     &:hover {
       color: var(--ok-on-surface);
-      background: rgba(255, 255, 255, 0.05);
+      background: var(--ok-hover-overlay);
       text-decoration: none;
     }
 
     &--active {
       color: #fff;
       background: var(--ok-gradient-primary);
-      box-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.3);
+      box-shadow: 0 4px 14px 0 rgba(var(--ok-primary-rgb), 0.3);
       &:hover { color: #fff; background: var(--ok-gradient-primary); }
     }
   }

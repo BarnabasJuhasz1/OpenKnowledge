@@ -173,21 +173,21 @@
     transition: all 0.2s;
 
     .graph-svg__node:hover & {
-      fill: rgba(99, 102, 241, 0.15);
+      fill: rgba(var(--ok-primary-rgb), 0.15);
       stroke: var(--ok-primary-raw);
       stroke-width: 2.5;
     }
 
     .graph-svg__node--selected & {
       fill: var(--ok-primary-raw);
-      stroke: #4f46e5;
+      stroke: var(--ok-primary-raw-hover);
       stroke-width: 3;
     }
 
     .graph-svg__node--connected &,
     .graph-svg__node--ancestor & {
-      fill: rgba(99, 102, 241, 0.15);
-      stroke: rgba(99, 102, 241, 0.5);
+      fill: rgba(var(--ok-primary-rgb), 0.15);
+      stroke: rgba(var(--ok-primary-rgb), 0.5);
       stroke-width: 2.5;
     }
   }
@@ -238,7 +238,7 @@
     transition: fill 0.12s, stroke 0.12s;
 
     .graph-svg__expand-btn:hover & {
-      fill: rgba(99, 102, 241, 0.15);
+      fill: rgba(var(--ok-primary-rgb), 0.15);
       stroke: var(--ok-primary-raw);
     }
   }
@@ -390,10 +390,10 @@
     background: var(--ok-surface-container-high);
     color: var(--ok-on-surface-variant);
 
-    &--venue { background: rgba(99, 102, 241, 0.15); color: var(--ok-primary); }
+    &--venue { background: rgba(var(--ok-primary-rgb), 0.15); color: var(--ok-primary); }
     &--oa { background: rgba(16, 185, 129, 0.15); color: #10b981; }
-    &--archetype-main { background: rgba(168, 85, 247, 0.15); color: var(--ok-secondary); border: 1px solid rgba(168, 85, 247, 0.25); }
-    &--archetype-second { background: rgba(14, 165, 233, 0.12); color: var(--ok-tertiary); border: 1px solid rgba(14, 165, 233, 0.2); }
+    &--archetype-main { background: rgba(var(--ok-secondary-rgb), 0.15); color: var(--ok-secondary); border: 1px solid rgba(var(--ok-secondary-rgb), 0.25); }
+    &--archetype-second { background: rgba(var(--ok-tertiary-rgb), 0.12); color: var(--ok-tertiary); border: 1px solid rgba(var(--ok-tertiary-rgb), 0.2); }
   }
 
   &__section {
@@ -620,9 +620,9 @@
     justify-content: center;
     gap: 0.4rem;
     padding: 0.55rem 1rem;
-    border: 1px solid rgba(99, 102, 241, 0.3);
+    border: 1px solid rgba(var(--ok-primary-rgb), 0.3);
     border-radius: var(--ok-radius);
-    background: rgba(99, 102, 241, 0.1);
+    background: rgba(var(--ok-primary-rgb), 0.1);
     color: var(--ok-primary);
     font-family: var(--ok-font-label);
     font-size: 0.82rem;
@@ -631,8 +631,8 @@
     transition: background var(--ok-transition-fast), border-color var(--ok-transition-fast);
 
     &:hover:not(:disabled) {
-      background: rgba(99, 102, 241, 0.2);
-      border-color: rgba(99, 102, 241, 0.5);
+      background: rgba(var(--ok-primary-rgb), 0.2);
+      border-color: rgba(var(--ok-primary-rgb), 0.5);
     }
 
     &:disabled {
@@ -771,7 +771,7 @@
     color: var(--ok-on-surface);
 
     &:hover {
-      background: rgba(99, 102, 241, 0.1);
+      background: rgba(var(--ok-primary-rgb), 0.1);
     }
 
     &:not(:last-child) {
@@ -795,7 +795,7 @@
     font-size: 0.72rem;
     font-weight: 700;
     color: var(--ok-primary);
-    background: rgba(99, 102, 241, 0.15);
+    background: rgba(var(--ok-primary-rgb), 0.15);
     padding: 0.15rem 0.45rem;
     border-radius: var(--ok-radius-sm);
     font-variant-numeric: tabular-nums;

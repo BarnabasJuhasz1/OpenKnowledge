@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from ..models.paper import SearchRequest, SearchResponse
 from ..services.retrieval.demo import DemoDataStore
+from ..services import archetype
 
 router = APIRouter(prefix="/retrieval/demo", tags=["demo"])
 
@@ -12,6 +13,7 @@ async def demo_search(request: SearchRequest) -> SearchResponse:
 
     store = DemoDataStore.get()
     papers = store.search(request.keywords, limit=None)
+    await archetype.classify_papers(papers)
 
     return SearchResponse(
         papers=papers,

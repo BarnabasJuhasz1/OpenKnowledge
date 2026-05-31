@@ -66,19 +66,19 @@
     width: 48px;
     height: 48px;
     border-radius: var(--ok-radius-md);
-    background: rgba(99, 102, 241, 0.15);
+    background: rgba(var(--ok-primary-rgb), 0.15);
     color: var(--ok-primary);
     margin-bottom: var(--ok-space-3);
 
     .material-symbols-outlined { font-size: 24px; }
 
     &--secondary {
-      background: rgba(168, 85, 247, 0.15);
+      background: rgba(var(--ok-secondary-rgb), 0.15);
       color: var(--ok-secondary);
     }
 
     &--tertiary {
-      background: rgba(14, 165, 233, 0.15);
+      background: rgba(var(--ok-tertiary-rgb), 0.15);
       color: var(--ok-tertiary);
     }
   }

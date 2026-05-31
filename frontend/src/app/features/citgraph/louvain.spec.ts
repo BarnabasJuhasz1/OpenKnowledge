@@ -8,9 +8,35 @@ describe('louvain', () => {
     expect(res.levels).toEqual([]);
   });
 
-  it('assigns isolated nodes to their own communities', () => {
+  it('groups disconnected nodes into one miscellaneous community', () => {
+    // No edges at all → every node is disconnected and must collapse into a
+    // single "Miscellaneous" cluster rather than three singletons.
     const res = louvain(3, []);
     expect(res.communities.length).toBe(3);
+    expect(new Set(res.communities).size).toBe(1);
+    expect(res.miscCommunity).not.toBeNull();
+  });
+
+  it('puts disconnected orphans in one miscellaneous cluster beside real clusters', () => {
+    // Triangle 0-1-2 is connected; 3, 4, 5 have no edges (e.g. left dangling
+    // after a pre-clustering filter stripped their links).
+    const edges = [
+      { source: 0, target: 1 },
+      { source: 1, target: 2 },
+      { source: 2, target: 0 },
+    ];
+    const res = louvain(6, edges);
+    expect(res.miscCommunity).not.toBeNull();
+
+    const top = getCommunitiesAtLevel(res.levels, 6, res.levels.length - 1);
+    // The three orphans share one highest-level cluster...
+    expect(top[3]).toBe(top[4]);
+    expect(top[4]).toBe(top[5]);
+    // ...which is distinct from the connected triangle's cluster.
+    expect(top[3]).not.toBe(top[0]);
+    // The triangle itself stays together.
+    expect(top[0]).toBe(top[1]);
+    expect(top[1]).toBe(top[2]);
   });
 
   it('detects two communities for two cliques joined by one edge', () => {

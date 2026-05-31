@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, signal } from '@angular/core';
 import {
   RouterOutlet,
   RouterLink,
@@ -31,9 +31,14 @@ export class DashboardComponent implements OnInit {
   private readonly projectService = inject(ProjectService);
   private readonly projectContext = inject(ProjectContextService);
 
+  private static readonly COLLAPSE_KEY = 'ok-sidebar-collapsed';
+
   readonly projects = this.projectService.projects;
   readonly activeProjectId = this.projectContext.activeProjectId;
   readonly activeProject = this.projectContext.activeProject;
+
+  /** Whether the sidebar is collapsed to an icons-only rail. Persisted. */
+  readonly collapsed = signal<boolean>(this.readCollapsed());
 
   readonly features: FeatureLink[] = [
     { path: 'search', label: 'Search', icon: 'search' },
@@ -94,5 +99,24 @@ export class DashboardComponent implements OnInit {
   /** Route into the active project's feature view. */
   featureLink(path: string): (string | number)[] {
     return ['/dashboard', this.activeProjectId() ?? 0, path];
+  }
+
+  /** Toggle the icons-only collapsed state and persist the choice. */
+  toggleCollapse(): void {
+    const next = !this.collapsed();
+    this.collapsed.set(next);
+    try {
+      localStorage.setItem(DashboardComponent.COLLAPSE_KEY, String(next));
+    } catch {
+      // Storage may be unavailable (private mode); collapse still works for the session.
+    }
+  }
+
+  private readCollapsed(): boolean {
+    try {
+      return localStorage.getItem(DashboardComponent.COLLAPSE_KEY) === 'true';
+    } catch {
+      return false;
+    }
   }
 }

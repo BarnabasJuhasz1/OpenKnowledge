@@ -92,6 +92,8 @@ class DemoDataStore:
         refs = _parse_references(row["references"])
         citation_count = int(row["n_citation"]) if row["n_citation"] else None
 
+        # Prefer the dataset's archetypes when present; papers without one (blank
+        # in the CSV) fall back to real-time classification in api/demo.py.
         main_arch = row.get("predicted_main_archetype")
         if not main_arch or main_arch == "None" or main_arch.strip() == "":
             main_arch = None

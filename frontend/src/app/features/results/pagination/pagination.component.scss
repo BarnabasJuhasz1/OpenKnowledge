@@ -22,8 +22,8 @@
     transition: background var(--ok-transition-fast), border-color var(--ok-transition-fast), color var(--ok-transition-fast);
 
     &:hover:not(:disabled):not(.pagination__btn--active) {
-      background: rgba(99, 102, 241, 0.15);
-      border-color: rgba(99, 102, 241, 0.3);
+      background: rgba(var(--ok-primary-rgb), 0.15);
+      border-color: rgba(var(--ok-primary-rgb), 0.3);
       color: var(--ok-primary);
     }
 

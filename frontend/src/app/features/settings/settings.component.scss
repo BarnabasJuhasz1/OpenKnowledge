@@ -1,0 +1,151 @@
+// ============================================================================
+// Settings page — appearance / theme switching.
+// ============================================================================
+.settings {
+  min-height: calc(100vh - var(--ok-topnav-height));
+  padding: var(--ok-space-10) var(--ok-space-8);
+  background: var(--ok-bg);
+  overflow-y: auto;
+
+  &__inner {
+    max-width: 760px;
+    margin: 0 auto;
+  }
+
+  &__header {
+    margin-bottom: var(--ok-space-8);
+  }
+
+  &__title {
+    margin: 0 0 var(--ok-space-2);
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--ok-on-surface);
+  }
+
+  &__subtitle {
+    margin: 0;
+    font-size: 15px;
+    color: var(--ok-on-surface-variant);
+  }
+
+  // --- Section ---------------------------------------------------------------
+  &__section {
+    padding: var(--ok-space-6);
+    background: var(--ok-surface-container-low);
+    border: 1px solid var(--ok-outline-variant);
+    border-radius: var(--ok-radius-lg);
+  }
+
+  &__section-head {
+    margin-bottom: var(--ok-space-5);
+  }
+
+  &__section-title {
+    margin: 0 0 var(--ok-space-1);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--ok-on-surface);
+  }
+
+  &__section-desc {
+    margin: 0;
+    font-size: 14px;
+    color: var(--ok-on-surface-variant);
+  }
+
+  // --- Theme picker ----------------------------------------------------------
+  &__theme-picker {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--ok-space-4);
+  }
+
+  &__theme-option {
+    display: flex;
+    align-items: center;
+    gap: var(--ok-space-4);
+    padding: var(--ok-space-4);
+    text-align: left;
+    background: var(--ok-surface-container);
+    border: 1px solid var(--ok-outline-variant);
+    border-radius: var(--ok-radius-md);
+    color: var(--ok-on-surface-variant);
+    transition: border-color var(--ok-transition), color var(--ok-transition),
+      background var(--ok-transition), box-shadow var(--ok-transition);
+
+    &:hover {
+      color: var(--ok-on-surface);
+      border-color: var(--ok-outline);
+    }
+
+    &--active {
+      color: var(--ok-on-surface);
+      border-color: var(--ok-primary);
+      box-shadow: 0 0 0 1px var(--ok-primary), 0 4px 14px 0 var(--ok-shadow-primary);
+    }
+  }
+
+  // Miniature window preview of the theme.
+  &__theme-preview {
+    position: relative;
+    flex-shrink: 0;
+    width: 64px;
+    height: 48px;
+    border-radius: var(--ok-radius-sm);
+    border: 1px solid var(--ok-outline-variant);
+    overflow: hidden;
+  }
+
+  &__theme-preview-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 18px;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.06);
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  &__theme-preview-accent {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    width: 14px;
+    height: 14px;
+    border-radius: var(--ok-radius-full);
+    box-shadow: 0 0 10px 1px currentColor;
+  }
+
+  &__theme-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  &__theme-name {
+    font-family: var(--ok-font-label);
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--ok-on-surface);
+  }
+
+  &__theme-desc {
+    font-size: 13px;
+    color: var(--ok-on-surface-variant);
+  }
+
+  &__theme-check {
+    flex-shrink: 0;
+    font-size: 22px;
+    color: var(--ok-primary);
+  }
+}
+
+@media (max-width: 768px) {
+  .settings {
+    padding: var(--ok-space-6) var(--ok-space-4);
+  }
+}

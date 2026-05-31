@@ -194,6 +194,8 @@ class DemoCitGraphStore:
 
     def _node(self, index: _Index, pid: str, hop: int) -> CitGraphNode:
         m = index.meta[pid]
+        # Prefer the dataset's archetypes when present; nodes without one fall back
+        # to real-time classification at the API layer (api/citgraph.py).
         main_arch = m.get("predicted_main_archetype")
         if not main_arch or main_arch == "None" or main_arch.strip() == "":
             main_arch = None

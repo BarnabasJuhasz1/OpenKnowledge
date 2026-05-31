@@ -52,7 +52,7 @@
     font-weight: 700;
     font-size: 14px;
     cursor: pointer;
-    box-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.3);
+    box-shadow: 0 4px 14px 0 rgba(var(--ok-primary-rgb), 0.3);
     transition: transform var(--ok-transition), opacity var(--ok-transition);
 
     .material-symbols-outlined { font-size: 20px; }
@@ -101,8 +101,8 @@
 
     &:focus {
       outline: none;
-      border-color: #6366f1;
-      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+      border-color: var(--ok-primary-raw);
+      box-shadow: 0 0 0 3px rgba(var(--ok-primary-rgb), 0.25);
     }
   }
 
@@ -170,7 +170,7 @@
 
   &:hover {
     transform: translateY(-2px);
-    border-color: #6366f1;
+    border-color: var(--ok-primary-raw);
   }
 
   &__dot {

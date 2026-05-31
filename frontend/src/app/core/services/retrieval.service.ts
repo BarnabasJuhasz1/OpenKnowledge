@@ -25,8 +25,18 @@ export class RetrievalService {
     return this.http.post<SearchResponse>(`${this.baseUrl}/retrieval/demo/search`, request);
   }
 
-  searchStream(request: SearchRequest): Observable<StreamEvent | { type: 'done'; data: any }> {
-    return new Observable<StreamEvent | { type: 'done'; data: any }>(subscriber => {
+  searchStream(
+    request: SearchRequest
+  ): Observable<
+    | StreamEvent
+    | { type: 'done'; data: any }
+    | { type: 'archetypes'; data: Record<string, [string | null, string | null]> }
+  > {
+    return new Observable<
+      | StreamEvent
+      | { type: 'done'; data: any }
+      | { type: 'archetypes'; data: Record<string, [string | null, string | null]> }
+    >(subscriber => {
       const controller = new AbortController();
 
       fetch(this.withProject(`${this.baseUrl}/retrieval/search/stream`), {
@@ -63,6 +73,9 @@ export class RetrievalService {
                     const parsed = JSON.parse(jsonStr);
                     if ('source' in parsed && 'papers' in parsed) {
                       subscriber.next(parsed as StreamEvent);
+                    } else if ('archetypes' in parsed) {
+                      // Post-classification patch: paperKey -> [primary, secondary]
+                      subscriber.next({ type: 'archetypes', data: parsed.archetypes });
                     } else if ('total_found' in parsed) {
                       // This is the done payload
                       subscriber.next({ type: 'done', data: parsed });

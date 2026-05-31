@@ -307,6 +307,29 @@ export class SearchStateService {
     this.graphInitialized = true;
   }
 
+  /**
+   * Patch papers with archetypes produced by the backend classifier after the
+   * stream completes. Keyed by the same identity as paperId().
+   */
+  applyArchetypes(map: Record<string, [string | null, string | null]>): void {
+    if (!map || Object.keys(map).length === 0) return;
+    this.rawPapersBySource.update(prev => {
+      const next: Record<string, Paper[]> = {};
+      for (const [source, papers] of Object.entries(prev)) {
+        next[source] = papers.map(p => {
+          const arch = map[paperId(p)];
+          if (!arch) return p;
+          return {
+            ...p,
+            predicted_main_archetype: arch[0] ?? undefined,
+            predicted_second_tier_archetype: arch[1] ?? undefined,
+          };
+        });
+      }
+      return next;
+    });
+  }
+
   /** Toggle a single database in/out of the selected set. */
   toggleSource(name: string): void {
     this.selectedSources.update(prev => {

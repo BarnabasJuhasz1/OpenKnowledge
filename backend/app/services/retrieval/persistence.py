@@ -117,6 +117,8 @@ async def _upsert_paper(
     _set_if_empty("is_peer_reviewed", paper.is_peer_reviewed)
     _set_if_empty("has_public_code", paper.has_public_code)
     _set_if_empty("code_url", paper.code_url)
+    _set_if_empty("predicted_main_archetype", paper.predicted_main_archetype)
+    _set_if_empty("predicted_second_tier_archetype", paper.predicted_second_tier_archetype)
 
     # has_dataset: True wins
     if paper.has_dataset:

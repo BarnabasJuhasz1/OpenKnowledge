@@ -5,10 +5,10 @@
 // Uses .landing-theme CSS custom properties for light palette.
 // ============================================================================
 
-$brand: #6366f1;
-$brand-hover: #4f46e5;
-$brand-light: rgba(99, 102, 241, 0.1);
-$brand-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.35);
+$brand: var(--ok-primary-raw);
+$brand-hover: var(--ok-primary-raw-hover);
+$brand-light: rgba(var(--ok-primary-rgb), 0.1);
+$brand-shadow: 0 4px 14px 0 rgba(var(--ok-primary-rgb), 0.35);
 
 .landing {
   min-height: 100vh;
@@ -96,7 +96,7 @@ $brand-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.35);
 
     &:hover {
       color: var(--ok-on-surface);
-      background: rgba(99, 102, 241, 0.08);
+      background: rgba(var(--ok-primary-rgb), 0.08);
       text-decoration: none;
     }
 
@@ -195,7 +195,7 @@ $brand-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.35);
       left: 20%;
       width: 400px;
       height: 400px;
-      background: rgba(99, 102, 241, 0.1);
+      background: rgba(var(--ok-primary-rgb), 0.1);
       filter: blur(100px);
       animation: ok-float 8s ease-in-out infinite;
     }
@@ -205,7 +205,7 @@ $brand-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.35);
       right: 20%;
       width: 500px;
       height: 500px;
-      background: rgba(14, 165, 233, 0.08);
+      background: rgba(var(--ok-tertiary-rgb), 0.08);
       filter: blur(120px);
       animation: ok-float 10s ease-in-out infinite;
       animation-delay: 2s;
@@ -432,17 +432,17 @@ $brand-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.35);
       color: $brand;
     }
     &--tertiary {
-      background: rgba(14, 165, 233, 0.1);
-      color: #0ea5e9;
+      background: rgba(var(--ok-tertiary-rgb), 0.1);
+      color: var(--ok-tertiary-raw);
     }
     &--secondary {
-      background: rgba(168, 85, 247, 0.1);
-      color: #a855f7;
+      background: rgba(var(--ok-secondary-rgb), 0.1);
+      color: var(--ok-secondary-raw);
     }
 
-    .process__card:hover &--primary { background: rgba(99, 102, 241, 0.18); }
-    .process__card:hover &--tertiary { background: rgba(14, 165, 233, 0.18); }
-    .process__card:hover &--secondary { background: rgba(168, 85, 247, 0.18); }
+    .process__card:hover &--primary { background: rgba(var(--ok-primary-rgb), 0.18); }
+    .process__card:hover &--tertiary { background: rgba(var(--ok-tertiary-rgb), 0.18); }
+    .process__card:hover &--secondary { background: rgba(var(--ok-secondary-rgb), 0.18); }
   }
 
   &__card-title {
@@ -484,30 +484,30 @@ $brand-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.35);
       width: 8px;
       height: 8px;
       background: $brand;
-      box-shadow: 0 0 15px rgba(99, 102, 241, 0.5);
+      box-shadow: 0 0 15px rgba(var(--ok-primary-rgb), 0.5);
     }
     &--2 {
       top: 160px;
       right: 15%;
       width: 12px;
       height: 12px;
-      background: #0ea5e9;
-      box-shadow: 0 0 15px rgba(14, 165, 233, 0.5);
+      background: var(--ok-tertiary-raw);
+      box-shadow: 0 0 15px rgba(var(--ok-tertiary-rgb), 0.5);
     }
     &--3 {
       bottom: 33%;
       left: 30%;
       width: 8px;
       height: 8px;
-      background: #a855f7;
-      box-shadow: 0 0 15px rgba(168, 85, 247, 0.5);
+      background: var(--ok-secondary-raw);
+      box-shadow: 0 0 15px rgba(var(--ok-secondary-rgb), 0.5);
     }
   }
 
   &__line {
     position: absolute;
     height: 1px;
-    background: linear-gradient(90deg, rgba(99, 102, 241, 0.2) 0%, rgba(99, 102, 241, 0) 100%);
+    background: linear-gradient(90deg, rgba(var(--ok-primary-rgb), 0.2) 0%, rgba(var(--ok-primary-rgb), 0) 100%);
     pointer-events: none;
 
     &--1 {
@@ -588,12 +588,12 @@ $brand-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.35);
       color: $brand;
     }
     &--tertiary {
-      background: rgba(14, 165, 233, 0.1);
-      color: #0ea5e9;
+      background: rgba(var(--ok-tertiary-rgb), 0.1);
+      color: var(--ok-tertiary-raw);
     }
     &--secondary {
-      background: rgba(168, 85, 247, 0.1);
-      color: #a855f7;
+      background: rgba(var(--ok-secondary-rgb), 0.1);
+      color: var(--ok-secondary-raw);
     }
   }
 
@@ -646,13 +646,13 @@ $brand-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.35);
     &--1 {
       top: -96px;
       left: -96px;
-      background: rgba(99, 102, 241, 0.1);
+      background: rgba(var(--ok-primary-rgb), 0.1);
       filter: blur(60px);
     }
     &--2 {
       bottom: -96px;
       right: -96px;
-      background: rgba(14, 165, 233, 0.1);
+      background: rgba(var(--ok-tertiary-rgb), 0.1);
       filter: blur(60px);
     }
   }

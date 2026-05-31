@@ -2,15 +2,33 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from ..models.paper import SearchRequest, SearchResponse, BackgroundProgress
+from ..models.paper import Paper, SearchRequest, SearchResponse, BackgroundProgress
 from ..services.retrieval import fetcher
 from ..services.retrieval.persistence import flush_all, upsert_papers, save_job
 from ..services.retrieval.background import background_manager
 from ..services.retrieval.fetcher import _build_adapters
+from ..services import archetype
 from ..db.database import get_db
 from .deps import require_project
 
 router = APIRouter(prefix="/retrieval", tags=["retrieval"])
+
+
+def _paper_key(p: Paper) -> str:
+    """Stable identity matching the frontend's paperId() priority."""
+    return p.doi or p.arxiv_id or p.semantic_scholar_id or p.openalex_id or p.title
+
+
+def _archetype_map(papers: list[Paper]) -> dict[str, list[str | None]]:
+    """Map paper key -> [primary, secondary] for papers that have an archetype."""
+    out: dict[str, list[str | None]] = {}
+    for p in papers:
+        if p.predicted_main_archetype or p.predicted_second_tier_archetype:
+            out[_paper_key(p)] = [
+                p.predicted_main_archetype,
+                p.predicted_second_tier_archetype,
+            ]
+    return out
 
 
 @router.post("/search", response_model=SearchResponse)
@@ -23,6 +41,9 @@ async def search_papers(
         raise HTTPException(status_code=422, detail="At least one keyword is required.")
 
     response = await fetcher.search(request)
+
+    # Classify archetypes for any papers that don't have one yet.
+    await archetype.classify_papers(response.papers)
 
     # Flush this project's old data and persist fresh results
     await flush_all(db, project_id)
@@ -67,6 +88,13 @@ async def search_papers_stream(
 
             payload = event.model_dump_json()
             yield f"data: {payload}\n\n"
+
+        # Classify archetypes for the full result set, then tell the client which
+        # papers got which archetype so it can patch the already-rendered cards.
+        await archetype.classify_papers(all_papers)
+        arch_map = _archetype_map(all_papers)
+        if arch_map:
+            yield f"event: archetypes\ndata: {json.dumps({'archetypes': arch_map})}\n\n"
 
         # Persist after all sources complete
         await flush_all(db, project_id)
@@ -139,6 +167,7 @@ async def background_progress(job_id: str) -> StreamingResponse:
                 if progress.is_complete:
                     # Send final papers if any were collected
                     if job.papers:
+                        await archetype.classify_papers(job.papers)
                         papers_payload = json.dumps({
                             "papers": [p.model_dump(mode="json") for p in job.papers],
                             "total_background": len(job.papers),

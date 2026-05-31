@@ -23,6 +23,119 @@
           </button>
         </div>
 
+        <!-- Settings -->
+        <div class="graph-settings">
+          <button
+            class="graph-settings__btn"
+            [class.graph-settings__btn--active]="settingsOpen()"
+            (click)="toggleSettings()"
+            title="Display settings"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </button>
+
+          @if (settingsOpen()) {
+            <div class="graph-settings__backdrop" (click)="closeSettings()"></div>
+            <div class="graph-settings__panel">
+              <div class="graph-settings__header">Display Settings</div>
+
+              <div class="graph-settings__subhead">Star markers</div>
+              <label class="graph-settings__row">
+                <span class="graph-settings__label">
+                  <span class="graph-settings__label-line">
+                    <span class="graph-settings__star graph-settings__star--gold material-symbols-outlined">star</span>
+                    Gold stars
+                  </span>
+                  <span class="graph-settings__hint">top 1% ok-score (all papers)</span>
+                </span>
+                <button
+                  class="graph-settings__switch"
+                  [class.graph-settings__switch--on]="showGoldStars()"
+                  (click)="showGoldStars.set(!showGoldStars())"
+                  role="switch"
+                  [attr.aria-checked]="showGoldStars()"
+                >
+                  <span class="graph-settings__knob"></span>
+                </button>
+              </label>
+              <label class="graph-settings__row">
+                <span class="graph-settings__label">
+                  <span class="graph-settings__label-line">
+                    <span class="graph-settings__star graph-settings__star--silver material-symbols-outlined">star</span>
+                    Silver stars
+                  </span>
+                  <span class="graph-settings__hint">top 5% ok-score (all papers)</span>
+                </span>
+                <button
+                  class="graph-settings__switch"
+                  [class.graph-settings__switch--on]="showSilverStars()"
+                  (click)="showSilverStars.set(!showSilverStars())"
+                  role="switch"
+                  [attr.aria-checked]="showSilverStars()"
+                >
+                  <span class="graph-settings__knob"></span>
+                </button>
+              </label>
+
+              <div class="graph-settings__subhead">Filter graph by tier</div>
+              <label class="graph-settings__row">
+                <span class="graph-settings__label">
+                  Only gold nodes
+                  <span class="graph-settings__hint">show only top-1% papers</span>
+                </span>
+                <button
+                  class="graph-settings__switch"
+                  [class.graph-settings__switch--on]="onlyGoldNodes()"
+                  (click)="onlyGoldNodes.set(!onlyGoldNodes())"
+                  role="switch"
+                  [attr.aria-checked]="onlyGoldNodes()"
+                >
+                  <span class="graph-settings__knob"></span>
+                </button>
+              </label>
+              <label class="graph-settings__row">
+                <span class="graph-settings__label">
+                  Only silver nodes
+                  <span class="graph-settings__hint">show only top-5% papers</span>
+                </span>
+                <button
+                  class="graph-settings__switch"
+                  [class.graph-settings__switch--on]="onlySilverNodes()"
+                  (click)="onlySilverNodes.set(!onlySilverNodes())"
+                  role="switch"
+                  [attr.aria-checked]="onlySilverNodes()"
+                >
+                  <span class="graph-settings__knob"></span>
+                </button>
+              </label>
+
+              <div class="graph-settings__subhead">Keyword filter</div>
+              <label class="graph-settings__row">
+                <span class="graph-settings__label">
+                  Title + abstract match
+                  <span class="graph-settings__hint">
+                    @if (state.prefiltered()) { locked on — applied before clustering }
+                    @else if (!state.keywords().length) { run a keyword search first }
+                    @else { hide papers not matching {{ state.keywords().length }} keyword(s) }
+                  </span>
+                </span>
+                <button
+                  class="graph-settings__switch"
+                  [class.graph-settings__switch--on]="state.filterActive()"
+                  [class.graph-settings__switch--locked]="state.prefiltered()"
+                  [disabled]="!state.canToggleFilter()"
+                  (click)="state.setFilter(!state.filterActive())"
+                  role="switch"
+                  [attr.aria-checked]="state.filterActive()"
+                  [title]="state.prefiltered() ? 'Filtering was applied before clustering and cannot be turned off here' : ''"
+                >
+                  <span class="graph-settings__knob"></span>
+                </button>
+              </label>
+            </div>
+          }
+        </div>
+
         <div
           class="ok-graph-page__canvas"
           [class.ok-graph-page__canvas--panning]="panning()"
@@ -107,6 +220,17 @@
                       [attr.stroke]="nodeStroke(node)"
                       [attr.stroke-width]="isSelected(node) ? 3 : (isConnected(node) ? 2.5 : 2)"
                     />
+                    <!-- Concentric rings: one per representative level. -->
+                    @for (r of node.rings; track $index) {
+                      <circle
+                        class="graph-svg__ring"
+                        [attr.cx]="node.x"
+                        [attr.cy]="node.y"
+                        [attr.r]="r"
+                        fill="none"
+                        [attr.stroke]="nodeStroke(node)"
+                      />
+                    }
                     <text
                       class="graph-svg__node-letter material-symbols-outlined"
                       [attr.x]="node.x"
@@ -127,6 +251,18 @@
                       [attr.y]="node.y + 36"
                       text-anchor="middle"
                     >{{ nodeLabel(node) }}</text>
+
+                    @if ((node.star === 'gold' && showGoldStars()) || (node.star === 'silver' && showSilverStars())) {
+                      <text
+                        class="graph-svg__star material-symbols-outlined"
+                        [class.graph-svg__star--gold]="node.star === 'gold'"
+                        [class.graph-svg__star--silver]="node.star === 'silver'"
+                        [attr.x]="node.x + 17"
+                        [attr.y]="node.y - 17"
+                        text-anchor="middle"
+                        dominant-baseline="central"
+                      >star</text>
+                    }
 
                     @if (showExpandButtons(node)) {
                       <!-- Left arrow: earlier (past) sub-cluster representatives -->

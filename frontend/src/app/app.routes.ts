@@ -30,6 +30,14 @@ export const routes: Routes = [
             m => m.ProjectsLandingComponent
           ),
       },
+      // The "Settings" tab — appearance / theme switching.
+      {
+        path: 'settings',
+        loadComponent: () =>
+          import('./features/settings/settings.component').then(
+            m => m.SettingsComponent
+          ),
+      },
       // Everything inside a project is scoped by the :projectId segment.
       // Componentless: feature pages render in the shell's outlet.
       {

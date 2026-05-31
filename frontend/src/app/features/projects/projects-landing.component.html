@@ -87,7 +87,7 @@
             <article class="project-card" (click)="open(project)">
               <span
                 class="project-card__dot"
-                [style.background]="project.color || '#6366f1'"
+                [style.background]="project.color || 'var(--ok-primary-raw)'"
               ></span>
               <div class="project-card__body">
                 <h3 class="project-card__name">{{ project.name }}</h3>

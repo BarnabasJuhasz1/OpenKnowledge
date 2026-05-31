@@ -121,6 +121,8 @@ async def test_node_fields_populated():
     assert seed_node.year == 2020
     assert seed_node.authors == ["X"]
     assert seed_node.reference_count == 3  # seed forward = [A, B, Z]
+    # Archetypes present in the demo dataset are used as-is; nodes without one are
+    # left unset for the API-layer classifier to fill in.
     assert seed_node.predicted_main_archetype == "The Combiner"
     assert seed_node.predicted_second_tier_archetype == "Algorithm/Architecture"
 

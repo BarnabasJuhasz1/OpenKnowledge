@@ -51,7 +51,7 @@
     &:focus {
       border-color: var(--ok-primary-raw);
       background: var(--ok-surface-container);
-      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+      box-shadow: 0 0 0 3px rgba(var(--ok-primary-rgb), 0.15);
     }
   }
 
@@ -70,7 +70,7 @@
     cursor: pointer;
     white-space: nowrap;
     transition: opacity var(--ok-transition-fast), transform var(--ok-transition-fast);
-    box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
+    box-shadow: 0 4px 14px rgba(var(--ok-primary-rgb), 0.3);
 
     &:hover:not(:disabled) {
       opacity: 0.9;

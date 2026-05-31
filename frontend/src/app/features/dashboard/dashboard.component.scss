@@ -3,7 +3,8 @@
 // Sits directly below the constant global top nav.
 // ============================================================================
 $sidebar-width: 240px;
-$brand: #6366f1;
+$sidebar-width-collapsed: 76px;
+$brand: var(--ok-primary-raw);
 
 .dashboard {
   display: flex;
@@ -16,12 +17,39 @@ $brand: #6366f1;
     position: sticky;
     top: var(--ok-topnav-height);
     flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
     width: $sidebar-width;
     height: calc(100vh - var(--ok-topnav-height));
     overflow-y: auto;
+    overflow-x: hidden;
     padding: var(--ok-space-6) var(--ok-space-4);
     background: var(--ok-surface-container-lowest);
     border-right: 1px solid var(--ok-outline-variant);
+    transition: width var(--ok-transition);
+  }
+
+  // --- Collapse / expand toggle ----------------------------------------------
+  &__collapse-btn {
+    align-self: flex-end;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    margin-bottom: var(--ok-space-2);
+    padding: 0;
+    border: none;
+    border-radius: var(--ok-radius-md);
+    background: transparent;
+    color: var(--ok-on-surface-variant);
+    cursor: pointer;
+    transition: color var(--ok-transition), background var(--ok-transition);
+
+    &:hover {
+      color: var(--ok-on-surface);
+      background: var(--ok-hover-overlay);
+    }
   }
 
   // --- Top-level tabs --------------------------------------------------------
@@ -71,7 +99,7 @@ $brand: #6366f1;
     line-height: 1.5;
     color: var(--ok-on-surface-variant);
 
-    a { color: #6366f1; font-weight: 600; }
+    a { color: var(--ok-primary-raw); font-weight: 600; }
   }
 
   &__nav {
@@ -95,14 +123,14 @@ $brand: #6366f1;
 
     &:hover {
       color: var(--ok-on-surface);
-      background: rgba(255, 255, 255, 0.05);
+      background: var(--ok-hover-overlay);
       text-decoration: none;
     }
 
     &--active {
       color: #fff;
       background: var(--ok-gradient-primary);
-      box-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.3);
+      box-shadow: 0 4px 14px 0 var(--ok-shadow-primary);
 
       &:hover {
         color: #fff;
@@ -121,6 +149,12 @@ $brand: #6366f1;
     font-size: 20px;
   }
 
+  // --- Settings (bottom-pinned) ----------------------------------------------
+  &__settings {
+    margin-top: auto;
+    padding-top: var(--ok-space-2);
+  }
+
   &__content {
     flex: 1 1 auto;
     min-width: 0;
@@ -128,6 +162,46 @@ $brand: #6366f1;
     overflow: hidden;
     display: flex;
     flex-direction: column;
+  }
+
+  // --- Collapsed (icons-only rail) -------------------------------------------
+  &--collapsed {
+    .dashboard__sidebar {
+      width: $sidebar-width-collapsed;
+      padding-left: var(--ok-space-2);
+      padding-right: var(--ok-space-2);
+    }
+
+    .dashboard__collapse-btn {
+      align-self: center;
+    }
+
+    // Hide every text label; leave only the icons/dots visible.
+    .dashboard__nav-label,
+    .dashboard__active-name,
+    .dashboard__no-project {
+      display: none;
+    }
+
+    // Center the icons and drop the feature indent.
+    .dashboard__nav-link {
+      justify-content: center;
+      gap: 0;
+      padding-left: 0;
+      padding-right: 0;
+    }
+
+    .dashboard__nav-link--feature {
+      margin-left: 0;
+    }
+
+    // Active-project header collapses to just its color dot.
+    .dashboard__active {
+      justify-content: center;
+      gap: 0;
+      padding-left: 0;
+      padding-right: 0;
+    }
   }
 }
 

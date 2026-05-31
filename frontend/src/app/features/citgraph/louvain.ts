@@ -2,6 +2,13 @@ export interface LouvainResult {
   levels: number[][];
   communities: number[];
   modularity: number;
+  /** Level-0 community id that holds every disconnected (degree-0) node, or
+   *  null when the graph has none. Disconnected nodes are merged into this one
+   *  "Miscellaneous" community instead of each surfacing as its own top-level
+   *  cluster — which is what happens when filtering strips the edges that would
+   *  otherwise tie them into the graph. `louvain()` always sets it; optional so
+   *  older callers that build a result literal still type-check. */
+  miscCommunity?: number | null;
 }
 
 export interface LouvainOptions {
@@ -23,7 +30,7 @@ export function louvain(
   const maxLevels = options.maxLevels && options.maxLevels > 0 ? Math.floor(options.maxLevels) : 20;
 
   if (nodeCount === 0) {
-    return { levels: [], communities: [], modularity: 0 };
+    return { levels: [], communities: [], modularity: 0, miscCommunity: null };
   }
 
   const adj = new Map<number, Map<number, number>>();
@@ -39,14 +46,31 @@ export function louvain(
     totalWeight += w;
   }
 
+  // Disconnected nodes (no incident edge). Filtering before clustering produces
+  // a lot of these; left alone each stays a singleton at every level and so
+  // surfaces as its own highest-level cluster. Collect them to merge into one
+  // shared "Miscellaneous" community below.
+  const isolated: number[] = [];
+  for (let i = 0; i < nodeCount; i++) {
+    const nb = adj.get(i);
+    if (!nb || nb.size === 0) isolated.push(i);
+  }
+  const miscSeed = isolated.length ? isolated[0] : -1;
+
   if (totalWeight === 0) {
-    const comm = Array.from({ length: nodeCount }, (_, i) => i);
-    return { levels: [comm], communities: comm, modularity: 0 };
+    // No edges at all → every node is disconnected: one Miscellaneous cluster.
+    const comm = new Array(nodeCount).fill(0);
+    return { levels: [comm], communities: comm, modularity: 0, miscCommunity: 0 };
   }
 
   const m2 = totalWeight * 2;
-  let community = Array.from({ length: nodeCount }, (_, i) => i);
+  const community = Array.from({ length: nodeCount }, (_, i) => i);
+  // Pre-merge every disconnected node into one community. Having no edges they
+  // never move during the local passes, so they travel together up the whole
+  // dendrogram and end as a single top-level cluster.
+  for (const i of isolated) community[i] = miscSeed;
   const levels: number[][] = [];
+  let miscCommunity: number | null = null;
 
   const kDeg = new Float64Array(nodeCount);
   for (let i = 0; i < nodeCount; i++) {
@@ -122,6 +146,11 @@ export function louvain(
     }
     const numComms = nextId;
 
+    // Record the normalized level-0 community id of the disconnected group so
+    // the UI can find and label the single "Miscellaneous" cluster. It keeps
+    // this id composed up through the hierarchy (it never merges).
+    if (level === 0 && miscSeed >= 0) miscCommunity = normalized[miscSeed];
+
     // A pass that leaves every node in its own community produces no merge —
     // the resulting level would be an identity map (and would render
     // identically to the level below it). Drop it: stop without pushing for
@@ -168,7 +197,7 @@ export function louvain(
 
   const mod = _modularity(adj, finalComm, kDeg, m2, nodeCount, resolution);
 
-  return { levels, communities: finalComm, modularity: mod };
+  return { levels, communities: finalComm, modularity: mod, miscCommunity };
 }
 
 function _sigmaTot(comm: number[], kDeg: Float64Array, c: number, n: number): number {

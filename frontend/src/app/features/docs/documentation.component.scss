@@ -1,7 +1,7 @@
 // ============================================================================
 // Documentation page — dark app theme.
 // ============================================================================
-$brand: #6366f1;
+$brand: var(--ok-primary-raw);
 
 .docs {
   min-height: calc(100vh - var(--ok-topnav-height));
@@ -75,9 +75,9 @@ $brand: #6366f1;
     }
 
     &--active {
-      background: rgba(99, 102, 241, 0.15) !important;
+      background: rgba(var(--ok-primary-rgb), 0.15) !important;
       color: rgb(129, 140, 248) !important;
-      border: 1px solid rgba(99, 102, 241, 0.3) !important;
+      border: 1px solid rgba(var(--ok-primary-rgb), 0.3) !important;
       font-weight: 600;
     }
 
@@ -187,7 +187,7 @@ $brand: #6366f1;
     flex-shrink: 0;
     font-size: 28px;
     color: var(--ok-primary);
-    background: rgba(99, 102, 241, 0.12);
+    background: rgba(var(--ok-primary-rgb), 0.12);
     border-radius: var(--ok-radius-md);
     padding: var(--ok-space-2);
   }
@@ -236,11 +236,11 @@ $brand: #6366f1;
     font-size: 15px;
     font-weight: 700;
     text-decoration: none;
-    box-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.35);
+    box-shadow: 0 4px 14px 0 rgba(var(--ok-primary-rgb), 0.35);
     transition: all var(--ok-transition);
 
     &:hover {
-      background: #4f46e5;
+      background: var(--ok-primary-raw-hover);
       color: #fff;
       transform: translateY(-1px);
       text-decoration: none;
@@ -338,10 +338,10 @@ $brand: #6366f1;
 
   // Archetype Theme Colors (matching results paper cards)
   &__archetype-card--innovator {
-    border-left: 3px solid rgba(168, 85, 247, 0.7);
+    border-left: 3px solid rgba(var(--ok-secondary-rgb), 0.7);
     .docs__archetype-icon {
-      color: rgb(168, 85, 247);
-      background: rgba(168, 85, 247, 0.12);
+      color: rgb(var(--ok-secondary-rgb));
+      background: rgba(var(--ok-secondary-rgb), 0.12);
     }
   }
 
@@ -378,10 +378,10 @@ $brand: #6366f1;
   }
 
   &__archetype-card--evaluator {
-    border-left: 3px solid rgba(14, 165, 233, 0.7);
+    border-left: 3px solid rgba(var(--ok-tertiary-rgb), 0.7);
     .docs__archetype-icon {
-      color: rgb(14, 165, 233);
-      background: rgba(14, 165, 233, 0.12);
+      color: rgb(var(--ok-tertiary-rgb));
+      background: rgba(var(--ok-tertiary-rgb), 0.12);
     }
   }
 

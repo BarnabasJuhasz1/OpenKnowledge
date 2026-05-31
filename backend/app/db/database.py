@@ -33,3 +33,10 @@ def _apply_migrations(conn) -> None:
         columns = {col["name"] for col in inspector.get_columns("bookshelf_items")}
         if "paper_json" not in columns:
             conn.execute(text("ALTER TABLE bookshelf_items ADD COLUMN paper_json TEXT"))
+
+    if "papers" in inspector.get_table_names():
+        columns = {col["name"] for col in inspector.get_columns("papers")}
+        if "predicted_main_archetype" not in columns:
+            conn.execute(text("ALTER TABLE papers ADD COLUMN predicted_main_archetype VARCHAR"))
+        if "predicted_second_tier_archetype" not in columns:
+            conn.execute(text("ALTER TABLE papers ADD COLUMN predicted_second_tier_archetype VARCHAR"))

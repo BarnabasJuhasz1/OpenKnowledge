@@ -9,7 +9,10 @@ import { Router } from '@angular/router';
 import { NotificationService } from '../../core/services/notification.service';
 import { OkGraphStateService } from '../../core/services/okgraph-state.service';
 import { ProjectContextService } from '../../core/services/project-context.service';
+import { SearchStateService } from '../../core/services/search-state.service';
 import { getArchetypeIcon } from '../../shared/utils/archetype-icons';
+import { parseQuery } from '../../shared/utils/query-parser';
+import { matchesNodeKeywords } from '../../shared/utils/keyword-match';
 
 interface LayoutNode {
   id: string;
@@ -63,7 +66,17 @@ export class CitGraphComponent {
   private readonly notify = inject(NotificationService);
   private readonly okGraphState = inject(OkGraphStateService);
   private readonly projectContext = inject(ProjectContextService);
+  private readonly searchState = inject(SearchStateService);
   private readonly elRef = inject(ElementRef);
+
+  /** Flattened keyword query (title + abstract filter source). */
+  readonly keywords = computed(() => parseQuery(this.searchState.rawQuery()));
+  /** Whether the user has enabled the pre-clustering keyword filter. */
+  readonly filterByKeywords = signal(false);
+  /** The filter is only meaningful once a keyword query exists. */
+  readonly canFilter = computed(() => this.keywords().length > 0);
+
+  toggleKeywordFilter(): void { this.filterByKeywords.update(v => !v); }
 
   getArchetypeIcon(archetype?: string | null): string {
     return getArchetypeIcon(archetype);
@@ -309,10 +322,17 @@ export class CitGraphComponent {
       : this.citgraphSvc.build(id, this.kHops(), this.maxPerHop());
 
     request$.subscribe({
-      next: (data) => {
+      next: (raw) => {
+        // Pre-clustering keyword filter: drop papers whose title + abstract
+        // match none of the keywords (the seed is always kept), and any edge
+        // that loses an endpoint. The discarded papers never enter the graph.
+        const data = this.applyKeywordFilter(raw);
         this.graphData.set(data);
         this.layoutEdges.set(data.edges);
         this.runLayout(data);
+        // Cluster automatically using the parameters set before building, so the
+        // user gets the clustered graph in one step (no separate Louvain click).
+        this.runLouvain();
         this.loading.set(false);
       },
       error: (err) => {
@@ -320,6 +340,18 @@ export class CitGraphComponent {
         this.error.set(err.error?.detail || 'Failed to build citation graph');
       },
     });
+  }
+
+  /** Update the Louvain resolution; re-cluster live if a graph is already built. */
+  setResolution(value: number): void {
+    this.resolution.set(value);
+    if (this.graphData()) this.runLouvain();
+  }
+
+  /** Update the max hierarchy levels; re-cluster live if a graph is already built. */
+  setMaxLevels(value: number): void {
+    this.maxLevels.set(value);
+    if (this.graphData()) this.runLouvain();
   }
 
   toggleBookshelf(): void {
@@ -339,8 +371,9 @@ export class CitGraphComponent {
     this.bookshelfOpen.set(false);
     // The stored identifier is a DOI / arXiv / S2 / OpenAlex id (or the CSV
     // UUID in demo mode), each of which the matching builder resolves directly.
+    // Only populate the input — the graph is built when the user clicks Build,
+    // after they've set the hop/clustering parameters.
     this.paperId.set(item.paper_identifier);
-    this.buildGraph();
   }
 
   @HostListener('document:click', ['$event'])
@@ -348,6 +381,24 @@ export class CitGraphComponent {
     if (this.bookshelfOpen() && !this.elRef.nativeElement.contains(event.target)) {
       this.bookshelfOpen.set(false);
     }
+  }
+
+  /**
+   * If the pre-clustering filter is on, keep only the seed plus papers whose
+   * title + abstract match the keyword query, and drop edges that reference a
+   * removed paper. Returns the input unchanged when the filter is off or there
+   * are no keywords.
+   */
+  private applyKeywordFilter(data: CitGraphResponse): CitGraphResponse {
+    const kw = this.keywords();
+    if (!this.filterByKeywords() || !kw.length) return data;
+
+    const nodes = data.nodes.filter(
+      n => n.paper_id === data.seed_id || matchesNodeKeywords(n, kw),
+    );
+    const kept = new Set(nodes.map(n => n.paper_id));
+    const edges = data.edges.filter(e => kept.has(e.source) && kept.has(e.target));
+    return { ...data, nodes, edges };
   }
 
   private runLayout(data: CitGraphResponse): void {
@@ -584,9 +635,21 @@ export class CitGraphComponent {
     }
 
     // Hand the OK-Graph the full hierarchy (base nodes in Louvain index order +
-    // the dendrogram); it computes representatives and drills down itself.
+    // the dendrogram) plus everything it needs to re-cluster a keyword-filtered
+    // subset itself: the edges, the Louvain params, the keyword query, and
+    // whether we already prefiltered (which locks the OK-Graph filter on).
     const baseNodes = this.layoutNodes().map(n => n.data);
-    this.okGraphState.setHierarchy(baseNodes, result);
+    const prefiltered = this.filterByKeywords() && this.keywords().length > 0;
+    this.okGraphState.setHierarchy({
+      nodes: baseNodes,
+      louvain: result,
+      edges: this.graphData()?.edges ?? [],
+      resolution: this.resolution(),
+      maxLevels: this.maxLevels(),
+      keywords: this.keywords(),
+      seedId: this.graphData()?.seed_id ?? '',
+      prefiltered,
+    });
     this.notify.show('Sent cluster hierarchy to OK-Graph');
 
     const projectId = this.projectContext.activeProjectId();

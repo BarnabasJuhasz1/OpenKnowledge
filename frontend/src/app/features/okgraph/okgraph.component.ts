@@ -26,6 +26,8 @@ interface RenderNode {
   letter: string;
   color: string;       // cluster colour
   colorStrong: string; // higher-contrast variant for highlights
+  star: 'gold' | 'silver' | null; // gold = top 1% ok-score, silver = top 5%, null = neither
+  rings: number[];     // radii of inner rings (one per representative level); [] for a leaf
 }
 
 interface ExpandPopup {
@@ -66,6 +68,56 @@ export class OkGraphComponent {
   readonly panY = signal(0);
   readonly expandPopup = signal<ExpandPopup | null>(null);
   readonly panning = signal(false);
+
+  // Settings panel.
+  readonly settingsOpen = signal(false);
+  // Star-marker visibility (icons only; nodes stay on the canvas).
+  readonly showGoldStars = signal(true);
+  readonly showSilverStars = signal(true);
+  // Node filters: restrict the canvas to a star tier (re-lays out when on).
+  readonly onlyGoldNodes = signal(false);
+  readonly onlySilverNodes = signal(false);
+
+  toggleSettings(): void { this.settingsOpen.update(v => !v); }
+  closeSettings(): void { this.settingsOpen.set(false); }
+
+  /**
+   * Gold / silver ok-score thresholds over ALL papers in the graph (the active
+   * base-node set, which already reflects the keyword filter) — not just the
+   * placed/visible nodes. Gold = top 1%, silver = top 5%.
+   */
+  private readonly scoreThresholds = computed(() => {
+    const base = this.state.nodes();
+    const n = base.length;
+    if (!n) return { gold: Infinity, silver: Infinity };
+    const scores = base.map(b => repScore(b)).sort((a, b) => b - a);
+    const at = (frac: number) => scores[Math.min(n - 1, Math.max(0, Math.ceil(n * frac) - 1))];
+    return { gold: at(0.01), silver: at(0.05) };
+  });
+
+  private starFor(score: number): RenderNode['star'] {
+    const th = this.scoreThresholds();
+    if (score >= th.gold) return 'gold';
+    if (score >= th.silver) return 'silver';
+    return null;
+  }
+
+  /** Concentric-ring radii for a representative at hierarchy level L. A leaf
+   *  (L < 0) gets none (single circle); level 0 → 1 ring (2 circles), +1 per
+   *  level. Gap scales so the rings always fit inside the r=22 node. */
+  private ringsForLevel(level: number): number[] {
+    const inner = level >= 0 ? level + 1 : 0;
+    if (inner <= 0) return [];
+    const gap = Math.min(4.5, 16 / inner);
+    return Array.from({ length: inner }, (_, k) => +(22 - (k + 1) * gap).toFixed(2));
+  }
+
+  /** Whether a node of the given star tier survives the active node filters. */
+  private passesTierFilter(star: RenderNode['star']): boolean {
+    const g = this.onlyGoldNodes(), s = this.onlySilverNodes();
+    if (!g && !s) return true;          // no tier filter active → show all
+    return (g && star === 'gold') || (s && star === 'silver');
+  }
 
   private static readonly ZOOM_MIN = 0.3;
   private static readonly ZOOM_MAX = 3;
@@ -253,7 +305,12 @@ export class OkGraphComponent {
 
   private readonly laneLayout = computed(() => {
     const levels = this.levels();
-    const placed = this.state.placed().filter(p => p.paper.year != null);
+    // Drop yearless nodes, then apply the per-tier node filter so the layout
+    // (lanes, year columns, blobs, edges) is recomputed as if the filtered-out
+    // nodes were removed entirely.
+    const placed = this.state.placed()
+      .filter(p => p.paper.year != null)
+      .filter(p => this.passesTierFilter(this.starFor(p.paper.ok_score ?? 0)));
     const empty = {
       nodes: [] as RenderNode[], edges: [] as LayoutEdge[],
       yearColumns: [] as { year: number; x: number }[],
@@ -313,6 +370,8 @@ export class OkGraphComponent {
           id: p.id, paper: p.paper, x, y,
           letter: letterOf.get(p.id) ?? '?',
           color, colorStrong: lighten(color),
+          star: this.starFor(p.paper.ok_score ?? 0),
+          rings: this.ringsForLevel(p.level),
         });
         const b = boxes.get(p.topCluster);
         if (!b) boxes.set(p.topCluster, { minX: x, maxX: x, minY: y, maxY: y });
@@ -565,7 +624,8 @@ export class OkGraphComponent {
   onPanStart(event: MouseEvent): void {
     const t = event.target as Element;
     // Let nodes / arrows / controls handle their own clicks.
-    if (t.closest('.graph-svg__node') || t.closest('.zoom-controls') || t.closest('.expand-popup')) {
+    if (t.closest('.graph-svg__node') || t.closest('.zoom-controls') ||
+        t.closest('.expand-popup') || t.closest('.graph-settings')) {
       return;
     }
     this.expandPopup.set(null);
