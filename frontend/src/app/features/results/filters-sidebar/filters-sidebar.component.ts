@@ -1,6 +1,6 @@
-import { Component, inject } from '@angular/core';
+import { Component, ElementRef, HostListener, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { SearchStateService, SortField } from '../../../core/services/search-state.service';
+import { ALL_SOURCES, SearchStateService, SortField } from '../../../core/services/search-state.service';
 
 @Component({
   selector: 'app-filters-sidebar',
@@ -11,6 +11,10 @@ import { SearchStateService, SortField } from '../../../core/services/search-sta
 })
 export class FiltersSidebarComponent {
   readonly state = inject(SearchStateService);
+  private readonly host = inject(ElementRef<HTMLElement>);
+
+  /** Whether the databases dropdown menu is open. */
+  databasesOpen = false;
 
   get sortField(): SortField {
     return this.state.sortField();
@@ -80,12 +84,71 @@ export class FiltersSidebarComponent {
     this.state.updateFilter({ openAccessOnly: val });
   }
 
+  readonly archetypes = [
+    'The Innovator',
+    'The Evaluator',
+    'The Combiner',
+    'The Analyst',
+    'The Synthesizer',
+    'The Translator',
+    'The Architect',
+    'The Resource Creator',
+  ];
+
+  get archetype(): string | null {
+    return this.state.filters().archetype;
+  }
+
+  set archetype(val: string | null) {
+    this.state.updateFilter({ archetype: val || null });
+  }
+
+  /** Toggle the databases dropdown menu open/closed. */
+  toggleDatabasesMenu(): void {
+    this.databasesOpen = !this.databasesOpen;
+  }
+
+  /** Close the dropdown when clicking anywhere outside the sidebar. */
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: MouseEvent): void {
+    if (this.databasesOpen && !this.host.nativeElement.contains(event.target)) {
+      this.databasesOpen = false;
+    }
+  }
+
+  get allSourcesSelected(): boolean {
+    return this.state.selectedSources().size === ALL_SOURCES.length;
+  }
+
+  isSourceSelected(name: string): boolean {
+    return this.state.selectedSources().has(name);
+  }
+
+  toggleSource(name: string): void {
+    this.state.toggleSource(name);
+  }
+
+  toggleAllSources(event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.state.setAllSources(checked);
+  }
+
+  /** Short label summarising the current database selection. */
+  get databasesSummary(): string {
+    const count = this.state.selectedSources().size;
+    if (count === ALL_SOURCES.length) return 'All databases';
+    if (count === 0) return 'No databases';
+    return `${count} of ${ALL_SOURCES.length} databases`;
+  }
+
   get hasActiveFilters(): boolean {
     const f = this.state.filters();
     return f.yearMin != null || f.yearMax != null
       || f.citationMin != null || f.citationMax != null
       || f.codeOnly || f.peerReviewedOnly || f.openAccessOnly
-      || this.state.sortField() !== 'relevancy';
+      || f.archetype != null
+      || this.state.sortField() !== 'relevancy'
+      || !this.allSourcesSelected;
   }
 
   resetAll(): void {

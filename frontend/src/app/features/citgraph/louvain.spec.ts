@@ -8,9 +8,35 @@ describe('louvain', () => {
     expect(res.levels).toEqual([]);
   });
 
-  it('assigns isolated nodes to their own communities', () => {
+  it('groups disconnected nodes into one miscellaneous community', () => {
+    // No edges at all → every node is disconnected and must collapse into a
+    // single "Miscellaneous" cluster rather than three singletons.
     const res = louvain(3, []);
     expect(res.communities.length).toBe(3);
+    expect(new Set(res.communities).size).toBe(1);
+    expect(res.miscCommunity).not.toBeNull();
+  });
+
+  it('puts disconnected orphans in one miscellaneous cluster beside real clusters', () => {
+    // Triangle 0-1-2 is connected; 3, 4, 5 have no edges (e.g. left dangling
+    // after a pre-clustering filter stripped their links).
+    const edges = [
+      { source: 0, target: 1 },
+      { source: 1, target: 2 },
+      { source: 2, target: 0 },
+    ];
+    const res = louvain(6, edges);
+    expect(res.miscCommunity).not.toBeNull();
+
+    const top = getCommunitiesAtLevel(res.levels, 6, res.levels.length - 1);
+    // The three orphans share one highest-level cluster...
+    expect(top[3]).toBe(top[4]);
+    expect(top[4]).toBe(top[5]);
+    // ...which is distinct from the connected triangle's cluster.
+    expect(top[3]).not.toBe(top[0]);
+    // The triangle itself stays together.
+    expect(top[0]).toBe(top[1]);
+    expect(top[1]).toBe(top[2]);
   });
 
   it('detects two communities for two cliques joined by one edge', () => {
@@ -53,5 +79,76 @@ describe('louvain', () => {
     expect(res.levels.length).toBeGreaterThanOrEqual(1);
     const lvl0 = getCommunitiesAtLevel(res.levels, 6, 0);
     expect(lvl0.length).toBe(6);
+  });
+
+  const distinctCount = (assignment: number[]) => new Set(assignment).size;
+
+  // A chain of small triangles (clusters of clusters) — the kind of structure
+  // that produces a genuine multi-level Louvain hierarchy: fine communities at
+  // level 0 that further merge at level 1.
+  const triangleChain = (() => {
+    const nCliques = 8;
+    const e: { source: number; target: number }[] = [];
+    const clusters: number[][] = [];
+    let id = 0;
+    for (let c = 0; c < nCliques; c++) {
+      const arr = [id++, id++, id++];
+      clusters.push(arr);
+      e.push(
+        { source: arr[0], target: arr[1] },
+        { source: arr[0], target: arr[2] },
+        { source: arr[1], target: arr[2] },
+      );
+    }
+    for (let p = 0; p < nCliques; p += 2)
+      e.push({ source: clusters[p][0], target: clusters[p + 1][0] });
+    for (let p = 1; p + 1 < nCliques; p += 2)
+      e.push({ source: clusters[p][1], target: clusters[p + 1][1] });
+    return { edges: e, n: id };
+  })();
+
+  it('builds a genuine multi-level hierarchy (level 1 is coarser than level 0)', () => {
+    const { edges, n } = triangleChain;
+    const res = louvain(n, edges);
+    expect(res.levels.length).toBeGreaterThanOrEqual(2);
+    const lvl0 = getCommunitiesAtLevel(res.levels, n, 0);
+    const lvl1 = getCommunitiesAtLevel(res.levels, n, 1);
+    expect(distinctCount(lvl1)).toBeLessThan(distinctCount(lvl0));
+  });
+
+  it('does not append a degenerate identity level', () => {
+    const { edges, n } = triangleChain;
+    const res = louvain(n, edges);
+    // The coarsest level must actually merge communities relative to the one
+    // below it (otherwise it would be an identity map rendering like level 0).
+    expect(res.levels.length).toBeGreaterThanOrEqual(2);
+    const last = getCommunitiesAtLevel(res.levels, n, res.levels.length - 1);
+    const prev = getCommunitiesAtLevel(res.levels, n, res.levels.length - 2);
+    expect(distinctCount(last)).toBeLessThan(distinctCount(prev));
+  });
+
+  it('respects the maxLevels cap', () => {
+    const { edges, n } = triangleChain;
+    expect(louvain(n, edges).levels.length).toBeGreaterThanOrEqual(2);
+    expect(louvain(n, edges, { maxLevels: 1 }).levels.length).toBe(1);
+  });
+
+  it('threads the resolution parameter through modularity (higher γ → lower Q)', () => {
+    // Two triangles joined by a single bridge. Raising the resolution grows the
+    // null-model penalty, so the modularity of the detected partition falls.
+    const edges = [
+      { source: 0, target: 1 },
+      { source: 0, target: 2 },
+      { source: 1, target: 2 },
+      { source: 3, target: 4 },
+      { source: 3, target: 5 },
+      { source: 4, target: 5 },
+      { source: 2, target: 3 },
+    ];
+    const qLow = louvain(6, edges, { resolution: 0.5 }).modularity;
+    const qMid = louvain(6, edges, { resolution: 1.0 }).modularity;
+    const qHigh = louvain(6, edges, { resolution: 2.0 }).modularity;
+    expect(qLow).toBeGreaterThan(qMid);
+    expect(qMid).toBeGreaterThan(qHigh);
   });
 });

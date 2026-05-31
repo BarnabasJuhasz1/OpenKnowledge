@@ -17,6 +17,8 @@ export interface CitGraphNode {
   pdf_url: string | null;
   fields_of_study: string[];
   hop: number;
+  predicted_main_archetype?: string | null;
+  predicted_second_tier_archetype?: string | null;
 }
 
 export interface CitGraphEdge {
@@ -41,5 +43,33 @@ export class CitGraphService {
       k,
       max_per_hop: maxPerHop ?? 20,
     });
+  }
+
+  buildDemo(paperId: string, k: number, maxPerHop?: number): Observable<CitGraphResponse> {
+    return this.http.post<CitGraphResponse>(`${this.baseUrl}/demo/build`, {
+      paper_id: paperId,
+      k,
+      max_per_hop: maxPerHop ?? 20,
+    });
+  }
+
+  explore(req: {
+    paper_ids: string[];
+    direction: 'past' | 'future' | 'both';
+    include_non_matching: boolean;
+    keywords: string[];
+    max_per_hop?: number;
+  }): Observable<CitGraphResponse> {
+    return this.http.post<CitGraphResponse>(`${this.baseUrl}/explore`, req);
+  }
+
+  exploreDemo(req: {
+    paper_ids: string[];
+    direction: 'past' | 'future' | 'both';
+    include_non_matching: boolean;
+    keywords: string[];
+    max_per_hop?: number;
+  }): Observable<CitGraphResponse> {
+    return this.http.post<CitGraphResponse>(`${this.baseUrl}/demo/explore`, req);
   }
 }

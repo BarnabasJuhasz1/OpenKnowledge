@@ -27,6 +27,7 @@ export interface FilterState {
   codeOnly: boolean;
   peerReviewedOnly: boolean;
   openAccessOnly: boolean;
+  archetype: string | null;
 }
 
 export function paperId(p: Paper): string {
@@ -70,6 +71,8 @@ export class SearchStateService {
   readonly currentPage = signal(1);
   readonly rawQuery = signal('');
   readonly activeFilter = signal<string | null>(null);
+  /** Databases the user has selected to include in the results (all by default). */
+  readonly selectedSources = signal<Set<string>>(new Set(ALL_SOURCES));
   readonly queriesUsed = signal<Record<string, string>>({});
   readonly sourceErrors = signal<Record<string, string>>({});
   readonly sourcesCompleted = signal<string[]>([]);
@@ -90,6 +93,10 @@ export class SearchStateService {
   });
 
   readonly graphPaperIds = signal<Set<string>>(new Set());
+  /** Papers placed on the graph from outside the search results (e.g. cit-graph
+   *  cluster representatives), keyed by paperId. Rendered by the graph view in
+   *  addition to scored search results, without entering the results list. */
+  readonly externalGraphPapers = signal<Map<string, Paper>>(new Map());
   graphInitialized = false;
 
   readonly sortField = signal<SortField>('relevancy');
@@ -101,6 +108,7 @@ export class SearchStateService {
     codeOnly: false,
     peerReviewedOnly: false,
     openAccessOnly: false,
+    archetype: null,
   });
 
   readonly totalRaw = computed(() => {
@@ -150,12 +158,10 @@ export class SearchStateService {
 
   /** Papers with scores attached (before filtering/sorting). */
   private readonly scoredPapers = computed(() => {
-    const filter = this.activeFilter();
-    let papers: Paper[];
-    if (!filter) {
-      papers = this.dedupResult().papers;
-    } else {
-      papers = this.rawPapersBySource()[filter] ?? [];
+    const selected = this.selectedSources();
+    let papers = this.dedupResult().papers;
+    if (selected.size < ALL_SOURCES.length) {
+      papers = papers.filter(p => (p.sources ?? []).some(s => selected.has(s)));
     }
     const scores = this.scoresByTitle();
     const w = SearchStateService.DEFAULT_WEIGHTS;
@@ -187,6 +193,7 @@ export class SearchStateService {
       if (f.codeOnly && !p.has_public_code && !p.code_url) return false;
       if (f.peerReviewedOnly && !p.is_peer_reviewed) return false;
       if (f.openAccessOnly && !p.is_open_access) return false;
+      if (f.archetype && p.predicted_main_archetype !== f.archetype && p.predicted_second_tier_archetype !== f.archetype) return false;
       return true;
     });
 
@@ -227,6 +234,13 @@ export class SearchStateService {
   });
 
   readonly hasSearched = computed(() => this.rawQuery() !== '');
+
+  /** Whether the graph view has anything to render. True when a search has been
+   *  run, or when papers were placed onto the graph directly (e.g. cit-graph
+   *  cluster representatives), so the graph works without a prior search. */
+  readonly hasGraphContent = computed(
+    () => this.hasSearched() || this.externalGraphPapers().size > 0,
+  );
 
   readonly sourceStatuses = computed<SourceStatus[]>(() => {
     const loading = this.loading();
@@ -270,6 +284,69 @@ export class SearchStateService {
     });
   }
 
+  /** Add papers that are not part of the search results onto the graph. */
+  addExternalGraphPapers(papers: Paper[]): void {
+    if (!papers.length) return;
+    this.externalGraphPapers.update(prev => {
+      const next = new Map(prev);
+      for (const p of papers) next.set(paperId(p), p);
+      return next;
+    });
+    this.graphPaperIds.update(prev => {
+      const next = new Set(prev);
+      for (const p of papers) next.add(paperId(p));
+      return next;
+    });
+  }
+
+  /** Remove every node from the graph view. */
+  flushGraph(): void {
+    this.graphPaperIds.set(new Set());
+    this.externalGraphPapers.set(new Map());
+    // Keep the auto top-5 effect from immediately repopulating the graph.
+    this.graphInitialized = true;
+  }
+
+  /**
+   * Patch papers with archetypes produced by the backend classifier after the
+   * stream completes. Keyed by the same identity as paperId().
+   */
+  applyArchetypes(map: Record<string, [string | null, string | null]>): void {
+    if (!map || Object.keys(map).length === 0) return;
+    this.rawPapersBySource.update(prev => {
+      const next: Record<string, Paper[]> = {};
+      for (const [source, papers] of Object.entries(prev)) {
+        next[source] = papers.map(p => {
+          const arch = map[paperId(p)];
+          if (!arch) return p;
+          return {
+            ...p,
+            predicted_main_archetype: arch[0] ?? undefined,
+            predicted_second_tier_archetype: arch[1] ?? undefined,
+          };
+        });
+      }
+      return next;
+    });
+  }
+
+  /** Toggle a single database in/out of the selected set. */
+  toggleSource(name: string): void {
+    this.selectedSources.update(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+    this.currentPage.set(1);
+  }
+
+  /** Select or clear every database at once. */
+  setAllSources(selected: boolean): void {
+    this.selectedSources.set(selected ? new Set(ALL_SOURCES) : new Set());
+    this.currentPage.set(1);
+  }
+
   updateFilter(partial: Partial<FilterState>): void {
     this.filters.update(prev => ({ ...prev, ...partial }));
     this.currentPage.set(1);
@@ -284,8 +361,10 @@ export class SearchStateService {
       codeOnly: false,
       peerReviewedOnly: false,
       openAccessOnly: false,
+      archetype: null,
     });
     this.sortField.set('relevancy');
+    this.selectedSources.set(new Set(ALL_SOURCES));
     this.currentPage.set(1);
   }
 
@@ -304,6 +383,7 @@ export class SearchStateService {
     this.backgroundJobId.set(null);
     this.backgroundProgress.set({});
     this.graphPaperIds.set(new Set());
+    this.externalGraphPapers.set(new Map());
     this.graphInitialized = false;
     this.resetFilters();
   }

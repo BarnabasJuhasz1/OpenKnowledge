@@ -50,6 +50,8 @@ class Paper(BaseModel):
     fields_of_study: list[str] = []
     keywords: list[str] = []
     mesh_terms: list[str] = []
+    predicted_main_archetype: str | None = None
+    predicted_second_tier_archetype: str | None = None
 
     # Access
     is_open_access: bool = False

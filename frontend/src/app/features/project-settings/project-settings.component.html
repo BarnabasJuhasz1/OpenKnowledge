@@ -1,0 +1,38 @@
+<div class="settings">
+  <div class="settings__inner">
+    <header class="settings__header">
+      <h1 class="settings__title">Project Settings</h1>
+      <p class="settings__subtitle">
+        @if (activeProject(); as project) {
+          Configure how <strong>{{ project.name }}</strong> scores and ranks papers.
+        } @else {
+          Configure how this project scores and ranks papers.
+        }
+      </p>
+    </header>
+
+    <section class="settings__section" aria-labelledby="weights-heading">
+      <div class="settings__section-head">
+        <h2 id="weights-heading" class="settings__section-title">OK-score weights</h2>
+        <p class="settings__section-desc">
+          Tune how citations, code, peer review, data openness and repository stars
+          contribute to each paper's OK-score. Changes are saved for this project.
+        </p>
+      </div>
+      <app-discovery-tab
+        [weights]="weights()"
+        (weightsChange)="onWeightsChange($event)"
+      />
+    </section>
+
+    <section class="settings__section" aria-labelledby="analysis-heading">
+      <div class="settings__section-head">
+        <h2 id="analysis-heading" class="settings__section-title">Analyze a paper</h2>
+        <p class="settings__section-desc">
+          Look up a single paper to see its OK-score breakdown under the current weights.
+        </p>
+      </div>
+      <app-analysis-tab [weights]="weights()" />
+    </section>
+  </div>
+</div>

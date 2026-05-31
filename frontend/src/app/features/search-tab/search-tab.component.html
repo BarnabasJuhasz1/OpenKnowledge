@@ -1,0 +1,52 @@
+<div class="search-tab">
+  <div class="search-tab__inner">
+    <h1 class="search-tab__title">Discover Research Literature</h1>
+    <p class="search-tab__subtitle">
+      Search across OpenAlex, Semantic Scholar, arXiv, PubMed, DBLP, CrossRef, Europe PMC and CORE — open source, no subscription required.
+    </p>
+
+    <div class="search-tab__search">
+      <app-prompt-keywords (generated)="onKeywordsGenerated($event)" />
+      <app-query-input
+        [initialQuery]="state.rawQuery()"
+        [loading]="state.loading()"
+        (search)="onSearch($event)"
+      />
+    </div>
+
+    <label class="demo-toggle" title="Use bundled sample data instead of live APIs">
+      <span class="demo-toggle__label">Demo mode</span>
+      <span
+        class="demo-toggle__track"
+        [class.demo-toggle__track--on]="demo.enabled()"
+        (click)="demo.toggle()"
+      >
+        <span class="demo-toggle__thumb"></span>
+      </span>
+    </label>
+
+    <div class="search-tab__features">
+      <div class="search-tab__feature">
+        <div class="search-tab__feature-icon">
+          <span class="material-symbols-outlined">search</span>
+        </div>
+        <h3 class="search-tab__feature-title">8 Academic Sources</h3>
+        <p class="search-tab__feature-desc">Query multiple databases simultaneously and get deduplicated results</p>
+      </div>
+      <div class="search-tab__feature">
+        <div class="search-tab__feature-icon search-tab__feature-icon--secondary">
+          <span class="material-symbols-outlined">trending_up</span>
+        </div>
+        <h3 class="search-tab__feature-title">OK-score</h3>
+        <p class="search-tab__feature-desc">Automatic OK-score calculation based on citations, code, peer review, and more</p>
+      </div>
+      <div class="search-tab__feature">
+        <div class="search-tab__feature-icon search-tab__feature-icon--tertiary">
+          <span class="material-symbols-outlined">content_copy</span>
+        </div>
+        <h3 class="search-tab__feature-title">BibTeX Export</h3>
+        <p class="search-tab__feature-desc">One-click citation copying for any paper in your results</p>
+      </div>
+    </div>
+  </div>
+</div>

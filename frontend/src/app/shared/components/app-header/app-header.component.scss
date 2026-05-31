@@ -1,0 +1,112 @@
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: var(--ok-space-6);
+  height: 64px;
+  padding: 0 var(--ok-margin-desktop);
+  background: rgba(11, 19, 38, 0.82);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--ok-glass-border);
+
+  &__logo {
+    display: flex;
+    align-items: center;
+    gap: var(--ok-space-2);
+    text-decoration: none;
+    flex-shrink: 0;
+    transition: opacity var(--ok-transition);
+
+    &:hover {
+      opacity: 0.85;
+      text-decoration: none;
+    }
+  }
+
+  &__logo-icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  &__logo-text {
+    font-family: var(--ok-font-headline);
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--ok-on-surface);
+    letter-spacing: -0.02em;
+  }
+
+  &__nav {
+    display: flex;
+    gap: 2px;
+    background: var(--ok-surface-container-low);
+    border-radius: var(--ok-radius-lg);
+    padding: 3px;
+    flex-shrink: 0;
+  }
+
+  &__nav-link {
+    display: flex;
+    align-items: center;
+    gap: var(--ok-space-2);
+    padding: 0.45rem 1.1rem;
+    border-radius: calc(var(--ok-radius-lg) - 2px);
+    font-family: var(--ok-font-label);
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--ok-on-surface-variant);
+    text-decoration: none;
+    white-space: nowrap;
+    transition: all var(--ok-transition);
+    letter-spacing: 0.01em;
+
+    &:hover:not(&--active) {
+      color: var(--ok-on-surface);
+      background: var(--ok-surface-container);
+      text-decoration: none;
+    }
+
+    &--active {
+      background: var(--ok-surface-container-high);
+      color: var(--ok-primary);
+      font-weight: 600;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+  }
+
+  &__spacer {
+    flex: 1;
+  }
+}
+
+// Responsive
+@media (max-width: 768px) {
+  .app-header {
+    padding: 0 var(--ok-margin-mobile);
+    gap: var(--ok-space-3);
+    height: 56px;
+
+    &__nav-link {
+      padding: 0.35rem 0.7rem;
+      font-size: 0.78rem;
+    }
+
+    &__logo-text {
+      font-size: 0.95rem;
+    }
+  }
+}
+
+@media (max-width: 480px) {
+  .app-header {
+    &__nav {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      &::-webkit-scrollbar { display: none; }
+      scrollbar-width: none;
+    }
+  }
+}

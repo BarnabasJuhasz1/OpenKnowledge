@@ -1,10 +1,11 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ShelfService, ShelfItem } from '../../core/services/shelf.service';
 import { BookshelfService, BookshelfItem } from '../../core/services/bookshelf.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { getArchetypeIcon } from '../../shared/utils/archetype-icons';
 
 type PendingDelete =
   | { kind: 'query'; item: ShelfItem; name: string }
@@ -13,7 +14,7 @@ type PendingDelete =
 @Component({
   selector: 'app-library',
   standalone: true,
-  imports: [RouterLink, FormsModule, DecimalPipe],
+  imports: [FormsModule, DecimalPipe],
   templateUrl: './library.component.html',
   styleUrl: './library.component.scss',
 })
@@ -22,6 +23,10 @@ export class LibraryComponent implements OnInit {
   private readonly bookshelf = inject(BookshelfService);
   private readonly router = inject(Router);
   private readonly notifications = inject(NotificationService);
+
+  getArchetypeIcon(archetype?: string | null): string {
+    return getArchetypeIcon(archetype);
+  }
 
   activeTab = signal<'shelf' | 'bookshelf'>('shelf');
 

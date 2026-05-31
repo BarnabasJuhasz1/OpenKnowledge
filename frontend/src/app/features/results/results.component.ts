@@ -7,7 +7,6 @@ import { SearchStateService } from '../../core/services/search-state.service';
 import { DemoModeService } from '../../core/services/demo-mode.service';
 import { ScoreWeights } from '../../core/models/paper.model';
 import { parseQuery } from '../../shared/utils/query-parser';
-import { QueryInputComponent } from '../../shared/components/query-input/query-input.component';
 import { ResultsMetaComponent } from './results-meta/results-meta.component';
 import { PaperListComponent } from './paper-list/paper-list.component';
 import { PaginationComponent } from './pagination/pagination.component';
@@ -29,7 +28,6 @@ const DEFAULT_WEIGHTS: ScoreWeights = {
   standalone: true,
   imports: [
     RouterLink,
-    QueryInputComponent,
     ResultsMetaComponent,
     PaperListComponent,
     PaginationComponent,
@@ -82,19 +80,6 @@ export class ResultsComponent implements OnInit, OnDestroy {
     this.demoSub?.unsubscribe();
   }
 
-  onSearch(query: string): void {
-    // Force re-fetch even if query is the same (user explicitly re-submitted)
-    this.lastQuery = '';
-    this.router.navigate(['/'], {
-      queryParams: { q: query, page: 1 },
-    });
-  }
-
-  onFilterChange(source: string | null): void {
-    this.state.activeFilter.set(source);
-    this.state.currentPage.set(1);
-  }
-
   onPageChange(page: number): void {
     this.router.navigate([], {
       relativeTo: this.route,
@@ -128,7 +113,6 @@ export class ResultsComponent implements OnInit, OnDestroy {
     this.demoSub = this.retrieval.demoSearch({
       keywords,
       raw_query: query,
-      max_initial_results: 200,
     }).subscribe({
       next: (res) => {
         this.state.rawPapersBySource.set({ demo: res.papers });
@@ -158,6 +142,11 @@ export class ResultsComponent implements OnInit, OnDestroy {
             this.state.backgroundJobId.set(event.data.background_job_id);
             this.listenToBackgroundJob(event.data.background_job_id);
           }
+          return;
+        }
+
+        if ('type' in event && event.type === 'archetypes') {
+          this.state.applyArchetypes(event.data);
           return;
         }
 

@@ -1,11 +1,11 @@
 import { Component, computed, effect, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
 import { SearchStateService, paperId as servicePaperId } from '../../core/services/search-state.service';
 import { Paper } from '../../core/models/paper.model';
 import { BookshelfService } from '../../core/services/bookshelf.service';
 import { NotificationService } from '../../core/services/notification.service';
+import { getArchetypeIcon } from '../../shared/utils/archetype-icons';
 
 export interface GraphNode {
   id: string;
@@ -62,7 +62,7 @@ export interface ExpandPopup {
 @Component({
   selector: 'app-graph',
   standalone: true,
-  imports: [RouterLink, DecimalPipe, FormsModule],
+  imports: [DecimalPipe, FormsModule],
   templateUrl: './graph.component.html',
   styleUrl: './graph.component.scss',
 })
@@ -70,6 +70,10 @@ export class GraphComponent {
   readonly state = inject(SearchStateService);
   private readonly bookshelfSvc = inject(BookshelfService);
   private readonly notify = inject(NotificationService);
+
+  getArchetypeIcon(archetype?: string | null): string {
+    return getArchetypeIcon(archetype);
+  }
 
   readonly selectedNodeId = signal<string | null>(null);
   readonly hoveredNodeId = signal<string | null>(null);
@@ -97,8 +101,12 @@ export class GraphComponent {
         const top5 = [...papers]
           .filter(p => p.year != null)
           .sort((a, b) => (b.ok_score ?? 0) - (a.ok_score ?? 0))
-          .slice(0, 5);
-        this.state.graphPaperIds.set(new Set(top5.map(p => paperId(p))));
+          .slice(0, 5)
+          .map(p => paperId(p));
+        // Preserve any papers placed directly onto the graph (e.g. cit-graph
+        // representatives) so the auto top-5 seed doesn't wipe them out.
+        const external = [...this.state.externalGraphPapers().keys()];
+        this.state.graphPaperIds.set(new Set([...top5, ...external]));
       }
     });
   }
@@ -106,7 +114,9 @@ export class GraphComponent {
   private readonly graphPapers = computed(() => {
     const ids = this.state.graphPaperIds();
     const all = this.state.allScoredPapers();
+    const external = this.state.externalGraphPapers();
     const idMap = new Map(all.map(p => [paperId(p), p]));
+    for (const [id, p] of external) idMap.set(id, p);
     const result: Paper[] = [];
     for (const id of ids) {
       const p = idMap.get(id);
@@ -547,6 +557,11 @@ export class GraphComponent {
 
   private hasExpandablePapers(node: GraphNode): boolean {
     return this.canExpandPast(node) || this.canExpandFuture(node);
+  }
+
+  clearGraph(): void {
+    this.state.flushGraph();
+    this.selectedNodeId.set(null);
   }
 
   addNodeByTitle(): void {

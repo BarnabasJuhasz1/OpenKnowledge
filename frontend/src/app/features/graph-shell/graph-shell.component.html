@@ -1,0 +1,32 @@
+<div class="graph-shell">
+  <nav class="graph-shell__tabs" aria-label="Graph views">
+    <a
+      class="graph-shell__tab"
+      routerLink="standard"
+      routerLinkActive="graph-shell__tab--active"
+    >
+      <span class="material-symbols-outlined">hub</span>
+      Graph
+    </a>
+    <a
+      class="graph-shell__tab"
+      routerLink="ok"
+      routerLinkActive="graph-shell__tab--active"
+    >
+      <span class="material-symbols-outlined">workspaces</span>
+      OK-Graph
+    </a>
+    <a
+      class="graph-shell__tab"
+      routerLink="clustering"
+      routerLinkActive="graph-shell__tab--active"
+    >
+      <span class="material-symbols-outlined">account_tree</span>
+      Clustering
+    </a>
+  </nav>
+
+  <div class="graph-shell__content">
+    <router-outlet />
+  </div>
+</div>

@@ -1,0 +1,640 @@
+<div class="ok-graph-page">
+  <div class="ok-graph-page__body">
+    @if (!hasContent()) {
+      <div class="ok-graph-page__setup">
+        <div class="setup-container">
+          <header class="setup-header">
+            <h1 class="setup-header__title">
+              <span class="material-symbols-outlined setup-header__icon">workspaces</span>
+              Explore Surrounding Literature
+            </h1>
+            <p class="setup-header__subtitle">
+              Map and cluster the papers, historical roots, or downstream impacts of your selected literature.
+            </p>
+          </header>
+
+          <div class="setup-grid">
+            <!-- Left panel: Seed Papers -->
+            <div class="setup-panel setup-panel--papers">
+              <h2 class="setup-section-title">
+                <span class="material-symbols-outlined">description</span>
+                1. Seed Papers
+              </h2>
+
+              <div class="selected-papers-list">
+                @if (useOnlySelected()) {
+                  @if (selectedPapers().length === 0) {
+                    <div class="papers-list-empty">
+                      <span class="material-symbols-outlined">info</span>
+                      <p>
+                        No papers selected. Go to the <a routerLink="../../research">Literature Search</a> tab to select papers by adding them to the graph, or uncheck "Only Selected Papers" to use all retrieved search results.
+                      </p>
+                    </div>
+                  } @else {
+                    <div class="papers-scroll-container">
+                      @for (paper of selectedPapers(); track paperId(paper)) {
+                        <div class="paper-item">
+                          <span class="material-symbols-outlined paper-item__icon">description</span>
+                          <div class="paper-item__details">
+                            <span class="paper-item__title" [title]="paper.title">{{ paper.title }}</span>
+                            <span class="paper-item__meta">
+                              {{ paper.year || '—' }} · {{ paper.authors[0]?.name || 'Unknown Author' }}
+                            </span>
+                          </div>
+                          <button class="paper-item__remove" (click)="removePaper(paper)" title="Remove from selection">
+                            <span class="material-symbols-outlined">close</span>
+                          </button>
+                        </div>
+                      }
+                    </div>
+                  }
+                } @else {
+                  @if (retrievedPapersCount() === 0) {
+                    <div class="papers-list-empty">
+                      <span class="material-symbols-outlined">info</span>
+                      <p>No retrieved papers available. Run a query in the <a routerLink="../../search">Search</a> tab first.</p>
+                    </div>
+                  } @else {
+                    <div class="papers-list-info">
+                      <span class="material-symbols-outlined">check_circle</span>
+                      <p>Using all {{ retrievedPapersCount() }} retrieved papers from query: <br><code>{{ currentQueryText() }}</code></p>
+                    </div>
+                  }
+                }
+              </div>
+            </div>
+
+            <!-- Right panel: Configuration -->
+            <div class="setup-panel setup-panel--config">
+              <h2 class="setup-section-title">
+                <span class="material-symbols-outlined">settings</span>
+                2. Configuration
+              </h2>
+
+              <div class="filter-toggles">
+                <label class="filter-toggle">
+                  <input type="checkbox" [ngModel]="useOnlySelected()" (ngModelChange)="useOnlySelected.set($event)" />
+                  <span class="filter-toggle__box"></span>
+                  <div class="filter-toggle__details">
+                    <span class="filter-toggle__label">Only Selected Papers</span>
+                    <span class="filter-toggle__description">
+                      Start only from papers you specifically selected ({{ selectedPapers().length }}). If unchecked, uses all retrieved search results ({{ retrievedPapersCount() }}).
+                    </span>
+                  </div>
+                </label>
+
+                <label class="filter-toggle">
+                  <input type="checkbox" [ngModel]="includeNonMatching()" (ngModelChange)="includeNonMatching.set($event)" />
+                  <span class="filter-toggle__box"></span>
+                  <div class="filter-toggle__details">
+                    <span class="filter-toggle__label">Include Unmatched Citations</span>
+                    <span class="filter-toggle__description">
+                      Allow papers in the surrounding graph that do not match the current search keywords but are relevant citations.
+                    </span>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom: Action Buttons / Explore Directions -->
+          <div class="setup-panel setup-panel--actions">
+            <h2 class="setup-section-title">
+              <span class="material-symbols-outlined">explore</span>
+              3. Explore Surrounding Literature
+            </h2>
+
+            @if (explorationLoading()) {
+              <div class="exploration-loader">
+                <div class="exploration-loader__spinner"></div>
+                <p class="exploration-loader__text">Building citation graph and running community clustering...</p>
+              </div>
+            } @else {
+              @if (explorationError()) {
+                <div class="exploration-error">
+                  <span class="material-symbols-outlined">error</span>
+                  <span>{{ explorationError() }}</span>
+                </div>
+              }
+
+              <div class="direction-buttons">
+                <!-- Left Button: Explore Past -->
+                <button
+                  class="direction-btn"
+                  [class.direction-btn--selected]="selectedDirection() === 'past'"
+                  [disabled]="!hasSourcePapers()"
+                  (click)="selectDirection('past')"
+                >
+                  @if (selectedDirection() === 'past') {
+                    <span class="material-symbols-outlined direction-btn__check">check_circle</span>
+                  }
+                  <div class="direction-btn__icon-wrapper direction-btn__icon-wrapper--past">
+                    <span class="material-symbols-outlined">history</span>
+                  </div>
+                  <span class="direction-btn__title">Explore Past</span>
+                  <span class="direction-btn__desc">
+                    Discover literature ancestry: how the ideas, events, and historical papers led to the birth of these works.
+                  </span>
+                </button>
+
+                <!-- Middle Button: Explore Context -->
+                <button
+                  class="direction-btn"
+                  [class.direction-btn--selected]="selectedDirection() === 'both'"
+                  [disabled]="!hasSourcePapers()"
+                  (click)="selectDirection('both')"
+                >
+                  @if (selectedDirection() === 'both') {
+                    <span class="material-symbols-outlined direction-btn__check">check_circle</span>
+                  }
+                  <div class="direction-btn__icon-wrapper direction-btn__icon-wrapper--context">
+                    <span class="material-symbols-outlined">compare_arrows</span>
+                  </div>
+                  <span class="direction-btn__title">Explore Context</span>
+                  <span class="direction-btn__desc">
+                    Map the surrounding literature: analyze the immediate citation ecosystem in both past and future directions.
+                  </span>
+                </button>
+
+                <!-- Right Button: Explore Future -->
+                <button
+                  class="direction-btn"
+                  [class.direction-btn--selected]="selectedDirection() === 'future'"
+                  [disabled]="!hasSourcePapers()"
+                  (click)="selectDirection('future')"
+                >
+                  @if (selectedDirection() === 'future') {
+                    <span class="material-symbols-outlined direction-btn__check">check_circle</span>
+                  }
+                  <div class="direction-btn__icon-wrapper direction-btn__icon-wrapper--future">
+                    <span class="material-symbols-outlined">trending_up</span>
+                  </div>
+                  <span class="direction-btn__title">Explore Future</span>
+                  <span class="direction-btn__desc">
+                    Track subsequent impact: discover how ideas emerged, branched out, and influenced downstream literature.
+                  </span>
+                </button>
+              </div>
+
+              <div class="explore-cta">
+                <p class="explore-hint">
+                  @if (hasSourcePapers() && !selectedDirection()) {
+                    Pick a direction above to continue.
+                  }
+                </p>
+                <button class="explore-btn" [disabled]="!canExplore()" (click)="onExplore()">
+                  <span class="material-symbols-outlined">explore</span>
+                  Explore
+                </button>
+              </div>
+            }
+          </div>
+
+        </div>
+      </div>
+    } @else {
+      <div class="ok-graph-page__canvas-wrap">
+        <!-- Zoom controls -->
+        <div class="zoom-controls">
+          <button class="zoom-controls__btn" (click)="zoomOut()" title="Zoom out">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+          <button class="zoom-controls__label" (click)="resetZoom()" title="Reset view">{{ zoomPercent }}%</button>
+          <button class="zoom-controls__btn" (click)="zoomIn()" title="Zoom in">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+        </div>
+
+        <!-- Settings -->
+        <div class="graph-settings">
+          <button
+            class="graph-settings__btn"
+            [class.graph-settings__btn--active]="settingsOpen()"
+            (click)="toggleSettings()"
+            title="Display settings"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </button>
+
+          @if (settingsOpen()) {
+            <div class="graph-settings__backdrop" (click)="closeSettings()"></div>
+            <div class="graph-settings__panel">
+              <div class="graph-settings__header">Display Settings</div>
+
+              <div class="graph-settings__subhead">Star markers</div>
+              <label class="graph-settings__row">
+                <span class="graph-settings__label">
+                  <span class="graph-settings__label-line">
+                    <span class="graph-settings__star graph-settings__star--gold material-symbols-outlined">star</span>
+                    Gold stars
+                  </span>
+                  <span class="graph-settings__hint">top 1% ok-score (all papers)</span>
+                </span>
+                <button
+                  class="graph-settings__switch"
+                  [class.graph-settings__switch--on]="showGoldStars()"
+                  (click)="showGoldStars.set(!showGoldStars())"
+                  role="switch"
+                  [attr.aria-checked]="showGoldStars()"
+                >
+                  <span class="graph-settings__knob"></span>
+                </button>
+              </label>
+              <label class="graph-settings__row">
+                <span class="graph-settings__label">
+                  <span class="graph-settings__label-line">
+                    <span class="graph-settings__star graph-settings__star--silver material-symbols-outlined">star</span>
+                    Silver stars
+                  </span>
+                  <span class="graph-settings__hint">top 5% ok-score (all papers)</span>
+                </span>
+                <button
+                  class="graph-settings__switch"
+                  [class.graph-settings__switch--on]="showSilverStars()"
+                  (click)="showSilverStars.set(!showSilverStars())"
+                  role="switch"
+                  [attr.aria-checked]="showSilverStars()"
+                >
+                  <span class="graph-settings__knob"></span>
+                </button>
+              </label>
+
+              <div class="graph-settings__subhead">Filter graph by tier</div>
+              <label class="graph-settings__row">
+                <span class="graph-settings__label">
+                  Only gold nodes
+                  <span class="graph-settings__hint">show only top-1% papers</span>
+                </span>
+                <button
+                  class="graph-settings__switch"
+                  [class.graph-settings__switch--on]="onlyGoldNodes()"
+                  (click)="onlyGoldNodes.set(!onlyGoldNodes())"
+                  role="switch"
+                  [attr.aria-checked]="onlyGoldNodes()"
+                >
+                  <span class="graph-settings__knob"></span>
+                </button>
+              </label>
+              <label class="graph-settings__row">
+                <span class="graph-settings__label">
+                  Only silver nodes
+                  <span class="graph-settings__hint">show only top-5% papers</span>
+                </span>
+                <button
+                  class="graph-settings__switch"
+                  [class.graph-settings__switch--on]="onlySilverNodes()"
+                  (click)="onlySilverNodes.set(!onlySilverNodes())"
+                  role="switch"
+                  [attr.aria-checked]="onlySilverNodes()"
+                >
+                  <span class="graph-settings__knob"></span>
+                </button>
+              </label>
+
+              <div class="graph-settings__subhead">Keyword filter</div>
+              <label class="graph-settings__row">
+                <span class="graph-settings__label">
+                  Title + abstract match
+                  <span class="graph-settings__hint">
+                    @if (state.prefiltered()) { locked on — applied before clustering }
+                    @else if (!state.keywords().length) { run a keyword search first }
+                    @else { hide papers not matching {{ state.keywords().length }} keyword(s) }
+                  </span>
+                </span>
+                <button
+                  class="graph-settings__switch"
+                  [class.graph-settings__switch--on]="state.filterActive()"
+                  [class.graph-settings__switch--locked]="state.prefiltered()"
+                  [disabled]="!state.canToggleFilter()"
+                  (click)="state.setFilter(!state.filterActive())"
+                  role="switch"
+                  [attr.aria-checked]="state.filterActive()"
+                  [title]="state.prefiltered() ? 'Filtering was applied before clustering and cannot be turned off here' : ''"
+                >
+                  <span class="graph-settings__knob"></span>
+                </button>
+              </label>
+            </div>
+          }
+        </div>
+
+        <div
+          class="ok-graph-page__canvas"
+          [class.ok-graph-page__canvas--panning]="panning()"
+          (wheel)="onWheel($event)"
+          (mousedown)="onPanStart($event)"
+          (mousemove)="onPanMove($event)"
+          (mouseup)="onPanEnd()"
+          (mouseleave)="onPanEnd()"
+        >
+          @if (nodes().length === 0) {
+            <div class="ok-graph-page__empty">
+              <h2>No representatives with year data</h2>
+              <p>The OK-Graph positions nodes by publication year; the cluster
+                representatives have no year information.</p>
+            </div>
+          } @else {
+            <svg class="graph-svg" width="100%" height="100%">
+              <!-- Pan/zoom content layer -->
+              <g [attr.transform]="contentTransform()">
+                <!-- Cluster blobs: one per highest-level cluster, behind nodes -->
+                @for (blob of blobs(); track blob.topCluster) {
+                  <rect
+                    class="graph-svg__blob"
+                    [class.graph-svg__blob--misc]="blob.isMisc"
+                    [attr.x]="blob.x"
+                    [attr.y]="blob.y"
+                    [attr.width]="blob.w"
+                    [attr.height]="blob.h"
+                    rx="26"
+                    ry="26"
+                    [attr.fill]="blob.color"
+                    [attr.stroke]="blob.color"
+                  />
+                  @if (blob.label) {
+                    <text
+                      class="graph-svg__blob-label"
+                      [attr.x]="blob.x + 16"
+                      [attr.y]="blob.y + 22"
+                      [attr.fill]="blob.color"
+                    >{{ blob.label }}</text>
+                  }
+                }
+
+                @for (div of dividers(); track div.x) {
+                  <line
+                    class="graph-svg__divider"
+                    [attr.x1]="div.x"
+                    [attr.y1]="TOP_PADDING - 5"
+                    [attr.x2]="div.x"
+                    [attr.y2]="svgHeight()"
+                  />
+                }
+
+                <!-- Horizontal swimlanes: one per highest-level cluster -->
+                @for (lane of laneLines(); track lane.y) {
+                  <line
+                    class="graph-svg__lane"
+                    [attr.x1]="0"
+                    [attr.y1]="lane.y"
+                    [attr.x2]="svgWidth()"
+                    [attr.y2]="lane.y"
+                  />
+                }
+
+                @for (edge of edges(); track edge.fromId + edge.toId) {
+                  <path
+                    class="graph-svg__edge"
+                    [attr.stroke]="edgeStroke(edge)"
+                    [attr.d]="edgePath(edge)"
+                    fill="none"
+                  />
+                }
+
+                @for (node of nodes(); track node.id) {
+                  <g
+                    class="graph-svg__node"
+                    [class.graph-svg__node--selected]="isSelected(node)"
+                    [class.graph-svg__node--dimmed]="selectedNodeId() && !isSelected(node) && !isConnected(node)"
+                    (click)="selectNode(node)"
+                    (dblclick)="onNodeDblClick(node, $event)"
+                    (mouseenter)="onNodeEnter(node)"
+                    (mouseleave)="onNodeLeave()"
+                    style="cursor: pointer"
+                  >
+                    <circle
+                      class="graph-svg__circle"
+                      [attr.cx]="node.x"
+                      [attr.cy]="node.y"
+                      r="22"
+                      [attr.fill]="nodeFill(node)"
+                      [attr.stroke]="nodeStroke(node)"
+                      [attr.stroke-width]="isSelected(node) ? 3 : (isConnected(node) ? 2.5 : 2)"
+                    />
+                    <!-- Concentric rings: one per representative level. -->
+                    @for (r of node.rings; track $index) {
+                      <circle
+                        class="graph-svg__ring"
+                        [attr.cx]="node.x"
+                        [attr.cy]="node.y"
+                        [attr.r]="r"
+                        fill="none"
+                        [attr.stroke]="nodeStroke(node)"
+                      />
+                    }
+                    <text
+                      class="graph-svg__node-letter material-symbols-outlined"
+                      [attr.x]="node.x"
+                      [attr.y]="node.y - 3"
+                      text-anchor="middle"
+                      dominant-baseline="central"
+                    >{{ getArchetypeIcon(node.paper.predicted_main_archetype) }}</text>
+                    <text
+                      class="graph-svg__node-score"
+                      [attr.x]="node.x"
+                      [attr.y]="node.y + 11"
+                      text-anchor="middle"
+                      dominant-baseline="central"
+                    >{{ (node.paper.ok_score ?? 0).toFixed(1) }}</text>
+                    <text
+                      class="graph-svg__node-label"
+                      [attr.x]="node.x"
+                      [attr.y]="node.y + 36"
+                      text-anchor="middle"
+                    >{{ nodeLabel(node) }}</text>
+
+                    @if ((node.star === 'gold' && showGoldStars()) || (node.star === 'silver' && showSilverStars())) {
+                      <text
+                        class="graph-svg__star material-symbols-outlined"
+                        [class.graph-svg__star--gold]="node.star === 'gold'"
+                        [class.graph-svg__star--silver]="node.star === 'silver'"
+                        [attr.x]="node.x + 17"
+                        [attr.y]="node.y - 17"
+                        text-anchor="middle"
+                        dominant-baseline="central"
+                      >star</text>
+                    }
+
+                    @if (showExpandButtons(node)) {
+                      <!-- Left arrow: earlier (past) sub-cluster representatives -->
+                      <g
+                        class="graph-svg__expand-btn"
+                        [class.graph-svg__expand-btn--disabled]="!canExpandPast(node)"
+                        (click)="onExpandArrowClick(node, 'past', $event)"
+                      >
+                        <circle [attr.cx]="node.x - 34" [attr.cy]="node.y" r="11" class="graph-svg__expand-bg" />
+                        <path
+                          [attr.d]="'M ' + (node.x - 31) + ' ' + node.y + ' l -6 0 m 3 -3 l -3 3 l 3 3'"
+                          class="graph-svg__expand-arrow"
+                        />
+                      </g>
+                      <!-- Right arrow: later (future) sub-cluster representatives -->
+                      <g
+                        class="graph-svg__expand-btn"
+                        [class.graph-svg__expand-btn--disabled]="!canExpandFuture(node)"
+                        (click)="onExpandArrowClick(node, 'future', $event)"
+                      >
+                        <circle [attr.cx]="node.x + 34" [attr.cy]="node.y" r="11" class="graph-svg__expand-bg" />
+                        <path
+                          [attr.d]="'M ' + (node.x + 31) + ' ' + node.y + ' l 6 0 m -3 -3 l 3 3 l -3 3'"
+                          class="graph-svg__expand-arrow"
+                        />
+                      </g>
+                    }
+                  </g>
+                }
+              </g>
+
+              <!-- Sticky year axis: pinned to the top, tracks horizontal pan/zoom -->
+              <g class="graph-svg__axis">
+                <rect class="graph-svg__axis-bg" x="0" y="0" width="100%" [attr.height]="AXIS_HEIGHT" />
+                <line class="graph-svg__axis-rule" x1="0" [attr.y1]="AXIS_HEIGHT" x2="100%" [attr.y2]="AXIS_HEIGHT" />
+                @for (col of yearColumns(); track col.year) {
+                  <text
+                    class="graph-svg__year-label"
+                    [attr.x]="axisX(col.x)"
+                    [attr.y]="AXIS_HEIGHT - 14"
+                    text-anchor="middle"
+                  >{{ col.year }}</text>
+                }
+              </g>
+            </svg>
+          }
+        </div>
+
+        <!-- Candidate popup (sub-cluster representatives) -->
+        @if (expandPopup(); as popup) {
+          <div class="expand-popup-backdrop" (click)="closeExpandPopup()"></div>
+          <div class="expand-popup" [style.left.px]="popup.x" [style.top.px]="popup.y">
+            <div class="expand-popup__header">
+              @if (popup.direction === 'past') { Earlier sub-clusters }
+              @else { Later sub-clusters }
+              <span class="expand-popup__count">({{ popup.candidates.length }})</span>
+            </div>
+            <div class="expand-popup__list">
+              @for (cand of popup.candidates; track cand.id) {
+                <button class="expand-popup__item" (click)="addFromPopup(cand)">
+                  <span class="expand-popup__item-title">{{ cand.paper.title }}</span>
+                  <span class="expand-popup__item-score">{{ cand.clusterSize }}p</span>
+                </button>
+              }
+            </div>
+          </div>
+        }
+
+        <!-- Collapse / expand toggle -->
+        <button
+          class="panel-toggle"
+          [class.panel-toggle--collapsed]="panelCollapsed()"
+          (click)="togglePanel()"
+          [title]="panelCollapsed() ? 'Show panel' : 'Hide panel'"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            @if (panelCollapsed()) {
+              <polyline points="15 18 9 12 15 6"/>
+            } @else {
+              <polyline points="9 18 15 12 9 6"/>
+            }
+          </svg>
+        </button>
+
+        @if (!panelCollapsed()) {
+          <aside class="detail-panel">
+            <div class="detail-panel__add-section">
+              <h5 class="detail-panel__section-title">Cluster Hierarchy</h5>
+              <p class="detail-panel__hint">{{ placedCount() }} nodes placed. Scroll to zoom, drag to pan. Use a node’s side arrows or double-click it to drill into its sub-clusters.</p>
+              <button class="detail-panel__remove-btn" (click)="clearGraph()" style="margin-top: 12px; width: 100%; display: flex; justify-content: center; gap: 8px;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                Clear OK-Graph
+              </button>
+            </div>
+
+            @if (selectedPaper(); as paper) {
+              <div class="detail-panel__header">
+                <h3 class="detail-panel__title">
+                  <span class="detail-panel__letter material-symbols-outlined">{{ getArchetypeIcon(paper.predicted_main_archetype) }}</span>
+                  Paper Details
+                </h3>
+                <button class="detail-panel__close" (click)="closePanel()">&times;</button>
+              </div>
+              <div class="detail-panel__body">
+                <h4 class="detail-panel__paper-title">{{ paper.title }}</h4>
+                @if (authorLine(paper)) {
+                  <p class="detail-panel__authors">{{ authorLine(paper) }}</p>
+                }
+
+                @if (selectedPlaced(); as sel) {
+                  <div class="detail-panel__cluster">
+                    @if (sel.level >= 0) {
+                      Represents a cluster of <strong>{{ sel.clusterSize }}</strong>
+                      paper{{ sel.clusterSize === 1 ? '' : 's' }} · level {{ sel.level }}
+                    } @else {
+                      Individual paper (leaf)
+                    }
+                  </div>
+                }
+
+                <div class="detail-panel__meta-row">
+                  @if (paper.year) {
+                    <span class="detail-panel__badge">{{ paper.year }}</span>
+                  }
+                  @if (paper.journal || paper.venue) {
+                    <span class="detail-panel__badge detail-panel__badge--venue">{{ paper.journal || paper.venue }}</span>
+                  }
+                  @if (paper.predicted_main_archetype) {
+                     <span class="detail-panel__badge detail-panel__badge--archetype-main">
+                       <span class="material-symbols-outlined" style="font-size: 13px; margin-right: 4px; vertical-align: middle;">
+                         {{ getArchetypeIcon(paper.predicted_main_archetype) }}
+                       </span>
+                       {{ paper.predicted_main_archetype }}
+                     </span>
+                   }
+                  @if (paper.predicted_second_tier_archetype && paper.predicted_second_tier_archetype !== 'None') {
+                    <span class="detail-panel__badge detail-panel__badge--archetype-second">{{ paper.predicted_second_tier_archetype }}</span>
+                  }
+                </div>
+                @if (paper.abstract) {
+                  <div class="detail-panel__section">
+                    <h5 class="detail-panel__section-title">Abstract</h5>
+                    <p class="detail-panel__abstract">{{ paper.abstract }}</p>
+                  </div>
+                }
+                <div class="detail-panel__stats">
+                  @if (paper.citation_count !== null) {
+                    <div class="detail-panel__stat">
+                      <span class="detail-panel__stat-value">{{ paper.citation_count | number }}</span>
+                      <span class="detail-panel__stat-label">Citations</span>
+                    </div>
+                  }
+                  @if (paper.reference_count !== null) {
+                    <div class="detail-panel__stat">
+                      <span class="detail-panel__stat-value">{{ paper.reference_count | number }}</span>
+                      <span class="detail-panel__stat-label">References</span>
+                    </div>
+                  }
+                  @if (paper.ok_score !== undefined) {
+                    <div class="detail-panel__stat">
+                      <span class="detail-panel__stat-value">{{ paper.ok_score.toFixed(2) }}</span>
+                      <span class="detail-panel__stat-label">OK-score</span>
+                    </div>
+                  }
+                </div>
+
+                <button class="detail-panel__remove-btn" (click)="removeSelectedNode()" style="width: 100%; display: flex; justify-content: center; gap: 8px;">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  Remove from OK-Graph
+                </button>
+              </div>
+            } @else {
+              <div class="detail-panel__placeholder">
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                <p>Click a node to see paper details</p>
+                <p class="detail-panel__placeholder-hint">Use the side arrows to add earlier / later sub-cluster representatives</p>
+              </div>
+            }
+          </aside>
+        }
+      </div>
+    }
+  </div>
+</div>

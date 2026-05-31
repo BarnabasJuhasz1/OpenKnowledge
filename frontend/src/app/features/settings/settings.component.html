@@ -1,0 +1,51 @@
+<div class="settings">
+  <div class="settings__inner">
+    <header class="settings__header">
+      <h1 class="settings__title">Settings</h1>
+      <p class="settings__subtitle">Personalise how OpenKnowledge looks and feels.</p>
+    </header>
+
+    <section class="settings__section" aria-labelledby="appearance-heading">
+      <div class="settings__section-head">
+        <h2 id="appearance-heading" class="settings__section-title">Appearance</h2>
+        <p class="settings__section-desc">
+          Choose the color scheme for the workspace.
+        </p>
+      </div>
+
+      <div class="settings__theme-picker" role="radiogroup" aria-label="Theme">
+        @for (theme of themes; track theme.id) {
+          <button
+            type="button"
+            role="radio"
+            class="settings__theme-option"
+            [class.settings__theme-option--active]="activeTheme() === theme.id"
+            [attr.aria-checked]="activeTheme() === theme.id"
+            (click)="setTheme(theme.id)"
+          >
+            <span
+              class="settings__theme-preview"
+              [style.background]="theme.swatch[0]"
+            >
+              <span class="settings__theme-preview-bar"></span>
+              <span
+                class="settings__theme-preview-accent"
+                [style.background]="theme.swatch[1]"
+                [style.color]="theme.swatch[1]"
+              ></span>
+            </span>
+            <span class="settings__theme-meta">
+              <span class="settings__theme-name">{{ theme.label }}</span>
+              <span class="settings__theme-desc">{{ theme.description }}</span>
+            </span>
+            @if (activeTheme() === theme.id) {
+              <span class="material-symbols-outlined settings__theme-check">
+                check_circle
+              </span>
+            }
+          </button>
+        }
+      </div>
+    </section>
+  </div>
+</div>

@@ -10,11 +10,49 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
 
 
+class DBUser(Base):
+    """A person authenticated through a 3rd-party OAuth provider.
+
+    There is no password store — the only way to obtain a row here is to complete
+    an OAuth sign-in. A user is uniquely identified by the (provider,
+    provider_account_id) pair, so the same email arriving via two providers yields
+    two distinct accounts (the providers vouch for different identities).
+    """
+
+    __tablename__ = "users"
+    __table_args__ = (UniqueConstraint("provider", "provider_account_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String, nullable=False)  # google|microsoft|apple|github
+    provider_account_id: Mapped[str] = mapped_column(String, nullable=False)
+    email: Mapped[str | None] = mapped_column(String, index=True)
+    name: Mapped[str | None] = mapped_column(String)
+    avatar_url: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    last_login_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
+
+
+class DBProject(Base):
+    __tablename__ = "projects"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    color: Mapped[str | None] = mapped_column(String)  # hex accent, e.g. #6366f1
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_now, onupdate=_now
+    )
+
+
 class DBPaper(Base):
     __tablename__ = "papers"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    doi: Mapped[str | None] = mapped_column(String, unique=True, index=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id"), index=True, nullable=False
+    )
+    doi: Mapped[str | None] = mapped_column(String, index=True)
     arxiv_id: Mapped[str | None] = mapped_column(String, index=True)
     semantic_scholar_id: Mapped[str | None] = mapped_column(String, index=True)
     openalex_id: Mapped[str | None] = mapped_column(String, index=True)
@@ -48,6 +86,9 @@ class DBPaper(Base):
     code_url: Mapped[str | None] = mapped_column(String)
     has_dataset: Mapped[bool] = mapped_column(Boolean, default=False)
     repo_stars: Mapped[int] = mapped_column(Integer, default=0)
+
+    predicted_main_archetype: Mapped[str | None] = mapped_column(String)
+    predicted_second_tier_archetype: Mapped[str | None] = mapped_column(String)
 
     bibtex: Mapped[str | None] = mapped_column(Text)
     sources: Mapped[str | None] = mapped_column(String)  # comma-separated
@@ -136,8 +177,12 @@ class DBPaperVersion(Base):
 
 class DBShelfItem(Base):
     __tablename__ = "shelf_items"
+    __table_args__ = (UniqueConstraint("project_id", "query_text"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id"), index=True, nullable=False
+    )
     query_text: Mapped[str] = mapped_column(Text, nullable=False)
     label: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
@@ -147,9 +192,13 @@ class DBShelfItem(Base):
 
 class DBBookshelfItem(Base):
     __tablename__ = "bookshelf_items"
+    __table_args__ = (UniqueConstraint("project_id", "paper_identifier"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    paper_identifier: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id"), index=True, nullable=False
+    )
+    paper_identifier: Mapped[str] = mapped_column(String, nullable=False)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     authors_json: Mapped[str | None] = mapped_column(Text)
     year: Mapped[int | None] = mapped_column(Integer)
@@ -163,9 +212,13 @@ class DBPaperNote(Base):
     """Notes kept independently of the bookshelf so they survive remove/re-add."""
 
     __tablename__ = "paper_notes"
+    __table_args__ = (UniqueConstraint("project_id", "paper_identifier"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    paper_identifier: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id"), index=True, nullable=False
+    )
+    paper_identifier: Mapped[str] = mapped_column(String, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
 
@@ -174,6 +227,9 @@ class DBRetrievalJob(Base):
     __tablename__ = "retrieval_jobs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id"), index=True, nullable=False
+    )
     query_text: Mapped[str] = mapped_column(Text)
     keywords: Mapped[str] = mapped_column(Text)       # JSON
     databases_used: Mapped[str] = mapped_column(Text) # JSON

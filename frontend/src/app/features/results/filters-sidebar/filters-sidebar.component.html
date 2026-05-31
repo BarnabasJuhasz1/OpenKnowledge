@@ -101,4 +101,50 @@
       </span>
     </label>
   </section>
+
+  <!-- Archetype -->
+  <section class="sidebar__section">
+    <h4 class="sidebar__label">Archetype</h4>
+    <select class="sidebar__select" [(ngModel)]="archetype">
+      <option [ngValue]="null">All archetypes</option>
+      @for (arch of archetypes; track arch) {
+        <option [value]="arch">{{ arch }}</option>
+      }
+    </select>
+  </section>
+
+  <!-- Databases / source filter (multi-select dropdown) -->
+  <section class="sidebar__section sidebar__section--databases">
+    <h4 class="sidebar__label">Databases</h4>
+    <div class="db-select" [class.db-select--open]="databasesOpen">
+      <button type="button" class="db-select__toggle" (click)="toggleDatabasesMenu()">
+        <span class="db-select__summary">{{ databasesSummary }}</span>
+        <svg class="db-select__chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      @if (databasesOpen) {
+        <div class="db-select__menu">
+          <label class="db-select__option db-select__option--all">
+            <input type="checkbox" [checked]="allSourcesSelected" (change)="toggleAllSources($event)" />
+            <span class="db-select__name">All databases</span>
+          </label>
+          <div class="db-select__divider"></div>
+          @for (src of state.sourceStatuses(); track src.name) {
+            <label class="db-select__option" [class.db-select__option--failed]="src.hasFailed">
+              <input type="checkbox" [checked]="isSourceSelected(src.name)" (change)="toggleSource(src.name)" />
+              <span class="db-select__name">{{ src.displayName }}</span>
+              @if (src.isSearching) {
+                <span class="db-select__spinner">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                </span>
+              } @else if (src.hasFailed) {
+                <span class="db-select__error-mark" [title]="src.errorMessage ?? ''">!</span>
+              } @else {
+                <span class="db-select__count">{{ src.paperCount }}</span>
+              }
+            </label>
+          }
+        </div>
+      }
+    </div>
+  </section>
 </aside>

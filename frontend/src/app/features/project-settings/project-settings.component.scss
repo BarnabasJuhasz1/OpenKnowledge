@@ -1,0 +1,71 @@
+// ============================================================================
+// Project Settings page — project-scoped configuration (OK-score weights, etc.).
+// Wrapper styles mirror the global Settings page; section content is provided by
+// the embedded Discovery / Analysis components (their own scoped styles apply).
+// ============================================================================
+.settings {
+  min-height: calc(100vh - var(--ok-topnav-height));
+  padding: var(--ok-space-10) var(--ok-space-8);
+  background: var(--ok-bg);
+  overflow-y: auto;
+
+  &__inner {
+    max-width: 960px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--ok-space-6);
+  }
+
+  &__header {
+    margin-bottom: var(--ok-space-2);
+  }
+
+  &__title {
+    margin: 0 0 var(--ok-space-2);
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--ok-on-surface);
+  }
+
+  &__subtitle {
+    margin: 0;
+    font-size: 15px;
+    color: var(--ok-on-surface-variant);
+
+    strong {
+      color: var(--ok-on-surface);
+      font-weight: 700;
+    }
+  }
+
+  &__section {
+    padding: var(--ok-space-6);
+    background: var(--ok-surface-container-low);
+    border: 1px solid var(--ok-outline-variant);
+    border-radius: var(--ok-radius-lg);
+  }
+
+  &__section-head {
+    margin-bottom: var(--ok-space-5);
+  }
+
+  &__section-title {
+    margin: 0 0 var(--ok-space-1);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--ok-on-surface);
+  }
+
+  &__section-desc {
+    margin: 0;
+    font-size: 14px;
+    color: var(--ok-on-surface-variant);
+  }
+}
+
+@media (max-width: 768px) {
+  .settings {
+    padding: var(--ok-space-6) var(--ok-space-4);
+  }
+}

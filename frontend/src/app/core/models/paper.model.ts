@@ -49,6 +49,8 @@ export interface Paper {
   sources: string[];
   versions: PaperVersion[] | null;
   ok_score?: number;
+  predicted_main_archetype?: string;
+  predicted_second_tier_archetype?: string;
 }
 
 export interface StreamEvent {

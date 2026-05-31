@@ -1,18 +1,4 @@
 <div class="library">
-  <header class="library__header">
-    <a class="library__logo" routerLink="/">
-      <img class="library__logo-icon" src="openknowledge_icon.svg" alt="" />
-      OpenKnowledge
-    </a>
-    <nav class="library__nav">
-      <a class="library__nav-link" routerLink="/">Research</a>
-      <a class="library__nav-link" routerLink="/relevancy">OK-score</a>
-      <a class="library__nav-link" routerLink="/graph">Graph</a>
-      <a class="library__nav-link library__nav-link--active" routerLink="/library">Library</a>
-      <a class="library__nav-link" routerLink="/citgraph">Cit-Graph</a>
-    </nav>
-  </header>
-
   <main class="library__body">
     <!-- Tab switcher -->
     <div class="library__tabs">
@@ -178,6 +164,17 @@
                           <p class="library__detail-abstract">{{ p.abstract }}</p>
                         }
                         <div class="library__detail-badges">
+                          @if (p.predicted_main_archetype) {
+                            <span class="library__badge library__badge--archetype-main">
+                              <span class="material-symbols-outlined" style="font-size: 13px; margin-right: 4px; vertical-align: middle;">
+                                {{ getArchetypeIcon(p.predicted_main_archetype) }}
+                              </span>
+                              {{ p.predicted_main_archetype }}
+                            </span>
+                          }
+                          @if (p.predicted_second_tier_archetype && p.predicted_second_tier_archetype !== 'None') {
+                            <span class="library__badge library__badge--archetype-second">{{ p.predicted_second_tier_archetype }}</span>
+                          }
                           @if (p.citation_count !== null) {
                             <span class="library__badge">{{ p.citation_count | number }} cited by</span>
                           }

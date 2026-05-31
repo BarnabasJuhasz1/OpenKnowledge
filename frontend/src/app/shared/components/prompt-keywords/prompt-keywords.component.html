@@ -1,0 +1,59 @@
+<div class="prompt-kw">
+  <label class="prompt-kw__label" for="ai-prompt">
+    <span class="material-symbols-outlined">auto_awesome</span>
+    Describe your research — AI will draft the keywords
+  </label>
+
+  <!-- Prompt textarea + .bib drop, side by side at equal height -->
+  <div class="prompt-kw__row">
+    <textarea
+      id="ai-prompt"
+      class="prompt-kw__textarea"
+      rows="3"
+      placeholder="e.g. I want to know about model compression techniques for large language models"
+      [ngModel]="prompt()"
+      (ngModelChange)="prompt.set($event)"
+      [disabled]="loading()"
+    ></textarea>
+
+    <div
+      class="prompt-kw__drop"
+      [class.prompt-kw__drop--active]="dragging()"
+      [class.prompt-kw__drop--filled]="bibName()"
+      (dragover)="onDragOver($event)"
+      (dragleave)="onDragLeave($event)"
+      (drop)="onDrop($event)"
+    >
+      <input
+        #fileInput
+        type="file"
+        accept=".bib"
+        class="prompt-kw__file"
+        (change)="onFileSelected($event)"
+      />
+      @if (bibName(); as name) {
+        <span class="material-symbols-outlined prompt-kw__drop-icon">description</span>
+        <span class="prompt-kw__drop-name" [title]="name">{{ name }}</span>
+        <button type="button" class="prompt-kw__drop-clear" (click)="clearBib()" title="Remove file">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      } @else {
+        <span class="material-symbols-outlined prompt-kw__drop-icon">upload_file</span>
+        <span class="prompt-kw__drop-text">
+          Drop a <strong>.bib</strong> file<br />
+          or <button type="button" class="prompt-kw__drop-browse" (click)="fileInput.click()">browse</button>
+        </span>
+      }
+    </div>
+  </div>
+
+  <button
+    type="button"
+    class="prompt-kw__btn"
+    [disabled]="!canGenerate"
+    (click)="generate()"
+  >
+    <span class="material-symbols-outlined">{{ loading() ? 'progress_activity' : 'auto_awesome' }}</span>
+    {{ loading() ? 'Generating…' : 'Generate keywords' }}
+  </button>
+</div>

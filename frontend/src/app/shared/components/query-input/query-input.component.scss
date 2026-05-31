@@ -1,8 +1,18 @@
+// ============================================================================
+// Query Input — Dark Mode (DESIGN.MD)
+// ============================================================================
+
 .query-input {
   position: relative;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+
+  // Anchors the shelf dropdown directly beneath the input row (not the whole
+  // component) so it drops under the field in both compact and full layouts.
+  &__field {
+    position: relative;
+  }
 
   &__row {
     display: flex;
@@ -14,24 +24,28 @@
     flex: 1;
     resize: none;
     padding: 0.875rem 1rem;
+    font-family: var(--ok-font-body);
     font-size: 0.95rem;
-    font-family: inherit;
-    border: 1.5px solid #d1d5db;
-    border-radius: 8px;
-    background: #fff;
-    color: #111827;
+    border: 1px solid var(--ok-outline-variant);
+    border-radius: var(--ok-radius);
+    background: var(--ok-surface-container-lowest);
+    color: var(--ok-on-surface);
     line-height: 1.5;
-    transition: border-color 0.15s;
+    transition: border-color var(--ok-transition-fast), box-shadow var(--ok-transition-fast);
     outline: none;
 
+    &::placeholder {
+      color: var(--ok-outline);
+    }
+
     &:focus {
-      border-color: #2563eb;
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+      border-color: var(--ok-primary-raw);
+      box-shadow: 0 0 0 3px rgba(var(--ok-primary-rgb), 0.15);
     }
 
     &:disabled {
-      background: #f9fafb;
-      color: #9ca3af;
+      background: var(--ok-surface-container-low);
+      color: var(--ok-outline);
     }
   }
 
@@ -41,24 +55,24 @@
     justify-content: center;
     width: 32px;
     height: 32px;
-    border: 1px solid #d1d5db;
-    border-radius: 7px;
-    background: #fff;
-    color: #6b7280;
+    border: 1px solid var(--ok-outline-variant);
+    border-radius: var(--ok-radius-sm);
+    background: var(--ok-surface-container);
+    color: var(--ok-on-surface-variant);
     cursor: pointer;
     flex-shrink: 0;
-    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    transition: background var(--ok-transition-fast), color var(--ok-transition-fast), border-color var(--ok-transition-fast);
 
     &:hover {
-      background: #eff6ff;
-      color: #2563eb;
-      border-color: #93c5fd;
+      background: rgba(var(--ok-primary-rgb), 0.15);
+      color: var(--ok-primary);
+      border-color: rgba(var(--ok-primary-rgb), 0.3);
     }
 
     &--save:hover {
-      background: #ecfdf5;
-      color: #059669;
-      border-color: #6ee7b7;
+      background: rgba(16, 185, 129, 0.15);
+      color: #10b981;
+      border-color: rgba(16, 185, 129, 0.3);
     }
   }
 
@@ -69,10 +83,12 @@
     left: 0;
     right: 0;
     margin-top: 4px;
-    background: #fff;
-    border: 1px solid #e5e7eb;
-    border-radius: 10px;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+    background: var(--ok-glass-bg-floating);
+    backdrop-filter: blur(var(--ok-glass-blur-floating));
+    -webkit-backdrop-filter: blur(var(--ok-glass-blur-floating));
+    border: 1px solid var(--ok-glass-border);
+    border-radius: var(--ok-radius-md);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
     z-index: 50;
     overflow: hidden;
     animation: shelf-in 0.15s ease-out;
@@ -82,7 +98,7 @@
     padding: 1rem;
     text-align: center;
     font-size: 0.85rem;
-    color: #9ca3af;
+    color: var(--ok-outline);
   }
 
   &__shelf-item {
@@ -93,23 +109,24 @@
     padding: 0.65rem 0.85rem;
     border: none;
     background: transparent;
-    color: #374151;
+    color: var(--ok-on-surface);
+    font-family: var(--ok-font-body);
     font-size: 0.85rem;
     text-align: left;
     cursor: pointer;
-    transition: background 0.1s;
+    transition: background var(--ok-transition-fast);
 
     &:hover {
-      background: #eff6ff;
+      background: rgba(var(--ok-primary-rgb), 0.1);
     }
 
     &:not(:last-child) {
-      border-bottom: 1px solid #f3f4f6;
+      border-bottom: 1px solid var(--ok-outline-variant);
     }
 
     svg {
       flex-shrink: 0;
-      color: #9ca3af;
+      color: var(--ok-outline);
     }
   }
 
@@ -122,9 +139,9 @@
 
   &__shelf-item-query {
     margin-left: auto;
+    font-family: var(--ok-font-label);
     font-size: 0.75rem;
-    color: #9ca3af;
-    font-family: monospace;
+    color: var(--ok-outline);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -140,7 +157,7 @@
 
   &__hint {
     font-size: 0.8rem;
-    color: #9ca3af;
+    color: var(--ok-outline);
   }
 
   &__btn {
@@ -148,16 +165,18 @@
     align-items: center;
     gap: 0.4rem;
     padding: 0.6rem 1.4rem;
-    background: #2563eb;
+    background: var(--ok-gradient-primary);
     color: #fff;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--ok-radius);
+    font-family: var(--ok-font-label);
     font-size: 0.9rem;
     font-weight: 600;
-    transition: background 0.15s, opacity 0.15s;
+    transition: opacity var(--ok-transition-fast);
+    box-shadow: 0 4px 14px 0 rgba(var(--ok-primary-rgb), 0.3);
 
     &:hover:not(:disabled) {
-      background: #1d4ed8;
+      background: var(--ok-gradient-primary-hover);
     }
 
     &:disabled {

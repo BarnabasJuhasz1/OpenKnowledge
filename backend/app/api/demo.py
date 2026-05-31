@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from ..models.paper import SearchRequest, SearchResponse
 from ..services.retrieval.demo import DemoDataStore
+from ..services import archetype
 
 router = APIRouter(prefix="/retrieval/demo", tags=["demo"])
 
@@ -11,7 +12,8 @@ async def demo_search(request: SearchRequest) -> SearchResponse:
         raise HTTPException(status_code=422, detail="At least one keyword is required.")
 
     store = DemoDataStore.get()
-    papers = store.search(request.keywords, limit=request.max_initial_results)
+    papers = store.search(request.keywords, limit=None)
+    await archetype.classify_papers(papers)
 
     return SearchResponse(
         papers=papers,

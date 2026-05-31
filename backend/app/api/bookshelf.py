@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.database import get_db
 from ..db.orm_models import DBBookshelfItem, DBPaperNote
+from .deps import require_project
 
 router = APIRouter(prefix="/bookshelf", tags=["bookshelf"])
 
@@ -67,32 +68,46 @@ class BookshelfOut(BaseModel):
 
 
 async def _upsert_note(
-    db: AsyncSession, paper_identifier: str, notes: str | None
+    db: AsyncSession, project_id: int, paper_identifier: str, notes: str | None
 ) -> None:
     """Persist a paper's notes independently of the bookshelf row."""
     result = await db.execute(
-        select(DBPaperNote).where(DBPaperNote.paper_identifier == paper_identifier)
+        select(DBPaperNote).where(
+            DBPaperNote.project_id == project_id,
+            DBPaperNote.paper_identifier == paper_identifier,
+        )
     )
     note = result.scalar_one_or_none()
     if note:
         note.notes = notes
     else:
-        db.add(DBPaperNote(paper_identifier=paper_identifier, notes=notes))
+        db.add(DBPaperNote(
+            project_id=project_id, paper_identifier=paper_identifier, notes=notes
+        ))
 
 
 @router.get("", response_model=list[BookshelfOut])
-async def list_bookshelf(db: AsyncSession = Depends(get_db)):
+async def list_bookshelf(
+    project_id: int = Depends(require_project), db: AsyncSession = Depends(get_db)
+):
     result = await db.execute(
-        select(DBBookshelfItem).order_by(DBBookshelfItem.created_at.desc())
+        select(DBBookshelfItem)
+        .where(DBBookshelfItem.project_id == project_id)
+        .order_by(DBBookshelfItem.created_at.desc())
     )
     return [BookshelfOut.from_db(i) for i in result.scalars().all()]
 
 
 @router.post("", response_model=BookshelfOut, status_code=201)
-async def add_to_bookshelf(body: BookshelfCreate, db: AsyncSession = Depends(get_db)):
+async def add_to_bookshelf(
+    body: BookshelfCreate,
+    project_id: int = Depends(require_project),
+    db: AsyncSession = Depends(get_db),
+):
     existing = await db.execute(
         select(DBBookshelfItem).where(
-            DBBookshelfItem.paper_identifier == body.paper_identifier
+            DBBookshelfItem.project_id == project_id,
+            DBBookshelfItem.paper_identifier == body.paper_identifier,
         )
     )
     if existing.scalar_one_or_none():
@@ -103,7 +118,8 @@ async def add_to_bookshelf(body: BookshelfCreate, db: AsyncSession = Depends(get
         # Restore any notes saved during a previous time this paper was on the shelf.
         prior = await db.execute(
             select(DBPaperNote).where(
-                DBPaperNote.paper_identifier == body.paper_identifier
+                DBPaperNote.project_id == project_id,
+                DBPaperNote.paper_identifier == body.paper_identifier,
             )
         )
         prior_note = prior.scalar_one_or_none()
@@ -111,6 +127,7 @@ async def add_to_bookshelf(body: BookshelfCreate, db: AsyncSession = Depends(get
             notes = prior_note.notes
 
     item = DBBookshelfItem(
+        project_id=project_id,
         paper_identifier=body.paper_identifier,
         title=body.title,
         authors_json=json.dumps(body.authors),
@@ -120,7 +137,7 @@ async def add_to_bookshelf(body: BookshelfCreate, db: AsyncSession = Depends(get
     )
     db.add(item)
     if notes is not None:
-        await _upsert_note(db, body.paper_identifier, notes)
+        await _upsert_note(db, project_id, body.paper_identifier, notes)
     await db.commit()
     await db.refresh(item)
     return BookshelfOut.from_db(item)
@@ -128,17 +145,23 @@ async def add_to_bookshelf(body: BookshelfCreate, db: AsyncSession = Depends(get
 
 @router.put("/{item_id}", response_model=BookshelfOut)
 async def update_bookshelf_item(
-    item_id: int, body: BookshelfUpdate, db: AsyncSession = Depends(get_db)
+    item_id: int,
+    body: BookshelfUpdate,
+    project_id: int = Depends(require_project),
+    db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(DBBookshelfItem).where(DBBookshelfItem.id == item_id)
+        select(DBBookshelfItem).where(
+            DBBookshelfItem.id == item_id,
+            DBBookshelfItem.project_id == project_id,
+        )
     )
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Bookshelf item not found")
     if body.notes is not None:
         item.notes = body.notes
-        await _upsert_note(db, item.paper_identifier, body.notes)
+        await _upsert_note(db, project_id, item.paper_identifier, body.notes)
     item.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(item)
@@ -146,9 +169,16 @@ async def update_bookshelf_item(
 
 
 @router.delete("/{item_id}", status_code=204)
-async def remove_from_bookshelf(item_id: int, db: AsyncSession = Depends(get_db)):
+async def remove_from_bookshelf(
+    item_id: int,
+    project_id: int = Depends(require_project),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(
-        select(DBBookshelfItem).where(DBBookshelfItem.id == item_id)
+        select(DBBookshelfItem).where(
+            DBBookshelfItem.id == item_id,
+            DBBookshelfItem.project_id == project_id,
+        )
     )
     item = result.scalar_one_or_none()
     if not item:
@@ -158,10 +188,15 @@ async def remove_from_bookshelf(item_id: int, db: AsyncSession = Depends(get_db)
 
 
 @router.get("/check/{paper_identifier:path}")
-async def check_bookshelf(paper_identifier: str, db: AsyncSession = Depends(get_db)):
+async def check_bookshelf(
+    paper_identifier: str,
+    project_id: int = Depends(require_project),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(
         select(DBBookshelfItem).where(
-            DBBookshelfItem.paper_identifier == paper_identifier
+            DBBookshelfItem.project_id == project_id,
+            DBBookshelfItem.paper_identifier == paper_identifier,
         )
     )
     item = result.scalar_one_or_none()
