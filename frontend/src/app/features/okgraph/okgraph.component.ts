@@ -1206,10 +1206,19 @@ export class OkGraphComponent implements OnInit {
    */
   readonly selectedClusterSummary = computed<ClusterSummary | undefined>(() => {
     const id = this.selectedClusterId();
-    if (id === null || this.state.filterActive()) return undefined;
+    if (id === null) return undefined;
     const top = this.topLevel();
-    if (top < 0) return undefined;
-    return this.summaries.summaryAt(top, id);
+    const repIndex = top >= 0 ? this.repIndexOfCluster(top, id) : -1;
+    const repNode = repIndex >= 0 ? this.baseNodes()[repIndex] : undefined;
+    if (!repNode) return undefined;
+
+    const rawComm = this.summaries.getRawCommunity(repNode.paper_id);
+    if (rawComm === undefined) return undefined;
+
+    const rawTop = this.summaries.getTopLevel();
+    if (rawTop < 0) return undefined;
+
+    return this.summaries.summaryAt(rawTop, rawComm);
   });
 
   // --- interaction -----------------------------------------------------------

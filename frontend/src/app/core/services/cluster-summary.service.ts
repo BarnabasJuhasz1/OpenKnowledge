@@ -38,6 +38,8 @@ export class ClusterSummaryService {
   private readonly baseUrl = 'http://127.0.0.1:8000/api';
 
   private store = new Map<string, ClusterSummary>();
+  private rawCommunityMap = new Map<string, number>();
+  readonly rawTopLevel = signal<number>(-1);
   private readonly version = signal(0);
 
   readonly progress = signal<{ done: number; total: number }>({ done: 0, total: 0 });
@@ -72,6 +74,14 @@ export class ClusterSummaryService {
     return this.store.get(`${index}:${community}`);
   }
 
+  getRawCommunity(paperId: string): number | undefined {
+    return this.rawCommunityMap.get(paperId);
+  }
+
+  getTopLevel(): number {
+    return this.rawTopLevel();
+  }
+
   clear(): void {
     this.signature = '';
     this.reset();
@@ -80,6 +90,8 @@ export class ClusterSummaryService {
   private reset(): void {
     this.runId++;
     this.store = new Map();
+    this.rawCommunityMap = new Map();
+    this.rawTopLevel.set(-1);
     this.version.update(v => v + 1);
     this.progress.set({ done: 0, total: 0 });
     this.running.set(false);
@@ -101,19 +113,33 @@ export class ClusterSummaryService {
     this.runId++;
     const myRun = this.runId;
     this.store = new Map();
+    this.rawCommunityMap = new Map();
+    this.rawTopLevel.set(-1);
     this.version.update(v => v + 1);
 
     const result = this.cluster(nodes, edges, resolution, maxLevels);
     const levels = result.levels;
     if (!levels.length) {
+      this.rawTopLevel.set(-1);
+      this.rawCommunityMap = new Map();
       this.progress.set({ done: 0, total: 0 });
       this.running.set(false);
       return;
     }
 
+    const topLvl = levels.length - 1;
+    this.rawTopLevel.set(topLvl);
+
     // Precompute the community assignment + members for every level.
     const n = nodes.length;
     const commAt: number[][] = levels.map((_, L) => getCommunitiesAtLevel(levels, n, L));
+
+    // Map paper_id to its raw top-level community ID
+    const commAtTop = commAt[topLvl];
+    this.rawCommunityMap = new Map();
+    nodes.forEach((node, i) => {
+      this.rawCommunityMap.set(node.paper_id, commAtTop[i]);
+    });
     const membersAt: Map<number, number[]>[] = commAt.map(comm => {
       const m = new Map<number, number[]>();
       comm.forEach((c, i) => {

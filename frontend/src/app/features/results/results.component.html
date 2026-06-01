@@ -10,16 +10,50 @@
       </div>
     }
 
-    <!-- Loading skeletons (only shown before any results arrive) -->
+    <!-- Centered non-scrollable search loading screen (only shown before any results arrive) -->
     @if (state.loading() && state.totalRaw() === 0) {
-      <div class="skeletons">
-        @for (i of [1,2,3,4,5,6,7,8,9,10]; track i) {
-          <div class="skeleton">
-            <div class="skeleton__title"></div>
-            <div class="skeleton__authors"></div>
-            <div class="skeleton__toggle"></div>
+      <div class="search-loader">
+        <div class="search-loader__card">
+          <div class="search-loader__header">
+            <h2 class="search-loader__title">Searching Academic Databases</h2>
+            <p class="search-loader__subtitle">
+              Querying OpenAlex, Semantic Scholar, arXiv, PubMed, DBLP, CrossRef, Europe PMC, and CORE
+            </p>
           </div>
-        }
+
+          <div class="search-loader__slider-wrapper">
+            <div class="search-loader__slider-track">
+              <div class="search-loader__slider-fill"></div>
+            </div>
+          </div>
+
+          <div class="search-loader__status-list">
+            @for (source of state.sourceStatuses(); track source.name) {
+              @if (source.name !== 'demo' || demo.enabled()) {
+                <div
+                  class="search-loader__status-item"
+                  [class.search-loader__status-item--active]="source.isSearching"
+                  [class.search-loader__status-item--completed]="!source.isSearching && !source.hasFailed && source.paperCount > 0"
+                  [class.search-loader__status-item--failed]="source.hasFailed"
+                >
+                  <span class="search-loader__status-dot"></span>
+                  <span class="search-loader__status-name">{{ source.displayName }}</span>
+                  <span class="search-loader__status-detail">
+                    @if (source.isSearching) {
+                      Searching...
+                    } @else if (source.hasFailed) {
+                      Failed
+                    } @else if (source.paperCount > 0) {
+                      Found {{ source.paperCount }}
+                    } @else {
+                      Done
+                    }
+                  </span>
+                </div>
+              }
+            }
+          </div>
+        </div>
       </div>
     }
 
