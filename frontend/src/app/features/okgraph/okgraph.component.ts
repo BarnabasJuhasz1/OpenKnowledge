@@ -1085,7 +1085,18 @@ export class OkGraphComponent implements OnInit {
    * level; `repTitle` is its highest-scoring representative.
    */
   readonly selectedCluster = computed<
-    { id: number; name: string; color: string; repTitle: string; size: number; isMisc: boolean } | null
+    {
+      id: number;
+      name: string;
+      color: string;
+      repTitle: string;
+      size: number;
+      isMisc: boolean;
+      totalPapers: string;
+      totalSeeds: string;
+      totalGoldStars: string;
+      totalSilverStars: string;
+    } | null
   >(() => {
     const id = this.selectedClusterId();
     if (id === null) return null;
@@ -1095,6 +1106,26 @@ export class OkGraphComponent implements OnInit {
     const repIndex = top >= 0 ? this.repIndexOfCluster(top, id) : -1;
     const repTitle = repIndex >= 0 ? (this.baseNodes()[repIndex]?.title ?? '') : '';
     const size = top >= 0 ? this.clusterSize(top, id) : 0;
+
+    const base = this.baseNodes();
+    const topComm = this.communitiesAtLevel()(top);
+    const paperClusterMap = new Map<string, number>();
+    for (let i = 0; i < base.length; i++) {
+      paperClusterMap.set(base[i].paper_id, topComm[i]);
+    }
+
+    const visiblePapers = this.nodes().filter(n => paperClusterMap.get(n.id) === id).length;
+    const totalPapers = base.filter((n, i) => topComm[i] === id).length;
+
+    const visibleSeeds = this.nodes().filter(n => this.isSeedNode(n) && paperClusterMap.get(n.id) === id).length;
+    const totalSeeds = base.filter((n, i) => topComm[i] === id && this.state.initialSeedIds().has(n.paper_id)).length;
+
+    const visibleGold = this.nodes().filter(n => n.star === 'gold' && paperClusterMap.get(n.id) === id).length;
+    const totalGold = base.filter((n, i) => topComm[i] === id && this.starFor(repScore(n)) === 'gold').length;
+
+    const visibleSilver = this.nodes().filter(n => n.star === 'silver' && paperClusterMap.get(n.id) === id).length;
+    const totalSilver = base.filter((n, i) => topComm[i] === id && this.starFor(repScore(n)) === 'silver').length;
+
     return {
       id,
       name: this.clusterName(id),
@@ -1102,6 +1133,10 @@ export class OkGraphComponent implements OnInit {
       repTitle,
       size,
       isMisc: blob.isMisc,
+      totalPapers: `${visiblePapers} / ${totalPapers}`,
+      totalSeeds: `${visibleSeeds} / ${totalSeeds}`,
+      totalGoldStars: `${visibleGold} / ${totalGold}`,
+      totalSilverStars: `${visibleSilver} / ${totalSilver}`,
     };
   });
 

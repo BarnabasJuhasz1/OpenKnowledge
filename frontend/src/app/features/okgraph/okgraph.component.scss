@@ -80,7 +80,7 @@
 
   .setup-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: var(--ok-space-4);
     animation: ok-slide-up var(--ok-transition-slow);
     min-height: 0;
@@ -95,6 +95,7 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
+    min-width: 0;
     transition: transform var(--ok-transition), box-shadow var(--ok-transition);
 
     &:hover {
@@ -217,6 +218,45 @@
     display: flex;
     flex-direction: column;
     height: 210px;
+    min-width: 0;
+  }
+
+  .seed-source-tabs {
+    display: flex;
+    gap: var(--ok-space-2);
+    margin-bottom: var(--ok-space-3);
+    border-bottom: 1px solid var(--ok-outline-variant);
+    padding-bottom: var(--ok-space-2);
+    flex-shrink: 0;
+  }
+
+  .seed-source-tab {
+    background: transparent;
+    border: none;
+    font-family: var(--ok-font-label);
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--ok-on-surface-variant);
+    padding: var(--ok-space-1) var(--ok-space-2);
+    border-radius: var(--ok-radius-sm);
+    cursor: pointer;
+    transition: background var(--ok-transition-fast), color var(--ok-transition-fast);
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--ok-on-surface);
+    }
+
+    &--active {
+      color: var(--ok-primary);
+      background: rgba(var(--ok-primary-rgb), 0.1);
+      font-weight: 600;
+
+      &:hover {
+        background: rgba(var(--ok-primary-rgb), 0.15);
+        color: var(--ok-primary);
+      }
+    }
   }
 
   .papers-list-empty {
@@ -315,10 +355,37 @@
     background: rgba(255, 255, 255, 0.02);
     border: 1px solid rgba(255, 255, 255, 0.05);
     border-radius: var(--ok-radius);
-    transition: background var(--ok-transition);
+    transition: background var(--ok-transition), border-color var(--ok-transition);
+    min-width: 0;
 
     &:hover {
       background: rgba(255, 255, 255, 0.04);
+    }
+
+    &--library {
+      cursor: pointer;
+      user-select: none;
+
+      &:hover {
+        border-color: rgba(var(--ok-primary-rgb), 0.3);
+        background: rgba(255, 255, 255, 0.04);
+      }
+    }
+
+    &--selected {
+      background: rgba(var(--ok-primary-rgb), 0.04);
+      border-color: rgba(var(--ok-primary-rgb), 0.2);
+    }
+
+    &__checkbox {
+      font-size: 1.25rem;
+      color: var(--ok-outline);
+      flex-shrink: 0;
+      transition: color var(--ok-transition-fast);
+
+      &--selected {
+        color: #4caf50;
+      }
     }
 
     &__icon {
@@ -1023,15 +1090,12 @@
   // the overlap reads as a deliberate connection rather than a rendering seam.
   &__bridge {
     fill-opacity: 0.12;
-    stroke-opacity: 0.4;
-    stroke-width: 1.5;
+    stroke: none;
     pointer-events: none;
-    transition: fill-opacity 0.15s, stroke-opacity 0.15s, stroke-width 0.15s;
+    transition: fill-opacity 0.15s;
 
     &--highlighted {
       fill-opacity: 0.5;
-      stroke-opacity: 1.0;
-      stroke-width: 4.0;
     }
   }
 
@@ -1219,6 +1283,48 @@
     font-size: 0.72rem;
     font-weight: 600;
     color: var(--ok-outline);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    column-gap: 0.8rem;
+    row-gap: 0.35rem;
+    margin-top: 0.45rem;
+    padding-top: 0.45rem;
+    border-top: 1px solid var(--ok-glass-border);
+  }
+
+  &__stat {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.72rem;
+  }
+
+  &__icon {
+    font-family: 'Material Symbols Outlined', inherit;
+    font-size: 14px;
+    line-height: 1;
+    flex-shrink: 0;
+    font-variation-settings: 'FILL' 1;
+
+    &--papers { color: var(--ok-on-surface-variant); }
+    &--seeds { color: #4caf50; }
+    &--gold { color: #f5b400; }
+    &--silver { color: #cbd2da; }
+  }
+
+  &__stat-label {
+    font-weight: 500;
+    color: var(--ok-outline);
+  }
+
+  &__stat-value {
+    font-weight: 700;
+    color: var(--ok-on-surface);
+    margin-left: auto;
     font-variant-numeric: tabular-nums;
   }
 
