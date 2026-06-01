@@ -4,7 +4,7 @@
       <div class="citgraph__empty">
         <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
         <h2>Louvain Community Clustering</h2>
-        <p>No graph has been constructed yet. Go to the <a routerLink="../ok">OK-Graph</a> tab to explore surrounding literature and generate the community clusters.</p>
+        <p>No graph has been constructed yet. Go to the <a routerLink="../ok">OK-Graph</a> view to explore surrounding literature and generate the community clusters.</p>
       </div>
     }
 
@@ -13,6 +13,14 @@
         <!-- Toolbar -->
         <div class="citgraph__toolbar">
           <div class="citgraph__toolbar-left">
+            <a
+              class="citgraph__back-btn"
+              routerLink="../ok"
+              title="Back to OK-Graph"
+            >
+              <span class="material-symbols-outlined">arrow_back</span>
+              Back to OK-Graph
+            </a>
             <span class="citgraph__stats">
               @if (showCommunities()) {
                 {{ displayNodes().length }} clusters · {{ layoutNodes().length }} papers
@@ -33,6 +41,20 @@
                   }
                 </select>
                 <span class="citgraph__modularity" title="Modularity of the finest partition">Q={{ louvainResult()!.modularity.toFixed(3) }}</span>
+              </div>
+            }
+            @if (summaryProgress().total > 0) {
+              <div class="summary-progress" [title]="summaryRunning() ? 'Summarizing clusters with AI' : 'Cluster summaries ready'">
+                <div class="summary-progress__track">
+                  <div class="summary-progress__bar" [style.width.%]="summaryPercent()"></div>
+                </div>
+                <span class="summary-progress__label">
+                  @if (summaryRunning()) {
+                    Summaries {{ summaryProgress().done }}/{{ summaryProgress().total }}
+                  } @else {
+                    Summaries ready
+                  }
+                </span>
               </div>
             }
           </div>
@@ -169,6 +191,26 @@
                 }
 
                 <div class="citgraph__panel-section">
+                  <h5 class="citgraph__panel-section-title">AI summary</h5>
+                  @if (clusterSummary(); as s) {
+                    @if (s.status === 'done') {
+                      @if (s.title) {
+                        <p class="citgraph__summary-title">{{ s.title }}</p>
+                      }
+                      <p class="citgraph__panel-abstract">{{ s.summary }}</p>
+                    } @else if (s.status === 'error') {
+                      <p class="citgraph__summary-pending">Summary unavailable for this cluster.</p>
+                    } @else {
+                      <p class="citgraph__summary-pending">Summarizing this cluster…</p>
+                    }
+                  } @else if (summaryRunning()) {
+                    <p class="citgraph__summary-pending">Summarizing clusters… ({{ summaryProgress().done }}/{{ summaryProgress().total }})</p>
+                  } @else {
+                    <p class="citgraph__summary-pending">No summary available.</p>
+                  }
+                </div>
+
+                <div class="citgraph__panel-section">
                   <h5 class="citgraph__panel-section-title">Papers ({{ cluster.paperCount }})</h5>
                   <ul class="citgraph__cluster-list">
                     @for (p of cluster.papers; track p.id) {
@@ -249,24 +291,7 @@
             </aside>
           }
 
-          <!-- Community legend -->
-          @if (showCommunities() && communityLegend().length) {
-            <div class="citgraph__legend">
-              <h5 class="citgraph__legend-title">Communities · click to inspect</h5>
-              @for (c of communityLegend(); track c.id) {
-                <button
-                  type="button"
-                  class="citgraph__legend-item"
-                  [class.citgraph__legend-item--active]="selectedClusterId() === c.id"
-                  (click)="inspectCluster(c.id)"
-                >
-                  <span class="citgraph__legend-swatch" [style.background]="c.color"></span>
-                  <span class="citgraph__legend-label">{{ c.name }}</span>
-                  <span class="citgraph__legend-count">{{ c.count }}</span>
-                </button>
-              }
-            </div>
-          }
+
         </div>
       </div>
     }

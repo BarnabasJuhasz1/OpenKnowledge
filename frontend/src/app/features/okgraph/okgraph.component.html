@@ -283,6 +283,15 @@
             </div>
 
             <div class="ok-graph-header__actions">
+              <!-- Clear Graph -->
+              <button
+                class="graph-settings__btn graph-settings__btn--danger"
+                (click)="requestClearGraph()"
+                title="Clear OK-Graph"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              </button>
+
               <!-- Settings -->
               <div class="graph-settings">
                 <button
@@ -420,6 +429,21 @@
                         <span class="graph-settings__knob"></span>
                       </button>
                     </label>
+                    <label class="graph-settings__row">
+                      <span class="graph-settings__label">
+                        Unified vertical expansion
+                        <span class="graph-settings__hint">make all horizontal lane heights identical</span>
+                      </span>
+                      <button
+                        class="graph-settings__switch"
+                        [class.graph-settings__switch--on]="unifiedVerticalExpansion()"
+                        (click)="unifiedVerticalExpansion.set(!unifiedVerticalExpansion())"
+                        role="switch"
+                        [attr.aria-checked]="unifiedVerticalExpansion()"
+                      >
+                        <span class="graph-settings__knob"></span>
+                      </button>
+                    </label>
 
                     <div class="graph-settings__subhead">Transparency</div>
                     <div class="graph-settings__slider-row">
@@ -481,6 +505,8 @@
                     <div class="graph-settings__row">
                       <button
                         class="graph-settings__view-clusters-btn"
+                        [disabled]="isViewClustersDisabled()"
+                        [title]="isViewClustersDisabled() ? 'Clustering is disabled for graphs with more than 3,000 papers' : 'View hierarchical clusters and summaries'"
                         (click)="viewClusters()"
                       >
                         <span class="material-symbols-outlined">account_tree</span>
@@ -837,23 +863,8 @@
 
         @if (!panelCollapsed()) {
           <aside class="detail-panel">
-            <div class="detail-panel__add-section">
-              <h5 class="detail-panel__section-title">Cluster Hierarchy</h5>
-              <p class="detail-panel__hint">{{ placedCount() }} nodes placed. Scroll to zoom, drag to pan. Use a node’s side arrows or double-click it to drill into its sub-clusters.</p>
-              <button class="detail-panel__remove-btn" (click)="clearGraph()" style="margin-top: 12px; width: 100%; display: flex; justify-content: center; gap: 8px;">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                Clear OK-Graph
-              </button>
-            </div>
 
             @if (selectedPaper(); as paper) {
-              <div class="detail-panel__header">
-                <h3 class="detail-panel__title">
-                  <span class="detail-panel__letter material-symbols-outlined">{{ getArchetypeIcon(paper.predicted_main_archetype) }}</span>
-                  Paper Details
-                </h3>
-                <button class="detail-panel__close" (click)="closePanel()">&times;</button>
-              </div>
               <div class="detail-panel__body">
                 <h4 class="detail-panel__paper-title">{{ paper.title }}</h4>
                 @if (authorLine(paper)) {
@@ -935,3 +946,19 @@
     }
   </div>
 </div>
+
+<!-- Clear OK-Graph Confirmation Modal -->
+@if (clearConfirmOpen()) {
+  <div class="graph-modal-overlay" (click)="cancelClearGraph()">
+    <div class="graph-modal" (click)="$event.stopPropagation()">
+      <h3 class="graph-modal__title">Clear OK-Graph?</h3>
+      <p class="graph-modal__text">
+        Are you sure you want to clear the entire graph? This will remove all placed papers, seeds, and links.
+      </p>
+      <div class="graph-modal__actions">
+        <button class="graph-modal__btn" (click)="cancelClearGraph()">Cancel</button>
+        <button class="graph-modal__btn graph-modal__btn--danger" (click)="confirmClearGraph()">Clear Graph</button>
+      </div>
+    </div>
+  </div>
+}

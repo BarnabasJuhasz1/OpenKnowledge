@@ -1,7 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import { CitGraphNode, CitGraphEdge } from './citgraph.service';
 import { louvain, LouvainResult } from '../../features/citgraph/louvain';
-import { LayoutEdge } from '../../features/graph/graph-layout';
+import { LayoutEdge } from '../../features/okgraph/graph-layout';
 import { Paper } from '../models/paper.model';
 import { matchesNodeKeywords } from '../../shared/utils/keyword-match';
 
@@ -49,6 +49,11 @@ export class OkGraphStateService {
   /** Nodes currently on the OK-Graph canvas and the manual links between them. */
   readonly placed = signal<PlacedNode[]>([]);
   readonly links = signal<LayoutEdge[]>([]);
+
+  /** Open/collapsed state of the right-side details panel. Defaults to true (collapsed) when no paper selected. */
+  readonly panelCollapsed = signal(true);
+  /** User preference tracking if the panel should automatically open on selecting a paper. Defaults to true. */
+  readonly autoOpenEnabled = signal(true);
 
   /** Whether the keyword filter is currently applied on the OK-Graph. */
   readonly filterActive = signal(false);
@@ -166,6 +171,8 @@ export class OkGraphStateService {
     this.hasContent.set(false);
     this.placed.set([]);
     this.links.set([]);
+    this.panelCollapsed.set(true);
+    this.autoOpenEnabled.set(true);
     this.filterActive.set(false);
     this.prefiltered.set(false);
     this.keywords.set([]);

@@ -1,68 +1,74 @@
 <div class="query-input">
   <div class="query-input__field">
-  <div class="query-input__row">
-    <button
-      class="query-input__icon-btn"
-      (click)="toggleShelf()"
-      title="Reuse a saved query from your library"
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-    </button>
-    <textarea
-      class="query-input__textarea"
-      [value]="query()"
-      (input)="query.set($any($event.target).value)"
-      (keydown)="onKeydown($event)"
-      placeholder="e.g. &quot;large language model&quot; AND quantization AND pruning"
-      [attr.rows]="compact ? 1 : 3"
-      [disabled]="loading"
-    ></textarea>
-    @if (query().trim()) {
-      <button
-        class="query-input__icon-btn query-input__icon-btn--save"
-        (click)="saveToShelf()"
-        title="Save query to shelf"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/><line x1="12" y1="7" x2="12" y2="13"/><line x1="9" y1="10" x2="15" y2="10"/></svg>
-      </button>
-    }
-  </div>
+    <div class="query-input__row">
+      <textarea
+        class="query-input__textarea"
+        [value]="query()"
+        (input)="query.set($any($event.target).value)"
+        (keydown)="onKeydown($event)"
+        placeholder="e.g. &quot;large language model&quot; AND quantization AND pruning"
+        [attr.rows]="compact ? 1 : 3"
+        [disabled]="loading"
+      ></textarea>
 
-  <!-- Shelf dropdown -->
-  @if (shelfOpen()) {
-    <div class="query-input__shelf-dropdown">
-      @if (recentItems().length === 0) {
-        <div class="query-input__shelf-empty">No saved queries yet</div>
-      } @else {
-        @for (item of recentItems(); track item.id) {
-          <button class="query-input__shelf-item" (click)="pickShelfItem(item)">
-            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <span class="query-input__shelf-item-label">{{ item.label || item.query_text }}</span>
-            @if (item.label && item.label !== item.query_text) {
-              <span class="query-input__shelf-item-query">{{ item.query_text }}</span>
+      <div class="query-input__actions">
+        <button
+          class="query-input__icon-btn query-input__icon-btn--save"
+          [disabled]="loading || !query().trim()"
+          (click)="saveToShelf()"
+          title="Save query to shelf"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/><line x1="12" y1="7" x2="12" y2="13"/><line x1="9" y1="10" x2="15" y2="10"/></svg>
+        </button>
+
+        <button
+          class="query-input__icon-btn query-input__icon-btn--shelf"
+          (click)="toggleShelf()"
+          title="Reuse a saved query from your library"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        </button>
+
+        @if (!compact) {
+          <button
+            class="query-input__btn"
+            [class.query-input__btn--loading]="loading"
+            [disabled]="loading || !query().trim()"
+            (click)="submit()"
+          >
+            @if (loading) {
+              <span class="spinner"></span> Searching…
+            } @else {
+              Search
             }
           </button>
         }
-      }
+      </div>
     </div>
-  }
+
+    <!-- Shelf dropdown -->
+    @if (shelfOpen()) {
+      <div class="query-input__shelf-dropdown">
+        @if (recentItems().length === 0) {
+          <div class="query-input__shelf-empty">No saved queries yet</div>
+        } @else {
+          @for (item of recentItems(); track item.id) {
+            <button class="query-input__shelf-item" (click)="pickShelfItem(item)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <span class="query-input__shelf-item-label">{{ item.label || item.query_text }}</span>
+              @if (item.label && item.label !== item.query_text) {
+                <span class="query-input__shelf-item-query">{{ item.query_text }}</span>
+              }
+            </button>
+          }
+        }
+      </div>
+    }
   </div>
 
   @if (!compact) {
     <div class="query-input__footer">
       <span class="query-input__hint">Ctrl+Enter to search</span>
-      <button
-        class="query-input__btn"
-        [class.query-input__btn--loading]="loading"
-        [disabled]="loading || !query().trim()"
-        (click)="submit()"
-      >
-        @if (loading) {
-          <span class="spinner"></span> Searching…
-        } @else {
-          Search
-        }
-      </button>
     </div>
   }
 </div>

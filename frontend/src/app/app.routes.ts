@@ -65,11 +65,7 @@ export const routes: Routes = [
               import('./features/graph-shell/graph-shell.component').then(m => m.GraphShellComponent),
             children: [
               { path: '', pathMatch: 'full', redirectTo: 'ok' },
-              {
-                path: 'standard',
-                loadComponent: () =>
-                  import('./features/graph/graph.component').then(m => m.GraphComponent),
-              },
+
               {
                 path: 'ok',
                 loadComponent: () =>

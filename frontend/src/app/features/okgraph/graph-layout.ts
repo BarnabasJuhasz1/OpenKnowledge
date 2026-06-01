@@ -131,6 +131,130 @@ export function layoutByYear(items: LayoutItem[], edges: LayoutEdge[]): GraphLay
   return { nodes, edges: validEdges, yearColumns, dividers, width, height };
 }
 
+/**
+ * Order the highest-level cluster lanes (top → bottom) so the merge bridges
+ * drawn between connected clusters overlap as little as possible.
+ *
+ * The previous ordering was by descending cluster size alone, independent of how
+ * clusters connect, so bridges often spanned many lanes and crossed. This instead
+ * lays lanes out from the connectivity of the cluster graph:
+ *   - the most-connected cluster (highest total bridge weight) is seeded near the
+ *     middle lane,
+ *   - clusters are then pulled toward the mean lane of their connected neighbours
+ *     (weighted barycentre seriation), so a single-connection cluster ends up
+ *     adjacent to its one neighbour and tightly-linked clusters sit together,
+ *   - clusters with no bridges (incl. the Miscellaneous group) carry no crossing
+ *     cost, so they are parked at the bottom by descending size, Miscellaneous
+ *     always last.
+ *
+ * `pairWeight` is keyed by the unordered top-cluster pair `"min|max"` → number of
+ * citation edges joining the two clusters (Miscellaneous excluded upstream,
+ * exactly as the bridges are derived).
+ */
+export function orderLanesByConnectivity(
+  clusters: number[],
+  pairWeight: Map<string, number>,
+  sizeOf: Map<number, number>,
+  misc: number | null,
+): number[] {
+  const sizeDesc = (a: number, b: number) =>
+    ((sizeOf.get(b) ?? 0) - (sizeOf.get(a) ?? 0)) || (a - b);
+
+  // Weighted cluster adjacency + degree from the bridge pair weights.
+  const adj = new Map<number, Map<number, number>>();
+  const deg = new Map<number, number>();
+  for (const c of clusters) { adj.set(c, new Map()); deg.set(c, 0); }
+  for (const [key, w] of pairWeight) {
+    if (w <= 0) continue;
+    const [a, b] = key.split('|').map(Number);
+    if (!adj.has(a) || !adj.has(b)) continue;
+    adj.get(a)!.set(b, (adj.get(a)!.get(b) ?? 0) + w);
+    adj.get(b)!.set(a, (adj.get(b)!.get(a) ?? 0) + w);
+    deg.set(a, deg.get(a)! + w);
+    deg.set(b, deg.get(b)! + w);
+  }
+
+  const connected = clusters.filter(c => (deg.get(c) ?? 0) > 0);
+  const isolated = clusters.filter(c => (deg.get(c) ?? 0) === 0).sort(sizeDesc);
+  // Miscellaneous (if present) always last among the isolated lanes.
+  if (misc != null) {
+    const i = isolated.indexOf(misc);
+    if (i >= 0) { isolated.splice(i, 1); isolated.push(misc); }
+  }
+
+  if (connected.length <= 1) return [...connected, ...isolated];
+
+  // Connected components of the bridge graph: bridges never join two different
+  // components, so laying each component out as one contiguous block of lanes is
+  // crossing-free between components — only the order *within* a component and
+  // the order *of* the components matter.
+  const seenC = new Set<number>();
+  const components: number[][] = [];
+  for (const start of connected) {
+    if (seenC.has(start)) continue;
+    const comp: number[] = [];
+    const stack = [start];
+    seenC.add(start);
+    while (stack.length) {
+      const c = stack.pop()!;
+      comp.push(c);
+      for (const d of adj.get(c)!.keys()) {
+        if (!seenC.has(d)) { seenC.add(d); stack.push(d); }
+      }
+    }
+    components.push(comp);
+  }
+
+  // Hub-centred seriation of a single component:
+  //   - seed a hub-centred order: strongest cluster in the middle, the rest
+  //     fanned out alternately above/below it,
+  //   - then run weighted barycentre sweeps — pull each cluster toward the mean
+  //     lane of its neighbours and re-rank to integer lanes. Re-ranking each
+  //     sweep keeps the coordinates spread out (a plain repeated average on a
+  //     connected graph would collapse them all to the mean).
+  const seriate = (members: number[]): number[] => {
+    if (members.length <= 1) return members.slice();
+    const byDeg = [...members].sort(
+      (a, b) => (deg.get(b)! - deg.get(a)!) || sizeDesc(a, b),
+    );
+    const hi: number[] = [];
+    const lo: number[] = [];
+    byDeg.forEach((c, i) => (i % 2 === 0 ? lo : hi).push(c));
+    const order = [...hi.reverse(), ...lo];
+
+    const SWEEPS = 12;
+    let coord = new Map(order.map((c, i) => [c, i]));
+    for (let s = 0; s < SWEEPS; s++) {
+      const next = new Map(coord);
+      for (const c of order) {
+        const nb = adj.get(c)!;
+        let sum = 0, wsum = 0;
+        for (const [d, w] of nb) { sum += w * coord.get(d)!; wsum += w; }
+        if (wsum > 0) next.set(c, sum / wsum);
+      }
+      order.sort((a, b) => (next.get(a)! - next.get(b)!) || (coord.get(a)! - coord.get(b)!));
+      coord = new Map(order.map((c, i) => [c, i]));
+    }
+    return order;
+  };
+
+  // Order the components: the most-connected component (largest internal bridge
+  // weight) sits in the middle, the rest fanned out around it — so the overall
+  // hub cluster lands near the centre lane.
+  const compWeight = (comp: number[]) => comp.reduce((s, c) => s + deg.get(c)!, 0);
+  const byWeight = [...components].sort(
+    (a, b) => (compWeight(b) - compWeight(a)) || (b.length - a.length),
+  );
+  const cHi: number[][] = [];
+  const cLo: number[][] = [];
+  byWeight.forEach((comp, i) => (i % 2 === 0 ? cLo : cHi).push(comp));
+  const orderedComps = [...cHi.reverse(), ...cLo];
+
+  const result: number[] = [];
+  for (const comp of orderedComps) result.push(...seriate(comp));
+  return [...result, ...isolated];
+}
+
 export function edgePath(
   from: { x: number; y: number },
   to: { x: number; y: number },

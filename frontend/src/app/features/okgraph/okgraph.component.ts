@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, effect, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -381,7 +381,7 @@ export class OkGraphComponent implements OnInit {
   // Highest-level cluster (topCluster) the user has selected, or null.
   readonly selectedClusterId = signal<number | null>(null);
   readonly hoveredNodeId = signal<string | null>(null);
-  readonly panelCollapsed = signal(false);
+  readonly panelCollapsed = this.state.panelCollapsed;
   readonly zoom = signal(1);
   readonly panX = signal(0);
   readonly panY = signal(0);
@@ -390,6 +390,7 @@ export class OkGraphComponent implements OnInit {
 
   // Settings panel.
   readonly settingsOpen = signal(false);
+  readonly clearConfirmOpen = signal(false);
   // Star-marker visibility (icons only; nodes stay on the canvas).
   readonly showGoldStars = signal(true);
   readonly showSilverStars = signal(true);
@@ -401,6 +402,8 @@ export class OkGraphComponent implements OnInit {
   // Merge the blobs of related top-level clusters (connected one level below the
   // current view) by drawing a blended bridge between them.
   readonly blobMerging = signal(true);
+  // Unified vertical expansion option (make all horizontal lane heights identical).
+  readonly unifiedVerticalExpansion = signal(false);
 
   // Transparency settings (0% to 100% visibility/opacity, default 50%).
   readonly bridgeTransparency = signal<number>(50);
@@ -409,7 +412,15 @@ export class OkGraphComponent implements OnInit {
   toggleSettings(): void { this.settingsOpen.update(v => !v); }
   closeSettings(): void { this.settingsOpen.set(false); }
 
+  requestClearGraph(): void { this.clearConfirmOpen.set(true); }
+  cancelClearGraph(): void { this.clearConfirmOpen.set(false); }
+  confirmClearGraph(): void {
+    this.clearGraph();
+    this.clearConfirmOpen.set(false);
+  }
+
   viewClusters(): void {
+    if (this.isViewClustersDisabled()) return;
     const projectId = this.projectContext.activeProjectId();
     this.router.navigate(['/dashboard', projectId, 'graph', 'clustering']);
   }
@@ -490,6 +501,7 @@ export class OkGraphComponent implements OnInit {
   // --- hierarchy helpers -----------------------------------------------------
 
   private readonly baseNodes = computed(() => this.state.nodes());
+  readonly isViewClustersDisabled = computed(() => this.baseNodes().length > 3000);
   private readonly levels = computed(() => this.state.louvain()?.levels ?? []);
   private readonly topLevel = computed(() => this.levels().length - 1);
 
@@ -532,6 +544,20 @@ export class OkGraphComponent implements OnInit {
       const lv = this.state.louvain();
       if (lv && this.state.placed().length === 0) {
         this.seedTopLevel();
+      }
+    }, { allowSignalWrites: true });
+
+    // Handle auto-collapse/expand of the right-side detail panel on paper selection changes
+    effect(() => {
+      const selectedId = this.selectedNodeId();
+      if (selectedId) {
+        // A paper was selected. Automatically open the panel if user hasn't manually collapsed it
+        if (untracked(() => this.state.autoOpenEnabled())) {
+          this.panelCollapsed.set(false);
+        }
+      } else {
+        // A paper was deselected. Automatically collapse the panel.
+        this.panelCollapsed.set(true);
       }
     }, { allowSignalWrites: true });
   }
@@ -726,7 +752,34 @@ export class OkGraphComponent implements OnInit {
       arr.push(p);
       if (arr.length > maxCell) maxCell = arr.length;
     }
-    const laneHeight = Math.max(LANE_MIN_HEIGHT, maxCell * LANE_NODE_VGAP + LANE_PAD);
+
+    const maxCellForLane = new Map<number, number>();
+    for (let i = 0; i < numLanes; i++) {
+      maxCellForLane.set(i, 1);
+    }
+    for (const [key, arr] of cells.entries()) {
+      const lane = +key.split('|')[0];
+      const count = arr.length;
+      if (count > (maxCellForLane.get(lane) ?? 1)) {
+        maxCellForLane.set(lane, count);
+      }
+    }
+
+    const laneHeights: number[] = [];
+    const isUnified = this.unifiedVerticalExpansion();
+    for (let i = 0; i < numLanes; i++) {
+      const cellCount = isUnified ? maxCell : (maxCellForLane.get(i) ?? 1);
+      laneHeights.push(Math.max(LANE_MIN_HEIGHT, cellCount * LANE_NODE_VGAP + LANE_PAD));
+    }
+
+    const laneYStart: number[] = [TOP_PADDING];
+    for (let i = 1; i <= numLanes; i++) {
+      laneYStart.push(laneYStart[i - 1] + laneHeights[i - 1]);
+    }
+    const laneCenters: number[] = [];
+    for (let i = 0; i < numLanes; i++) {
+      laneCenters.push(laneYStart[i] + laneHeights[i] / 2);
+    }
 
     // Letters by placement order (stable as nodes are added).
     const letterOf = new Map<string, string>();
@@ -736,7 +789,7 @@ export class OkGraphComponent implements OnInit {
     const boxes = new Map<number, { minX: number; maxX: number; minY: number; maxY: number }>();
     for (const [key, members] of cells) {
       const lane = +key.split('|')[0];
-      const laneCenter = TOP_PADDING + lane * laneHeight + laneHeight / 2;
+      const laneCenter = laneCenters[lane];
       members.sort((a, b) => (b.paper.ok_score ?? 0) - (a.paper.ok_score ?? 0));
       const k = members.length;
       members.forEach((p, j) => {
@@ -782,7 +835,7 @@ export class OkGraphComponent implements OnInit {
       const clusterYears = years.filter(y => y >= minYear && y <= maxYear);
 
       const lane = laneIndex.get(topCluster) ?? 0;
-      const laneCenter = TOP_PADDING + lane * laneHeight + laneHeight / 2;
+      const laneCenter = laneCenters[lane];
 
       const points: { x: number; topY: number; bottomY: number }[] = [];
       for (const y of clusterYears) {
@@ -858,7 +911,7 @@ export class OkGraphComponent implements OnInit {
     // the representative papers of two sub-clusters in different top clusters share
     // a citation edge. The bridge is anchored between those representatives.
     const bridges = this.blobMerging()
-      ? this.buildBridges(top, topComm, laneIndex, laneHeight, boxes, nodes, years, yearX)
+      ? this.buildBridges(top, topComm, laneIndex, laneCenters, boxes, nodes, years, yearX)
       : [];
 
     const dividers: { x: number }[] = [];
@@ -867,12 +920,12 @@ export class OkGraphComponent implements OnInit {
     }
 
     const laneLines: { y: number }[] = [];
-    for (let i = 0; i <= numLanes; i++) laneLines.push({ y: TOP_PADDING + i * laneHeight });
+    for (let i = 0; i <= numLanes; i++) laneLines.push({ y: laneYStart[i] });
 
     const width = years.length
       ? yearX.get(years[years.length - 1])! + LEFT_PADDING + 40
       : 400;
-    const height = TOP_PADDING + numLanes * laneHeight + 20;
+    const height = laneYStart[numLanes] + 20;
 
     // Manual links between placed-with-year nodes.
     const known = new Set(placed.map(p => p.id));
@@ -906,7 +959,7 @@ export class OkGraphComponent implements OnInit {
     top: number,
     topComm: number[],
     laneIndex: Map<number, number>,
-    laneHeight: number,
+    laneCenters: number[],
     boxes: Map<number, { minX: number; maxX: number; minY: number; maxY: number }>,
     nodes: RenderNode[],
     years: number[],
@@ -966,7 +1019,7 @@ export class OkGraphComponent implements OnInit {
       if (placed) return { x: placed.x, y: placed.y };
       const parentTop = topComm[rep];
       const lane = laneIndex.get(parentTop) ?? 0;
-      const laneCenter = TOP_PADDING + lane * laneHeight + laneHeight / 2;
+      const laneCenter = laneCenters[lane];
       const box = boxes.get(parentTop);
       let x = repNode.year != null ? yearToX(repNode.year)
             : box ? (box.minX + box.maxX) / 2 : LEFT_PADDING;
@@ -1344,7 +1397,11 @@ export class OkGraphComponent implements OnInit {
   }
 
   closePanel(): void { this.selectedNodeId.set(null); }
-  togglePanel(): void { this.panelCollapsed.update(v => !v); }
+  togglePanel(): void {
+    const nextCollapsed = !this.panelCollapsed();
+    this.panelCollapsed.set(nextCollapsed);
+    this.state.autoOpenEnabled.set(!nextCollapsed);
+  }
 
   private lastW = 800;
   private lastH = 500;

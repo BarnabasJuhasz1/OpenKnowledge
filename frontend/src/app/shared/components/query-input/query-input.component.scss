@@ -16,8 +16,8 @@
 
   &__row {
     display: flex;
-    align-items: center;
-    gap: 0.35rem;
+    align-items: flex-end;
+    gap: 0.5rem;
   }
 
   &__textarea {
@@ -49,30 +49,44 @@
     }
   }
 
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+
   &__icon-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 38px;
+    height: 38px;
     border: 1px solid var(--ok-outline-variant);
-    border-radius: var(--ok-radius-sm);
+    border-radius: var(--ok-radius);
     background: var(--ok-surface-container);
     color: var(--ok-on-surface-variant);
     cursor: pointer;
     flex-shrink: 0;
+    box-sizing: border-box;
     transition: background var(--ok-transition-fast), color var(--ok-transition-fast), border-color var(--ok-transition-fast);
 
-    &:hover {
+    &:hover:not(:disabled) {
       background: rgba(var(--ok-primary-rgb), 0.15);
       color: var(--ok-primary);
       border-color: rgba(var(--ok-primary-rgb), 0.3);
     }
 
-    &--save:hover {
+    &--save:hover:not(:disabled) {
       background: rgba(16, 185, 129, 0.15);
       color: #10b981;
       border-color: rgba(16, 185, 129, 0.3);
+    }
+
+    &:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      pointer-events: none;
     }
   }
 
@@ -164,7 +178,9 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    padding: 0.6rem 1.4rem;
+    height: 38px;
+    padding: 0 1.4rem;
+    box-sizing: border-box;
     background: var(--ok-gradient-primary);
     color: #fff;
     border: none;

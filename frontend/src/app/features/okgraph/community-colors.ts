@@ -49,3 +49,12 @@ export function withAlpha(hex: string, alpha: number): string {
   const [r, g, b] = parseHex(hex);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
+
+/** Midpoint mix of two hex colours — used to tint a merge bridge so it reads as
+ *  a blend of the two clusters it joins. `t` is A→B weight (0.5 = even). */
+export function blendColors(a: string, b: string, t = 0.5): string {
+  const [ar, ag, ab] = parseHex(a);
+  const [br, bg, bb] = parseHex(b);
+  const mix = (x: number, y: number) => x + (y - x) * t;
+  return `#${toHex(mix(ar, br))}${toHex(mix(ag, bg))}${toHex(mix(ab, bb))}`;
+}

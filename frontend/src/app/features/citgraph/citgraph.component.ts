@@ -1,8 +1,10 @@
 import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { CitGraphNode, CitGraphResponse } from '../../core/services/citgraph.service';
 import { louvain, getCommunitiesAtLevel, LouvainResult } from './louvain';
 import { OkGraphStateService } from '../../core/services/okgraph-state.service';
+import { ClusterSummaryService, ClusterSummary } from '../../core/services/cluster-summary.service';
 import { getArchetypeIcon } from '../../shared/utils/archetype-icons';
 
 interface LayoutNode {
@@ -50,12 +52,30 @@ const MISC_COLOR = '#6b7280';
 @Component({
   selector: 'app-citgraph',
   standalone: true,
-  imports: [DecimalPipe],
+  imports: [DecimalPipe, RouterLink],
   templateUrl: './citgraph.component.html',
   styleUrl: './citgraph.component.scss',
 })
 export class CitGraphComponent {
   private readonly okGraphState = inject(OkGraphStateService);
+  private readonly summaries = inject(ClusterSummaryService);
+
+  /** Background cluster-summarization progress (drives the toolbar bar). */
+  readonly summaryProgress = this.summaries.progress;
+  readonly summaryRunning = this.summaries.running;
+  readonly summaryPercent = this.summaries.percent;
+
+  /**
+   * AI summary for the inspected cluster at the active level. Display level L
+   * (≥1) maps to hierarchy index L-1, and the cluster id is the community id at
+   * that index — the exact key the summary service stores under (both run the
+   * same deterministic Louvain over the shared raw graph).
+   */
+  readonly clusterSummary = computed<ClusterSummary | undefined>(() => {
+    const c = this.clusterInspection();
+    if (!c) return undefined;
+    return this.summaries.summaryAt(c.level - 1, c.id);
+  });
 
   getArchetypeIcon(archetype?: string | null): string {
     return getArchetypeIcon(archetype);
