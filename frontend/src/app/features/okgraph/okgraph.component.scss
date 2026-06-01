@@ -600,6 +600,14 @@
     position: relative;
   }
 
+  &__canvas-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    position: relative;
+  }
+
   &__canvas {
     flex: 1;
     min-height: 0;
@@ -611,6 +619,81 @@
     &--panning { cursor: grabbing; }
   }
 }
+
+// Static white header on top of the years
+.ok-graph-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 1.5rem;
+  background: var(--ok-surface-container-lowest);
+  border-bottom: 1px solid var(--ok-outline-variant);
+  z-index: 10;
+
+  &__stats {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  &__stat {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  &__icon {
+    font-size: 18px;
+    font-variation-settings: 'FILL' 1;
+
+    &--clusters {
+      color: var(--ok-primary);
+    }
+    &--papers {
+      color: var(--ok-on-surface-variant);
+    }
+    &--seeds {
+      color: #4caf50;
+    }
+    &--gold {
+      color: #f5b400;
+    }
+    &--silver {
+      color: #cbd2da;
+    }
+  }
+
+  &__label {
+    font-family: var(--ok-font-label);
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--ok-outline);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  &__value {
+    font-family: var(--ok-font-label);
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: var(--ok-on-surface);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__divider {
+    width: 1px;
+    height: 18px;
+    background: var(--ok-outline-variant);
+  }
+}
+
 
 // Zoom controls
 .zoom-controls {
@@ -662,11 +745,9 @@
   }
 }
 
-// Display settings (gear + popover), stacked above the zoom controls.
+// Display settings (gear + popover), dropdown in header actions.
 .graph-settings {
-  position: absolute;
-  bottom: calc(0.75rem + 38px);
-  left: 0.75rem;
+  position: relative;
   z-index: 11;
 
   &__btn {
@@ -675,13 +756,11 @@
     justify-content: center;
     width: 30px;
     height: 30px;
-    border: 1px solid var(--ok-glass-border);
+    border: 1px solid var(--ok-outline-variant);
     border-radius: var(--ok-radius);
-    background: var(--ok-glass-bg);
-    backdrop-filter: blur(var(--ok-glass-blur));
+    background: var(--ok-surface-container-lowest);
     color: var(--ok-on-surface-variant);
     cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
     transition: background var(--ok-transition-fast), color var(--ok-transition-fast);
     &:hover { background: var(--ok-surface-container-high); color: var(--ok-on-surface); }
     &--active { color: var(--ok-primary); border-color: rgba(var(--ok-primary-rgb), 0.5); }
@@ -695,8 +774,9 @@
 
   &__panel {
     position: absolute;
-    bottom: calc(100% + 8px);
-    left: 0;
+    top: calc(100% + 8px);
+    right: 0;
+    left: auto;
     z-index: 15;
     width: 250px;
     max-height: 70vh;
@@ -807,6 +887,95 @@
     transition: transform var(--ok-transition-fast);
     .graph-settings__switch--on & { transform: translateX(16px); }
   }
+
+  &__slider-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0.55rem 0.85rem;
+  }
+
+  &__slider-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  &__slider-label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--ok-on-surface);
+  }
+
+  &__slider-value {
+    font-family: var(--ok-font-label);
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--ok-primary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__range-input {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--ok-outline-variant);
+    outline: none;
+    cursor: pointer;
+    transition: background var(--ok-transition);
+
+    &::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--ok-primary-raw);
+      border: 2px solid var(--ok-surface-container-lowest);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+      cursor: pointer;
+      transition: transform var(--ok-transition-fast);
+
+      &:hover {
+        transform: scale(1.15);
+      }
+    }
+  }
+
+  &__view-clusters-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--ok-space-2);
+    width: 100%;
+    padding: 0.55rem 0.9rem;
+    border: none;
+    border-radius: var(--ok-radius-md);
+    background: var(--ok-gradient-primary);
+    color: #fff;
+    font-family: var(--ok-font-label);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(var(--ok-primary-rgb), 0.25);
+    transition: all var(--ok-transition);
+
+    .material-symbols-outlined {
+      font-size: 16px;
+    }
+
+    &:hover {
+      box-shadow: 0 6px 16px rgba(var(--ok-primary-rgb), 0.35);
+      filter: brightness(1.08);
+      transform: translateY(-1px);
+    }
+
+    &:active {
+      transform: translateY(0);
+    }
+  }
 }
 
 .graph-svg {
@@ -829,6 +998,10 @@
     fill-opacity: 0.09;
     stroke-opacity: 0.45;
     stroke-width: 1.5;
+    cursor: pointer;
+    transition: fill-opacity 0.15s, stroke-opacity 0.15s, stroke-width 0.15s;
+
+    &:hover { fill-opacity: 0.14; }
 
     // The Miscellaneous catch-all reads as a muted, dashed lane so it is clearly
     // not one of the "real" topic clusters.
@@ -836,6 +1009,29 @@
       fill-opacity: 0.06;
       stroke-opacity: 0.55;
       stroke-dasharray: 8 6;
+    }
+
+    // A selected cluster reads brighter, with a stronger outline.
+    &--selected {
+      fill-opacity: 0.2;
+      stroke-opacity: 0.9;
+      stroke-width: 2.5;
+    }
+  }
+
+  // Merge neck joining two cluster blobs. Slightly stronger fill than a blob so
+  // the overlap reads as a deliberate connection rather than a rendering seam.
+  &__bridge {
+    fill-opacity: 0.12;
+    stroke-opacity: 0.4;
+    stroke-width: 1.5;
+    pointer-events: none;
+    transition: fill-opacity 0.15s, stroke-opacity 0.15s, stroke-width 0.15s;
+
+    &--highlighted {
+      fill-opacity: 0.28;
+      stroke-opacity: 0.85;
+      stroke-width: 2.5;
     }
   }
 
@@ -962,6 +1158,107 @@
 }
 
 // Candidate popup
+// Selected-cluster popup, pinned to the top-left of the canvas.
+.cluster-popup {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 16;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  max-width: 280px;
+  padding: 0.65rem 0.75rem;
+  background: var(--ok-glass-bg-floating);
+  backdrop-filter: blur(var(--ok-glass-blur-floating));
+  border: 1px solid var(--ok-glass-border);
+  border-radius: var(--ok-radius-md);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+
+  &__swatch {
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    margin-top: 2px;
+    border-radius: 4px;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15) inset;
+  }
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+  }
+
+  &__label {
+    font-family: var(--ok-font-label);
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: var(--ok-outline);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  &__name {
+    font-family: var(--ok-font-label);
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: var(--ok-on-surface);
+  }
+
+  &__rep {
+    font-size: 0.8rem;
+    color: var(--ok-on-surface-variant);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__meta {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--ok-outline);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__summary-title {
+    margin-top: 0.35rem;
+    font-family: var(--ok-font-label);
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--ok-on-surface);
+  }
+
+  &__summary {
+    margin-top: 0.2rem;
+    font-size: 0.76rem;
+    line-height: 1.45;
+    color: var(--ok-on-surface-variant);
+    max-height: 160px;
+    overflow-y: auto;
+
+    &--pending {
+      font-style: italic;
+      color: var(--ok-outline);
+    }
+  }
+
+  &__close {
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    color: var(--ok-on-surface-variant);
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 0.15rem;
+    border-radius: var(--ok-radius-sm);
+    transition: background var(--ok-transition-fast), color var(--ok-transition-fast);
+    &:hover { background: var(--ok-surface-container-high); color: var(--ok-on-surface); }
+  }
+}
+
 .expand-popup-backdrop {
   position: absolute;
   inset: 0;
@@ -1042,12 +1339,17 @@
 }
 
 .panel-toggle {
-  z-index: 12;
+  // The toggle floats too, riding the floating panel's left edge. When the
+  // panel is open it sits at right:360px; when collapsed it hugs the right edge.
+  position: absolute;
+  top: 50%;
+  right: 360px;
+  transform: translateY(-50%);
+  z-index: 21;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 22px;
-  align-self: center;
   height: 48px;
   border: 1px solid var(--ok-outline-variant);
   border-right: none;
@@ -1056,17 +1358,26 @@
   color: var(--ok-on-surface-variant);
   cursor: pointer;
   flex-shrink: 0;
-  margin-right: -1px;
   box-shadow: -2px 0 6px rgba(0, 0, 0, 0.1);
-  transition: background var(--ok-transition-fast), color var(--ok-transition-fast);
+  transition: background var(--ok-transition-fast), color var(--ok-transition-fast), right var(--ok-transition-fast);
   &:hover { background: var(--ok-surface-container-high); color: var(--ok-on-surface); }
+  &--collapsed { right: 0; }
 }
 
 .detail-panel {
+  // Float the panel as an overlay anchored to the canvas-wrap's right edge so
+  // it sits ON TOP of the header + canvas instead of stealing layout width and
+  // squeezing the header graphics to the left.
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
   width: 360px;
-  flex-shrink: 0;
+  max-width: 100%;
+  z-index: 20;
   background: var(--ok-surface-container-low);
   border-left: 1px solid var(--ok-outline-variant);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
   display: flex;
   flex-direction: column;
   overflow-y: auto;

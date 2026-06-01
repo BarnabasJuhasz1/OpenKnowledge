@@ -1,12 +1,14 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { OkGraphStateService, PlacedNode } from '../../core/services/okgraph-state.service';
+import { ClusterSummaryService, ClusterSummary } from '../../core/services/cluster-summary.service';
 import { getCommunitiesAtLevel, louvain } from '../citgraph/louvain';
 import { Paper } from '../../core/models/paper.model';
 import { citNodeToPaper, repScore } from './cit-node';
-import { clusterColor, lighten, withAlpha, MISC_COLOR } from './community-colors';
-import { edgePath as buildEdgePath, LayoutEdge, TOP_PADDING } from '../graph/graph-layout';
+import { clusterColor, lighten, withAlpha, blendColors, MISC_COLOR } from './community-colors';
+import { edgePath as buildEdgePath, LayoutEdge, TOP_PADDING, orderLanesByConnectivity } from './graph-layout';
 import { getArchetypeIcon } from '../../shared/utils/archetype-icons';
 import { SearchStateService, paperId } from '../../core/services/search-state.service';
 import { CitGraphService, CitGraphNode, CitGraphEdge } from '../../core/services/citgraph.service';
@@ -44,6 +46,20 @@ interface RenderNode {
   rings: number[];     // radii of inner rings (one per representative level); [] for a leaf
 }
 
+/** A merged-blob connector between two highest-level cluster blobs whose
+ *  sub-clusters (one level below the current view) are connected. */
+interface Bridge {
+  key: string;         // unordered top-cluster pair key
+  path: string;        // ribbon path joining the two blobs
+  color: string;       // blended colour of the two clusters
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  colorStart: string;
+  colorEnd: string;
+}
+
 interface ExpandPopup {
   nodeId: string;
   direction: 'past' | 'future';
@@ -68,12 +84,14 @@ const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 })
 export class OkGraphComponent {
   readonly state = inject(OkGraphStateService);
+  readonly summaries = inject(ClusterSummaryService);
   private readonly searchState = inject(SearchStateService);
   private readonly citgraphSvc = inject(CitGraphService);
   private readonly demo = inject(DemoModeService);
   private readonly notify = inject(NotificationService);
   private readonly projectContext = inject(ProjectContextService);
   private readonly graphStore = inject(ProjectGraphSettingsService);
+  private readonly router = inject(Router);
 
   // Setup options
   readonly useOnlySelected = signal(true);
@@ -329,6 +347,8 @@ export class OkGraphComponent {
 
   readonly TOP_PADDING = TOP_PADDING;
   readonly selectedNodeId = signal<string | null>(null);
+  // Highest-level cluster (topCluster) the user has selected, or null.
+  readonly selectedClusterId = signal<number | null>(null);
   readonly hoveredNodeId = signal<string | null>(null);
   readonly panelCollapsed = signal(false);
   readonly zoom = signal(1);
@@ -347,9 +367,21 @@ export class OkGraphComponent {
   readonly onlyGoldNodes = signal(false);
   readonly onlySilverNodes = signal(false);
   readonly blobbyShapes = signal(true);
+  // Merge the blobs of related top-level clusters (connected one level below the
+  // current view) by drawing a blended bridge between them.
+  readonly blobMerging = signal(true);
+
+  // Transparency settings (0% to 100% transparency).
+  readonly bridgeTransparency = signal<number>(0);
+  readonly linkTransparency = signal<number>(0);
 
   toggleSettings(): void { this.settingsOpen.update(v => !v); }
   closeSettings(): void { this.settingsOpen.set(false); }
+
+  viewClusters(): void {
+    const projectId = this.projectContext.activeProjectId();
+    this.router.navigate(['/dashboard', projectId, 'graph', 'clustering']);
+  }
 
   isSeedNode(node: RenderNode): boolean {
     return this.state.initialSeedIds().has(paperId(node.paper));
@@ -412,6 +444,7 @@ export class OkGraphComponent {
 
   // Drag-to-pan bookkeeping.
   private dragging = false;
+  private didPan = false;        // set once a drag moves past a small threshold
   private dragStartX = 0;
   private dragStartY = 0;
   private panStartX = 0;
@@ -509,6 +542,7 @@ export class OkGraphComponent {
 
   private seedTopLevel(): void {
     this.selectedNodeId.set(null);
+    this.selectedClusterId.set(null);
     this.expandPopup.set(null);
     const levels = this.levels();
     if (!levels.length || !this.baseNodes().length) {
@@ -607,19 +641,39 @@ export class OkGraphComponent {
       nodes: [] as RenderNode[], edges: [] as LayoutEdge[],
       yearColumns: [] as { year: number; x: number }[],
       dividers: [] as { x: number }[], laneLines: [] as { y: number }[],
-      blobs: [] as Blob[],
+      blobs: [] as Blob[], bridges: [] as Bridge[],
       width: 400, height: 300,
     };
     if (!levels.length || placed.length === 0) return empty;
 
     const top = levels.length - 1;
     const topComm = this.communitiesAtLevel()(top);
+    const misc = this.miscTopCluster();
 
-    // Lanes: every highest-level cluster, ordered by descending size.
+    // Cluster size (membership over all base nodes) per highest-level cluster.
     const sizeOf = new Map<number, number>();
     for (const c of topComm) sizeOf.set(c, (sizeOf.get(c) ?? 0) + 1);
-    const laneClusters = [...sizeOf.keys()].sort(
-      (a, b) => (sizeOf.get(b)! - sizeOf.get(a)!) || a - b,
+
+    // Cluster-connection weights: number of citation edges joining two *different*
+    // top clusters (Miscellaneous excluded, exactly as the merge bridges are
+    // derived). Drives the connectivity-aware lane ordering below.
+    const idxOf = new Map(this.baseNodes().map((n, i) => [n.paper_id, i]));
+    const pairWeight = new Map<string, number>();
+    for (const e of (this.state.rawGraph()?.edges ?? [])) {
+      const u = idxOf.get(e.source);
+      const v = idxOf.get(e.target);
+      if (u == null || v == null) continue;
+      const tu = topComm[u], tv = topComm[v];
+      if (tu === tv) continue;
+      if (tu === misc || tv === misc) continue;
+      const key = tu < tv ? `${tu}|${tv}` : `${tv}|${tu}`;
+      pairWeight.set(key, (pairWeight.get(key) ?? 0) + 1);
+    }
+
+    // Lanes: every highest-level cluster, ordered to minimise bridge overlap —
+    // most-connected cluster centred, single-link clusters next to their partner.
+    const laneClusters = orderLanesByConnectivity(
+      [...sizeOf.keys()], pairWeight, sizeOf, misc,
     );
     const laneIndex = new Map<number, number>();
     laneClusters.forEach((c, i) => laneIndex.set(c, i));
@@ -676,7 +730,6 @@ export class OkGraphComponent {
 
     // One coloured blob per highest-level cluster, around its representatives.
     const PAD_X = 38, PAD_TOP = 40, PAD_BOTTOM = 50;
-    const misc = this.miscTopCluster();
     const blobs: Blob[] = [];
 
     // Group placed nodes by topCluster to easily find their years.
@@ -769,6 +822,14 @@ export class OkGraphComponent {
       });
     }
 
+    // Merge bridges: join the blobs of two highest-level clusters when their
+    // sub-clusters (one level below this, the highest, view) are connected — i.e.
+    // the representative papers of two sub-clusters in different top clusters share
+    // a citation edge. The bridge is anchored between those representatives.
+    const bridges = this.blobMerging()
+      ? this.buildBridges(top, topComm, laneIndex, laneHeight, boxes, nodes, years, yearX)
+      : [];
+
     const dividers: { x: number }[] = [];
     for (let i = 0; i < years.length - 1; i++) {
       dividers.push({ x: (yearX.get(years[i])! + yearX.get(years[i + 1])!) / 2 });
@@ -797,9 +858,137 @@ export class OkGraphComponent {
     return {
       nodes, edges,
       yearColumns: years.map(y => ({ year: y, x: yearX.get(y)! })),
-      dividers, laneLines, blobs, width, height,
+      dividers, laneLines, blobs, bridges, width, height,
     };
   });
+
+  /**
+   * Bridges that merge the blobs of two highest-level clusters. The current view
+   * is the top level; we look one level below (`top - 1`) and find pairs of
+   * sub-clusters whose representative papers are connected by a citation edge yet
+   * sit in *different* top-level clusters. Each such pair yields one translucent
+   * ribbon, blended from the two cluster colours, anchored between the two
+   * representatives (at their placed nodes when present, else lane geometry) so
+   * the two blobs read as merged.
+   */
+  private buildBridges(
+    top: number,
+    topComm: number[],
+    laneIndex: Map<number, number>,
+    laneHeight: number,
+    boxes: Map<number, { minX: number; maxX: number; minY: number; maxY: number }>,
+    nodes: RenderNode[],
+    years: number[],
+    yearX: Map<number, number>,
+  ): Bridge[] {
+    if (top < 1) return [];                 // no level below the top → nothing to merge
+    const subLevel = top - 1;
+    const baseNodes = this.baseNodes();
+    const subComm = this.communitiesAtLevel()(subLevel);
+    const idxOf = new Map(baseNodes.map((n, i) => [n.paper_id, i]));
+    const misc = this.miscTopCluster();
+    const rawEdges = this.state.rawGraph()?.edges ?? [];
+
+    // For each unordered top-cluster pair, track which sub-cluster pair carries
+    // the most connecting edges (that pair anchors the bridge).
+    const pairs = new Map<string, { sub: Map<string, number>; ta: number; tb: number }>();
+    for (const e of rawEdges) {
+      const u = idxOf.get(e.source);
+      const v = idxOf.get(e.target);
+      if (u == null || v == null) continue;
+      const tu = topComm[u], tv = topComm[v];
+      if (tu === tv) continue;                          // same blob already
+      if (tu === misc || tv === misc) continue;         // Miscellaneous never merges
+      const su = subComm[u], sv = subComm[v];
+      const topKey = tu < tv ? `${tu}|${tv}` : `${tv}|${tu}`;
+      const subKey = su < sv ? `${su}|${sv}` : `${sv}|${su}`;
+      let rec = pairs.get(topKey);
+      if (!rec) { rec = { sub: new Map(), ta: tu, tb: tv }; pairs.set(topKey, rec); }
+      rec.sub.set(subKey, (rec.sub.get(subKey) ?? 0) + 1);
+    }
+    if (!pairs.size) return [];
+
+    const renderPos = new Map(nodes.map(n => [n.id, n]));
+
+    // Map an arbitrary year onto the (index-spaced) year axis.
+    const yearToX = (yr: number): number => {
+      if (yearX.has(yr)) return yearX.get(yr)!;
+      if (!years.length) return LEFT_PADDING;
+      if (yr <= years[0]) return yearX.get(years[0])!;
+      if (yr >= years[years.length - 1]) return yearX.get(years[years.length - 1])!;
+      for (let i = 0; i < years.length - 1; i++) {
+        if (yr >= years[i] && yr <= years[i + 1]) {
+          const f = (yr - years[i]) / (years[i + 1] - years[i]);
+          return yearX.get(years[i])! + f * (yearX.get(years[i + 1])! - yearX.get(years[i])!);
+        }
+      }
+      return yearX.get(years[years.length - 1])!;
+    };
+
+    // Anchor point for one sub-cluster: its representative's placed node when it
+    // is on the canvas, otherwise its year clamped to the parent blob's x-extent.
+    const anchorFor = (subId: number): { x: number; y: number } | null => {
+      const rep = this.repIndexOfCluster(subLevel, subId);
+      if (rep < 0) return null;
+      const repNode = baseNodes[rep];
+      const placed = renderPos.get(repNode.paper_id);
+      if (placed) return { x: placed.x, y: placed.y };
+      const parentTop = topComm[rep];
+      const lane = laneIndex.get(parentTop) ?? 0;
+      const laneCenter = TOP_PADDING + lane * laneHeight + laneHeight / 2;
+      const box = boxes.get(parentTop);
+      let x = repNode.year != null ? yearToX(repNode.year)
+            : box ? (box.minX + box.maxX) / 2 : LEFT_PADDING;
+      if (box) x = Math.min(Math.max(x, box.minX), box.maxX);
+      return { x, y: laneCenter };
+    };
+
+    const bridges: Bridge[] = [];
+    for (const [topKey, rec] of pairs) {
+      let bestSub = '', bestCount = -1;
+      for (const [sk, c] of rec.sub) if (c > bestCount) { bestCount = c; bestSub = sk; }
+      const [sa, sb] = bestSub.split('|').map(Number);
+      const repA = this.repIndexOfCluster(subLevel, sa);
+      const repB = this.repIndexOfCluster(subLevel, sb);
+      if (repA < 0 || repB < 0) continue;
+      const topA = topComm[repA];
+      const topB = topComm[repB];
+      const a = anchorFor(sa);
+      const b = anchorFor(sb);
+      if (!a || !b) continue;
+
+      const startNode = a.x <= b.x ? a : b;
+      const endNode = a.x <= b.x ? b : a;
+      const startColor = a.x <= b.x ? this.clusterColorFor(topA) : this.clusterColorFor(topB);
+      const endColor = a.x <= b.x ? this.clusterColorFor(topB) : this.clusterColorFor(topA);
+
+      bridges.push({
+        key: topKey,
+        path: this.ribbonPath(a, b),
+        color: blendColors(startColor, endColor),
+        x1: startNode.x,
+        y1: startNode.y,
+        x2: endNode.x,
+        y2: endNode.y,
+        colorStart: startColor,
+        colorEnd: endColor,
+      });
+    }
+    return bridges;
+  }
+
+  /** A vertical translucent ribbon (closed bezier) joining two anchor points —
+   *  the merge neck between two cluster blobs. */
+  private ribbonPath(p0: { x: number; y: number }, p1: { x: number; y: number }): string {
+    const hw = 24;                       // half-width of the neck
+    const cy = (p0.y + p1.y) / 2;        // shared control-point y for a soft S-curve
+    return (
+      `M ${p0.x} ${p0.y}` +
+      ` C ${p0.x - hw} ${cy}, ${p1.x - hw} ${cy}, ${p1.x} ${p1.y}` +
+      ` C ${p1.x + hw} ${cy}, ${p0.x + hw} ${cy}, ${p0.x} ${p0.y}` +
+      ' Z'
+    );
+  }
 
   readonly nodes = computed(() => this.laneLayout().nodes);
   readonly edges = computed(() => this.laneLayout().edges);
@@ -807,8 +996,31 @@ export class OkGraphComponent {
   readonly dividers = computed(() => this.laneLayout().dividers);
   readonly laneLines = computed(() => this.laneLayout().laneLines);
   readonly blobs = computed(() => this.laneLayout().blobs);
+  readonly bridges = computed(() => this.laneLayout().bridges);
   readonly svgWidth = computed(() => this.laneLayout().width);
   readonly svgHeight = computed(() => this.laneLayout().height);
+
+  readonly totalClusters = computed(() => this.blobs().length);
+  readonly totalPapers = computed(() => {
+    const visible = this.nodes().length;
+    const total = this.state.placed().filter(p => p.paper.year != null).length;
+    return `${visible} / ${total}`;
+  });
+  readonly totalSeeds = computed(() => {
+    const visible = this.nodes().filter(n => this.isSeedNode(n)).length;
+    const total = this.state.placed().filter(p => p.paper.year != null && this.state.initialSeedIds().has(paperId(p.paper))).length;
+    return `${visible} / ${total}`;
+  });
+  readonly totalGoldStars = computed(() => {
+    const visible = this.nodes().filter(n => n.star === 'gold').length;
+    const total = this.state.placed().filter(p => p.paper.year != null && this.starFor(p.paper.ok_score ?? 0) === 'gold').length;
+    return `${visible} / ${total}`;
+  });
+  readonly totalSilverStars = computed(() => {
+    const visible = this.nodes().filter(n => n.star === 'silver').length;
+    const total = this.state.placed().filter(p => p.paper.year != null && this.starFor(p.paper.ok_score ?? 0) === 'silver').length;
+    return `${visible} / ${total}`;
+  });
 
   private readonly nodeMap = computed(() => new Map(this.nodes().map(n => [n.id, n])));
 
@@ -830,15 +1042,103 @@ export class OkGraphComponent {
     return id ? this.nodeMap().get(id)?.letter ?? '' : '';
   });
 
+  /** Cluster display name — matches the Cit-Graph convention. */
+  private clusterName(topCluster: number): string {
+    return topCluster === this.miscTopCluster() ? 'Miscellaneous' : `Cluster ${topCluster}`;
+  }
+
+  /**
+   * Details of the currently selected cluster for the top-left popup, or null when
+   * nothing is selected or the selected cluster is not currently on the canvas
+   * (e.g. it was filtered out). `size` is the cluster's full membership at the top
+   * level; `repTitle` is its highest-scoring representative.
+   */
+  readonly selectedCluster = computed<
+    { id: number; name: string; color: string; repTitle: string; size: number; isMisc: boolean } | null
+  >(() => {
+    const id = this.selectedClusterId();
+    if (id === null) return null;
+    const blob = this.blobs().find(b => b.topCluster === id);
+    if (!blob) return null;
+    const top = this.topLevel();
+    const repIndex = top >= 0 ? this.repIndexOfCluster(top, id) : -1;
+    const repTitle = repIndex >= 0 ? (this.baseNodes()[repIndex]?.title ?? '') : '';
+    const size = top >= 0 ? this.clusterSize(top, id) : 0;
+    return {
+      id,
+      name: this.clusterName(id),
+      color: blob.color,
+      repTitle,
+      size,
+      isMisc: blob.isMisc,
+    };
+  });
+
+  isClusterSelected(topCluster: number): boolean {
+    return this.selectedClusterId() === topCluster;
+  }
+
+  /**
+   * AI summary for the selected top-level cluster. The summary service keys by
+   * (hierarchyIndex, communityId) over the shared raw graph; the OK-Graph's
+   * top-level community ids match it only while the keyword filter is off (the
+   * filter re-clusters a subset, producing a different id space). When filtered,
+   * we return undefined rather than show a mismatched summary.
+   */
+  readonly selectedClusterSummary = computed<ClusterSummary | undefined>(() => {
+    const id = this.selectedClusterId();
+    if (id === null || this.state.filterActive()) return undefined;
+    const top = this.topLevel();
+    if (top < 0) return undefined;
+    return this.summaries.summaryAt(top, id);
+  });
+
   // --- interaction -----------------------------------------------------------
 
-  selectNode(node: RenderNode): void {
+  selectNode(node: RenderNode, event?: MouseEvent): void {
+    event?.stopPropagation();
     this.expandPopup.set(null);
     if (this.clickTimer) { clearTimeout(this.clickTimer); this.clickTimer = null; }
     this.clickTimer = setTimeout(() => {
       this.clickTimer = null;
-      this.selectedNodeId.update(cur => (cur === node.id ? null : node.id));
+      const topCluster = this.placedById().get(node.id)?.topCluster ?? null;
+      this.selectedNodeId.update(cur => {
+        if (cur === node.id) {            // toggling the node off → drop its cluster too
+          this.selectedClusterId.set(null);
+          return null;
+        }
+        // Selecting a paper selects the cluster it belongs to.
+        this.selectedClusterId.set(topCluster);
+        return node.id;
+      });
     }, 250);
+  }
+
+  /** Select a whole cluster by clicking its blob / coloured background. */
+  selectCluster(blob: Blob, event: MouseEvent): void {
+    event.stopPropagation();
+    if (this.didPan) return;             // the click was the tail of a drag-to-pan
+    this.expandPopup.set(null);
+    this.selectedNodeId.set(null);
+    this.selectedClusterId.set(blob.topCluster);
+  }
+
+  /** Click on bare canvas background → deselect the cluster (and node) + popups. */
+  onBackgroundClick(event: MouseEvent): void {
+    if (this.didPan) return;
+    const t = event.target as Element;
+    if (t.closest('.graph-svg__node') || t.closest('.graph-svg__blob') ||
+        t.closest('.zoom-controls') || t.closest('.expand-popup') ||
+        t.closest('.graph-settings') || t.closest('.cluster-popup')) {
+      return;
+    }
+    this.selectedClusterId.set(null);
+    this.selectedNodeId.set(null);
+    this.expandPopup.set(null);
+  }
+
+  closeClusterPopup(): void {
+    this.selectedClusterId.set(null);
   }
 
   onNodeDblClick(node: RenderNode, event: MouseEvent): void {
@@ -847,6 +1147,7 @@ export class OkGraphComponent {
     this.selectedNodeId.set(node.id);
     const placed = this.placedById().get(node.id);
     if (!placed) return;
+    this.selectedClusterId.set(placed.topCluster);
     const past = this.splitByTime(placed, 'past');
     const future = this.splitByTime(placed, 'future');
     if (past.length) this.addCandidate(placed, past[0]);
@@ -929,6 +1230,7 @@ export class OkGraphComponent {
 
   clearGraph(): void {
     this.selectedNodeId.set(null);
+    this.selectedClusterId.set(null);
     this.expandPopup.set(null);
     this.state.clear();
   }
@@ -948,6 +1250,13 @@ export class OkGraphComponent {
   isEdgeHighlighted(edge: LayoutEdge): boolean {
     const sel = this.selectedNodeId();
     return !!sel && (edge.fromId === sel || edge.toId === sel);
+  }
+
+  isBridgeHighlighted(bridge: Bridge): boolean {
+    const sel = this.selectedClusterId();
+    if (sel === null) return false;
+    const [ta, tb] = bridge.key.split('|').map(Number);
+    return ta === sel || tb === sel;
   }
 
   edgePath(edge: LayoutEdge): string {
@@ -995,10 +1304,12 @@ export class OkGraphComponent {
   }
 
   onPanStart(event: MouseEvent): void {
+    this.didPan = false;
     const t = event.target as Element;
     // Let nodes / arrows / controls handle their own clicks.
     if (t.closest('.graph-svg__node') || t.closest('.zoom-controls') ||
-        t.closest('.expand-popup') || t.closest('.graph-settings')) {
+        t.closest('.expand-popup') || t.closest('.graph-settings') ||
+        t.closest('.cluster-popup')) {
       return;
     }
     this.expandPopup.set(null);
@@ -1012,8 +1323,11 @@ export class OkGraphComponent {
 
   onPanMove(event: MouseEvent): void {
     if (!this.dragging) return;
-    this.panX.set(this.panStartX + (event.clientX - this.dragStartX));
-    this.panY.set(this.panStartY + (event.clientY - this.dragStartY));
+    const dx = event.clientX - this.dragStartX;
+    const dy = event.clientY - this.dragStartY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) this.didPan = true;
+    this.panX.set(this.panStartX + dx);
+    this.panY.set(this.panStartY + dy);
   }
 
   onPanEnd(): void {

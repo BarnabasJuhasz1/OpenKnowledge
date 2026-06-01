@@ -194,176 +194,303 @@
       </div>
     } @else {
       <div class="ok-graph-page__canvas-wrap">
-        <!-- Zoom controls -->
-        <div class="zoom-controls">
-          <button class="zoom-controls__btn" (click)="zoomOut()" title="Zoom out">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          </button>
-          <button class="zoom-controls__label" (click)="resetZoom()" title="Reset view">{{ zoomPercent }}%</button>
-          <button class="zoom-controls__btn" (click)="zoomIn()" title="Zoom in">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          </button>
-        </div>
-
-        <!-- Settings -->
-        <div class="graph-settings">
-          <button
-            class="graph-settings__btn"
-            [class.graph-settings__btn--active]="settingsOpen()"
-            (click)="toggleSettings()"
-            title="Display settings"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          </button>
-
-          @if (settingsOpen()) {
-            <div class="graph-settings__backdrop" (click)="closeSettings()"></div>
-            <div class="graph-settings__panel">
-              <div class="graph-settings__header">Display Settings</div>
-
-              <div class="graph-settings__subhead">Star markers</div>
-              <label class="graph-settings__row">
-                <span class="graph-settings__label">
-                  <span class="graph-settings__label-line">
-                    <span class="graph-settings__star graph-settings__star--gold material-symbols-outlined">star</span>
-                    Gold stars
-                  </span>
-                  <span class="graph-settings__hint">top 1% ok-score (all papers)</span>
-                </span>
-                <button
-                  class="graph-settings__switch"
-                  [class.graph-settings__switch--on]="showGoldStars()"
-                  (click)="showGoldStars.set(!showGoldStars())"
-                  role="switch"
-                  [attr.aria-checked]="showGoldStars()"
-                >
-                  <span class="graph-settings__knob"></span>
-                </button>
-              </label>
-              <label class="graph-settings__row">
-                <span class="graph-settings__label">
-                  <span class="graph-settings__label-line">
-                    <span class="graph-settings__star graph-settings__star--silver material-symbols-outlined">star</span>
-                    Silver stars
-                  </span>
-                  <span class="graph-settings__hint">top 5% ok-score (all papers)</span>
-                </span>
-                <button
-                  class="graph-settings__switch"
-                  [class.graph-settings__switch--on]="showSilverStars()"
-                  (click)="showSilverStars.set(!showSilverStars())"
-                  role="switch"
-                  [attr.aria-checked]="showSilverStars()"
-                >
-                  <span class="graph-settings__knob"></span>
-                </button>
-              </label>
-
-              <div class="graph-settings__subhead">Seed markers</div>
-              <label class="graph-settings__row">
-                <span class="graph-settings__label">
-                  <span class="graph-settings__label-line">
-                    <span class="graph-settings__seed material-symbols-outlined">eco</span>
-                    Seed icons
-                  </span>
-                  <span class="graph-settings__hint">indicate selected seed papers</span>
-                </span>
-                <button
-                  class="graph-settings__switch"
-                  [class.graph-settings__switch--on]="showSeedMarkers()"
-                  (click)="showSeedMarkers.set(!showSeedMarkers())"
-                  role="switch"
-                  [attr.aria-checked]="showSeedMarkers()"
-                >
-                  <span class="graph-settings__knob"></span>
-                </button>
-              </label>
-
-              <div class="graph-settings__subhead">Filter graph by tier</div>
-              <label class="graph-settings__row">
-                <span class="graph-settings__label">
-                  Only gold nodes
-                  <span class="graph-settings__hint">show only top-1% papers</span>
-                </span>
-                <button
-                  class="graph-settings__switch"
-                  [class.graph-settings__switch--on]="onlyGoldNodes()"
-                  (click)="onlyGoldNodes.set(!onlyGoldNodes())"
-                  role="switch"
-                  [attr.aria-checked]="onlyGoldNodes()"
-                >
-                  <span class="graph-settings__knob"></span>
-                </button>
-              </label>
-              <label class="graph-settings__row">
-                <span class="graph-settings__label">
-                  Only silver nodes
-                  <span class="graph-settings__hint">show only top-5% papers</span>
-                </span>
-                <button
-                  class="graph-settings__switch"
-                  [class.graph-settings__switch--on]="onlySilverNodes()"
-                  (click)="onlySilverNodes.set(!onlySilverNodes())"
-                  role="switch"
-                  [attr.aria-checked]="onlySilverNodes()"
-                >
-                  <span class="graph-settings__knob"></span>
-                </button>
-              </label>
-
-              <div class="graph-settings__subhead">Cluster blobs</div>
-              <label class="graph-settings__row">
-                <span class="graph-settings__label">
-                  Blobby shapes
-                  <span class="graph-settings__hint">toggle for smooth curves vs. square-like rectangles</span>
-                </span>
-                <button
-                  class="graph-settings__switch"
-                  [class.graph-settings__switch--on]="blobbyShapes()"
-                  (click)="blobbyShapes.set(!blobbyShapes())"
-                  role="switch"
-                  [attr.aria-checked]="blobbyShapes()"
-                >
-                  <span class="graph-settings__knob"></span>
-                </button>
-              </label>
-
-              <div class="graph-settings__subhead">Keyword filter</div>
-              <label class="graph-settings__row">
-                <span class="graph-settings__label">
-                  Title + abstract match
-                  <span class="graph-settings__hint">
-                    @if (state.prefiltered()) { locked on — applied before clustering }
-                    @else if (!state.keywords().length) { run a keyword search first }
-                    @else { hide papers not matching {{ state.keywords().length }} keyword(s) }
-                  </span>
-                </span>
-                <button
-                  class="graph-settings__switch"
-                  [class.graph-settings__switch--on]="state.filterActive()"
-                  [class.graph-settings__switch--locked]="state.prefiltered()"
-                  [disabled]="!state.canToggleFilter()"
-                  (click)="state.setFilter(!state.filterActive())"
-                  role="switch"
-                  [attr.aria-checked]="state.filterActive()"
-                  [title]="state.prefiltered() ? 'Filtering was applied before clustering and cannot be turned off here' : ''"
-                >
-                  <span class="graph-settings__knob"></span>
-                </button>
-              </label>
+        <div class="ok-graph-page__canvas-container">
+          <!-- Static white header on top of the years -->
+          <div class="ok-graph-header">
+            <div class="ok-graph-header__stats">
+              <div class="ok-graph-header__stat">
+                <span class="material-symbols-outlined ok-graph-header__icon ok-graph-header__icon--clusters">account_tree</span>
+                <span class="ok-graph-header__label">Clusters</span>
+                <span class="ok-graph-header__value">{{ totalClusters() }}</span>
+              </div>
+              <div class="ok-graph-header__divider"></div>
+              <div class="ok-graph-header__stat">
+                <span class="material-symbols-outlined ok-graph-header__icon ok-graph-header__icon--papers">description</span>
+                <span class="ok-graph-header__label">Papers</span>
+                <span class="ok-graph-header__value">{{ totalPapers() }}</span>
+              </div>
+              <div class="ok-graph-header__divider"></div>
+              <div class="ok-graph-header__stat">
+                <span class="material-symbols-outlined ok-graph-header__icon ok-graph-header__icon--seeds">eco</span>
+                <span class="ok-graph-header__label">Seeds</span>
+                <span class="ok-graph-header__value">{{ totalSeeds() }}</span>
+              </div>
+              <div class="ok-graph-header__divider"></div>
+              <div class="ok-graph-header__stat">
+                <span class="material-symbols-outlined ok-graph-header__icon ok-graph-header__icon--gold">star</span>
+                <span class="ok-graph-header__label">Gold Stars</span>
+                <span class="ok-graph-header__value">{{ totalGoldStars() }}</span>
+              </div>
+              <div class="ok-graph-header__divider"></div>
+              <div class="ok-graph-header__stat">
+                <span class="material-symbols-outlined ok-graph-header__icon ok-graph-header__icon--silver">star</span>
+                <span class="ok-graph-header__label">Silver Stars</span>
+                <span class="ok-graph-header__value">{{ totalSilverStars() }}</span>
+              </div>
             </div>
-          }
-        </div>
+
+            <div class="ok-graph-header__actions">
+              <!-- Settings -->
+              <div class="graph-settings">
+                <button
+                  class="graph-settings__btn"
+                  [class.graph-settings__btn--active]="settingsOpen()"
+                  (click)="toggleSettings()"
+                  title="Display settings"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                </button>
+
+                @if (settingsOpen()) {
+                  <div class="graph-settings__backdrop" (click)="closeSettings()"></div>
+                  <div class="graph-settings__panel">
+                    <div class="graph-settings__header">Display Settings</div>
+
+                    <div class="graph-settings__subhead">Star markers</div>
+                    <label class="graph-settings__row">
+                      <span class="graph-settings__label">
+                        <span class="graph-settings__label-line">
+                          <span class="graph-settings__star graph-settings__star--gold material-symbols-outlined">star</span>
+                          Gold stars
+                        </span>
+                        <span class="graph-settings__hint">top 1% ok-score (all papers)</span>
+                      </span>
+                      <button
+                        class="graph-settings__switch"
+                        [class.graph-settings__switch--on]="showGoldStars()"
+                        (click)="showGoldStars.set(!showGoldStars())"
+                        role="switch"
+                        [attr.aria-checked]="showGoldStars()"
+                      >
+                        <span class="graph-settings__knob"></span>
+                      </button>
+                    </label>
+                    <label class="graph-settings__row">
+                      <span class="graph-settings__label">
+                        <span class="graph-settings__label-line">
+                          <span class="graph-settings__star graph-settings__star--silver material-symbols-outlined">star</span>
+                          Silver stars
+                        </span>
+                        <span class="graph-settings__hint">top 5% ok-score (all papers)</span>
+                      </span>
+                      <button
+                        class="graph-settings__switch"
+                        [class.graph-settings__switch--on]="showSilverStars()"
+                        (click)="showSilverStars.set(!showSilverStars())"
+                        role="switch"
+                        [attr.aria-checked]="showSilverStars()"
+                      >
+                        <span class="graph-settings__knob"></span>
+                      </button>
+                    </label>
+
+                    <div class="graph-settings__subhead">Seed markers</div>
+                    <label class="graph-settings__row">
+                      <span class="graph-settings__label">
+                        <span class="graph-settings__label-line">
+                          <span class="graph-settings__seed material-symbols-outlined">eco</span>
+                          Seed icons
+                        </span>
+                        <span class="graph-settings__hint">indicate selected seed papers</span>
+                      </span>
+                      <button
+                        class="graph-settings__switch"
+                        [class.graph-settings__switch--on]="showSeedMarkers()"
+                        (click)="showSeedMarkers.set(!showSeedMarkers())"
+                        role="switch"
+                        [attr.aria-checked]="showSeedMarkers()"
+                      >
+                        <span class="graph-settings__knob"></span>
+                      </button>
+                    </label>
+
+                    <div class="graph-settings__subhead">Filter graph by tier</div>
+                    <label class="graph-settings__row">
+                      <span class="graph-settings__label">
+                        Only gold nodes
+                        <span class="graph-settings__hint">show only top-1% papers</span>
+                      </span>
+                      <button
+                        class="graph-settings__switch"
+                        [class.graph-settings__switch--on]="onlyGoldNodes()"
+                        (click)="onlyGoldNodes.set(!onlyGoldNodes())"
+                        role="switch"
+                        [attr.aria-checked]="onlyGoldNodes()"
+                      >
+                        <span class="graph-settings__knob"></span>
+                      </button>
+                    </label>
+                    <label class="graph-settings__row">
+                      <span class="graph-settings__label">
+                        Only silver nodes
+                        <span class="graph-settings__hint">show only top-5% papers</span>
+                      </span>
+                      <button
+                        class="graph-settings__switch"
+                        [class.graph-settings__switch--on]="onlySilverNodes()"
+                        (click)="onlySilverNodes.set(!onlySilverNodes())"
+                        role="switch"
+                        [attr.aria-checked]="onlySilverNodes()"
+                      >
+                        <span class="graph-settings__knob"></span>
+                      </button>
+                    </label>
+
+                    <div class="graph-settings__subhead">Cluster blobs</div>
+                    <label class="graph-settings__row">
+                      <span class="graph-settings__label">
+                        Blobby shapes
+                        <span class="graph-settings__hint">toggle for smooth curves vs. square-like rectangles</span>
+                      </span>
+                      <button
+                        class="graph-settings__switch"
+                        [class.graph-settings__switch--on]="blobbyShapes()"
+                        (click)="blobbyShapes.set(!blobbyShapes())"
+                        role="switch"
+                        [attr.aria-checked]="blobbyShapes()"
+                      >
+                        <span class="graph-settings__knob"></span>
+                      </button>
+                    </label>
+                    <label class="graph-settings__row">
+                      <span class="graph-settings__label">
+                        Merge clusters
+                        <span class="graph-settings__hint">join blobs of clusters linked one level below this view</span>
+                      </span>
+                      <button
+                        class="graph-settings__switch"
+                        [class.graph-settings__switch--on]="blobMerging()"
+                        (click)="blobMerging.set(!blobMerging())"
+                        role="switch"
+                        [attr.aria-checked]="blobMerging()"
+                      >
+                        <span class="graph-settings__knob"></span>
+                      </button>
+                    </label>
+
+                    <div class="graph-settings__subhead">Transparency</div>
+                    <div class="graph-settings__slider-row">
+                      <div class="graph-settings__slider-info">
+                        <span class="graph-settings__slider-label">Bridge Transparency</span>
+                        <span class="graph-settings__slider-value">{{ bridgeTransparency() }}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        class="graph-settings__range-input"
+                        min="0"
+                        max="100"
+                        step="5"
+                        [ngModel]="bridgeTransparency()"
+                        (ngModelChange)="bridgeTransparency.set($event)"
+                      />
+                    </div>
+                    <div class="graph-settings__slider-row">
+                      <div class="graph-settings__slider-info">
+                        <span class="graph-settings__slider-label">Link Transparency</span>
+                        <span class="graph-settings__slider-value">{{ linkTransparency() }}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        class="graph-settings__range-input"
+                        min="0"
+                        max="100"
+                        step="5"
+                        [ngModel]="linkTransparency()"
+                        (ngModelChange)="linkTransparency.set($event)"
+                      />
+                    </div>
+
+                    <div class="graph-settings__subhead">Keyword filter</div>
+                    <label class="graph-settings__row">
+                      <span class="graph-settings__label">
+                        Title + abstract match
+                        <span class="graph-settings__hint">
+                          @if (state.prefiltered()) { locked on — applied before clustering }
+                          @else if (!state.keywords().length) { run a keyword search first }
+                          @else { hide papers not matching {{ state.keywords().length }} keyword(s) }
+                        </span>
+                      </span>
+                      <button
+                        class="graph-settings__switch"
+                        [class.graph-settings__switch--on]="state.filterActive()"
+                        [class.graph-settings__switch--locked]="state.prefiltered()"
+                        [disabled]="!state.canToggleFilter()"
+                        (click)="state.setFilter(!state.filterActive())"
+                        role="switch"
+                        [attr.aria-checked]="state.filterActive()"
+                        [title]="state.prefiltered() ? 'Filtering was applied before clustering and cannot be turned off here' : ''"
+                      >
+                        <span class="graph-settings__knob"></span>
+                      </button>
+                    </label>
+
+                    <div class="graph-settings__subhead">Clustering</div>
+                    <div class="graph-settings__row">
+                      <button
+                        class="graph-settings__view-clusters-btn"
+                        (click)="viewClusters()"
+                      >
+                        <span class="material-symbols-outlined">account_tree</span>
+                        View Clusters
+                      </button>
+                    </div>
+                  </div>
+                }
+              </div>
+            </div>
+          </div>
+
+          <!-- Zoom controls -->
+          <div class="zoom-controls">
+            <button class="zoom-controls__btn" (click)="zoomOut()" title="Zoom out">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+            <button class="zoom-controls__label" (click)="resetZoom()" title="Reset view">{{ zoomPercent }}%</button>
+            <button class="zoom-controls__btn" (click)="zoomIn()" title="Zoom in">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+          </div>
 
         <div
           class="ok-graph-page__canvas"
           [class.ok-graph-page__canvas--panning]="panning()"
+          (click)="onBackgroundClick($event)"
           (wheel)="onWheel($event)"
           (mousedown)="onPanStart($event)"
           (mousemove)="onPanMove($event)"
           (mouseup)="onPanEnd()"
           (mouseleave)="onPanEnd()"
         >
+          <!-- Selected-cluster popup, pinned to the top-left of the canvas -->
+          @if (selectedCluster(); as cluster) {
+            <div class="cluster-popup">
+              <span class="cluster-popup__swatch" [style.background]="cluster.color"></span>
+              <div class="cluster-popup__body">
+                <span class="cluster-popup__label">Selected cluster</span>
+                <span class="cluster-popup__name">{{ cluster.name }}</span>
+                @if (!cluster.isMisc && cluster.repTitle) {
+                  <span class="cluster-popup__rep" [title]="cluster.repTitle">{{ cluster.repTitle }}</span>
+                }
+                <span class="cluster-popup__meta">{{ cluster.size }} paper{{ cluster.size === 1 ? '' : 's' }}</span>
+                @if (!cluster.isMisc) {
+                  @if (selectedClusterSummary(); as s) {
+                    @if (s.status === 'done') {
+                      @if (s.title) {
+                        <span class="cluster-popup__summary-title">{{ s.title }}</span>
+                      }
+                      <span class="cluster-popup__summary">{{ s.summary }}</span>
+                    } @else if (s.status !== 'error') {
+                      <span class="cluster-popup__summary cluster-popup__summary--pending">Summarizing…</span>
+                    }
+                  } @else if (summaries.running()) {
+                    <span class="cluster-popup__summary cluster-popup__summary--pending">Summarizing…</span>
+                  }
+                }
+              </div>
+              <button class="cluster-popup__close" (click)="closeClusterPopup()" title="Deselect cluster">&times;</button>
+            </div>
+          }
+
           @if (nodes().length === 0) {
             <div class="ok-graph-page__empty">
               <h2>No representatives with year data</h2>
@@ -372,22 +499,58 @@
             </div>
           } @else {
             <svg class="graph-svg" width="100%" height="100%">
+              <defs>
+                @if (blobMerging()) {
+                  @for (bridge of bridges(); track bridge.key) {
+                    <linearGradient
+                      [id]="'bridge-grad-' + bridge.key"
+                      [attr.x1]="bridge.x1"
+                      [attr.y1]="bridge.y1"
+                      [attr.x2]="bridge.x2"
+                      [attr.y2]="bridge.y2"
+                      gradientUnits="userSpaceOnUse"
+                    >
+                      <stop offset="0%" [attr.stop-color]="bridge.colorStart" />
+                      <stop offset="30%" [attr.stop-color]="bridge.colorStart" />
+                      <stop offset="70%" [attr.stop-color]="bridge.colorEnd" />
+                      <stop offset="100%" [attr.stop-color]="bridge.colorEnd" />
+                    </linearGradient>
+                  }
+                }
+              </defs>
               <!-- Pan/zoom content layer -->
               <g [attr.transform]="contentTransform()">
+                <!-- Merge bridges: join the blobs of clusters connected one level
+                     below the current view. Drawn first so blobs/nodes sit on top. -->
+                @if (blobMerging()) {
+                  @for (bridge of bridges(); track bridge.key) {
+                    <path
+                      class="graph-svg__bridge"
+                      [class.graph-svg__bridge--highlighted]="isBridgeHighlighted(bridge)"
+                      [style.opacity]="1 - bridgeTransparency() / 100"
+                      [attr.d]="bridge.path"
+                      [attr.fill]="'url(#bridge-grad-' + bridge.key + ')'"
+                      [attr.stroke]="'url(#bridge-grad-' + bridge.key + ')'"
+                    />
+                  }
+                }
                 <!-- Cluster blobs: one per highest-level cluster, behind nodes -->
                 @for (blob of blobs(); track blob.topCluster) {
                   @if (blobbyShapes()) {
                     <path
                       class="graph-svg__blob"
                       [class.graph-svg__blob--misc]="blob.isMisc"
+                      [class.graph-svg__blob--selected]="isClusterSelected(blob.topCluster)"
                       [attr.d]="blob.path"
                       [attr.fill]="blob.color"
                       [attr.stroke]="blob.color"
+                      (click)="selectCluster(blob, $event)"
                     />
                   } @else {
                     <rect
                       class="graph-svg__blob"
                       [class.graph-svg__blob--misc]="blob.isMisc"
+                      [class.graph-svg__blob--selected]="isClusterSelected(blob.topCluster)"
                       [attr.x]="blob.rectX"
                       [attr.y]="blob.rectY"
                       [attr.width]="blob.rectW"
@@ -396,6 +559,7 @@
                       ry="26"
                       [attr.fill]="blob.color"
                       [attr.stroke]="blob.color"
+                      (click)="selectCluster(blob, $event)"
                     />
                   }
                   @if (blob.label) {
@@ -432,6 +596,7 @@
                 @for (edge of edges(); track edge.fromId + edge.toId) {
                   <path
                     class="graph-svg__edge"
+                    [style.opacity]="1 - linkTransparency() / 100"
                     [attr.stroke]="edgeStroke(edge)"
                     [attr.d]="edgePath(edge)"
                     fill="none"
@@ -443,7 +608,7 @@
                     class="graph-svg__node"
                     [class.graph-svg__node--selected]="isSelected(node)"
                     [class.graph-svg__node--dimmed]="selectedNodeId() && !isSelected(node) && !isConnected(node)"
-                    (click)="selectNode(node)"
+                    (click)="selectNode(node, $event)"
                     (dblclick)="onNodeDblClick(node, $event)"
                     (mouseenter)="onNodeEnter(node)"
                     (mouseleave)="onNodeLeave()"
@@ -558,6 +723,7 @@
             </svg>
           }
         </div>
+      </div>
 
         <!-- Candidate popup (sub-cluster representatives) -->
         @if (expandPopup(); as popup) {
