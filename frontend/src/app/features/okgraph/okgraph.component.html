@@ -249,13 +249,6 @@
       <div class="ok-graph-page__canvas-wrap">
         <div class="ok-graph-page__canvas-container">
           <div class="ok-graph-header">
-            @if (innerViewClusterId() !== null) {
-              <div class="ok-graph-header__view-badge" [style.border-left-color]="innerViewClusterColor()">
-                <span class="material-symbols-outlined" [style.color]="innerViewClusterColor()">subdirectory_arrow_right</span>
-                <span>Inside: <strong>{{ innerViewClusterName() }}</strong></span>
-                <button class="ok-graph-header__back-btn" (click)="resetToMainView()" title="Back to main view">&times;</button>
-              </div>
-            }
             <div class="ok-graph-header__stats">
               <div class="ok-graph-header__stat">
                 <span class="material-symbols-outlined ok-graph-header__icon ok-graph-header__icon--clusters">account_tree</span>
@@ -944,7 +937,7 @@
                 (click)="resetToMainView()"
               >
                 <span class="material-symbols-outlined">grid_view</span>
-                Main View
+                Main
               </button>
               
               @if (innerViewClusterId() !== null) {
