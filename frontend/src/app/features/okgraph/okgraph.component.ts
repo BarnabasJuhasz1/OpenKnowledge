@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -18,6 +18,7 @@ import { parseQuery } from '../../shared/utils/query-parser';
 import { matchesNodeKeywords } from '../../shared/utils/keyword-match';
 import { ProjectContextService } from '../../core/services/project-context.service';
 import { ProjectGraphSettingsService } from '../../core/services/project-graph-settings.service';
+import { BookshelfService, BookshelfItem } from '../../core/services/bookshelf.service';
 
 interface Blob {
   topCluster: number;
@@ -82,7 +83,7 @@ const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   templateUrl: './okgraph.component.html',
   styleUrl: './okgraph.component.scss',
 })
-export class OkGraphComponent {
+export class OkGraphComponent implements OnInit {
   readonly state = inject(OkGraphStateService);
   readonly summaries = inject(ClusterSummaryService);
   private readonly searchState = inject(SearchStateService);
@@ -92,10 +93,36 @@ export class OkGraphComponent {
   private readonly projectContext = inject(ProjectContextService);
   private readonly graphStore = inject(ProjectGraphSettingsService);
   private readonly router = inject(Router);
+  private readonly bookshelf = inject(BookshelfService);
 
   // Setup options
   readonly useOnlySelected = signal(true);
   readonly keywordFiltering = signal(false);
+  readonly savedItems = signal<BookshelfItem[]>([]);
+  readonly activeSeedSourceTab = signal<'selected' | 'library'>('selected');
+
+  ngOnInit(): void {
+    this.loadBookshelf();
+  }
+
+  loadBookshelf(): void {
+    this.bookshelf.list().subscribe({
+      next: (items) => this.savedItems.set(items),
+    });
+  }
+
+  toggleSeed(paper: Paper): void {
+    const id = paperId(paper);
+    if (this.searchState.graphPaperIds().has(id)) {
+      this.searchState.removeFromGraph(id);
+    } else {
+      this.searchState.addToGraph(paper);
+    }
+  }
+
+  isSeedSelected(paper: Paper): boolean {
+    return this.searchState.isInGraph(paper);
+  }
 
   // Exploration states
   readonly explorationLoading = signal(false);
@@ -125,8 +152,12 @@ export class OkGraphComponent {
     const ids = this.searchState.graphPaperIds();
     const all = this.searchState.allScoredPapers();
     const external = this.searchState.externalGraphPapers();
+    const saved = this.savedItems()
+      .map(item => item.paper)
+      .filter((p): p is Paper => !!p);
     const idMap = new Map(all.map(p => [paperId(p), p]));
     for (const [id, p] of external) idMap.set(id, p);
+    for (const p of saved) idMap.set(paperId(p), p);
     const result: Paper[] = [];
     for (const id of ids) {
       const p = idMap.get(id);
@@ -1003,22 +1034,22 @@ export class OkGraphComponent {
   readonly totalClusters = computed(() => this.blobs().length);
   readonly totalPapers = computed(() => {
     const visible = this.nodes().length;
-    const total = this.state.placed().filter(p => p.paper.year != null).length;
+    const total = this.baseNodes().length;
     return `${visible} / ${total}`;
   });
   readonly totalSeeds = computed(() => {
     const visible = this.nodes().filter(n => this.isSeedNode(n)).length;
-    const total = this.state.placed().filter(p => p.paper.year != null && this.state.initialSeedIds().has(paperId(p.paper))).length;
+    const total = this.baseNodes().filter(n => this.state.initialSeedIds().has(n.paper_id)).length;
     return `${visible} / ${total}`;
   });
   readonly totalGoldStars = computed(() => {
     const visible = this.nodes().filter(n => n.star === 'gold').length;
-    const total = this.state.placed().filter(p => p.paper.year != null && this.starFor(p.paper.ok_score ?? 0) === 'gold').length;
+    const total = this.baseNodes().filter(n => this.starFor(repScore(n)) === 'gold').length;
     return `${visible} / ${total}`;
   });
   readonly totalSilverStars = computed(() => {
     const visible = this.nodes().filter(n => n.star === 'silver').length;
-    const total = this.state.placed().filter(p => p.paper.year != null && this.starFor(p.paper.ok_score ?? 0) === 'silver').length;
+    const total = this.baseNodes().filter(n => this.starFor(repScore(n)) === 'silver').length;
     return `${visible} / ${total}`;
   });
 
