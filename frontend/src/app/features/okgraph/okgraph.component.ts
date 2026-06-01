@@ -70,6 +70,13 @@ interface ExpandPopup {
   y: number;
 }
 
+interface TransitionState {
+  stage: 'none' | 'fade-out' | 'expand' | 'shift';
+  targetClusterId: number | null;
+  rect: { x: number; y: number; w: number; h: number };
+  color: string;
+}
+
 const YEAR_GAP = 180;
 const LEFT_PADDING = 80;
 const LANE_NODE_VGAP = 64;     // vertical gap between stacked nodes in one lane
@@ -378,6 +385,7 @@ export class OkGraphComponent implements OnInit {
   }
 
   readonly TOP_PADDING = TOP_PADDING;
+  readonly transitionState = signal<TransitionState | null>(null);
   readonly innerViewClusterId = signal<number | null>(null);
   readonly innerViewClusterColor = computed(() => {
     const id = this.innerViewClusterId();
@@ -1516,17 +1524,119 @@ export class OkGraphComponent implements OnInit {
 
   moveInside(clusterId: number, event?: MouseEvent): void {
     event?.stopPropagation();
-    this.innerViewClusterId.set(clusterId);
+    
+    // Find the blob in the current layout
+    const blob = this.blobs().find(b => b.topCluster === clusterId);
+    if (!blob) {
+      this.innerViewClusterId.set(clusterId);
+      this.selectedClusterId.set(null);
+      this.selectedNodeId.set(null);
+      this.expandPopup.set(null);
+      return;
+    }
+
+    // Capture geometry
+    const initialRect = {
+      x: blob.rectX,
+      y: blob.rectY,
+      w: blob.rectW,
+      h: blob.rectH
+    };
+    
+    // Step 1: Fade out (400ms)
+    this.transitionState.set({
+      stage: 'fade-out',
+      targetClusterId: clusterId,
+      rect: initialRect,
+      color: blob.color
+    });
+
+    setTimeout(() => {
+      const state = this.transitionState();
+      if (!state || state.targetClusterId !== clusterId) return;
+
+      // Step 2: Expand (600ms)
+      this.transitionState.set({
+        ...state,
+        stage: 'expand'
+      });
+
+      setTimeout(() => {
+        const state2 = this.transitionState();
+        if (!state2 || state2.targetClusterId !== clusterId) return;
+
+        // Step 3: Shift layout & colors (600ms)
+        this.innerViewClusterId.set(clusterId);
+        this.selectedClusterId.set(null);
+        this.selectedNodeId.set(null);
+        this.expandPopup.set(null);
+
+        this.transitionState.set({
+          ...state2,
+          stage: 'shift'
+        });
+
+        setTimeout(() => {
+          const state3 = this.transitionState();
+          if (!state3 || state3.targetClusterId !== clusterId) return;
+
+          // End transition
+          this.transitionState.set(null);
+        }, 600);
+      }, 600);
+    }, 400);
+  }
+
+  resetToMainView(): void {
+    this.transitionState.set(null);
+    this.innerViewClusterId.set(null);
     this.selectedClusterId.set(null);
     this.selectedNodeId.set(null);
     this.expandPopup.set(null);
   }
 
-  resetToMainView(): void {
-    this.innerViewClusterId.set(null);
-    this.selectedClusterId.set(null);
-    this.selectedNodeId.set(null);
-    this.expandPopup.set(null);
+  // --- transition animation helpers -------------------------------------------
+
+  getScreenRect(rect: { x: number; y: number; w: number; h: number }): { x: number; y: number; w: number; h: number } {
+    const zoom = this.zoom();
+    const panX = this.panX();
+    const panY = this.panY();
+    return {
+      x: rect.x * zoom + panX,
+      y: rect.y * zoom + panY,
+      w: rect.w * zoom,
+      h: rect.h * zoom
+    };
+  }
+
+  isNodeOutsideTransitionTarget(node: RenderNode): boolean {
+    const state = this.transitionState();
+    if (!state) return false;
+    return node.clusterId !== state.targetClusterId;
+  }
+
+  isBlobOutsideTransitionTarget(blob: any): boolean {
+    const state = this.transitionState();
+    if (!state) return false;
+    if (state.stage === 'expand' || state.stage === 'shift') return true;
+    return blob.topCluster !== state.targetClusterId;
+  }
+
+  isClusterOutsideTransitionTarget(clusterId: number): boolean {
+    const state = this.transitionState();
+    if (!state) return false;
+    return clusterId !== state.targetClusterId;
+  }
+
+  isEdgeOutsideTransitionTarget(edge: LayoutEdge): boolean {
+    const state = this.transitionState();
+    if (!state) return false;
+    
+    const sourceNode = this.nodes().find(n => n.id === edge.fromId);
+    const targetNode = this.nodes().find(n => n.id === edge.toId);
+    if (!sourceNode || !targetNode) return true;
+    
+    return sourceNode.clusterId !== state.targetClusterId || targetNode.clusterId !== state.targetClusterId;
   }
 
   // --- rendering helpers -----------------------------------------------------

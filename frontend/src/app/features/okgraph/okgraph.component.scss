@@ -1081,7 +1081,7 @@
     stroke-opacity: 0.45;
     stroke-width: 1.5;
     cursor: pointer;
-    transition: fill-opacity 0.15s, stroke-opacity 0.15s, stroke-width 0.15s;
+    transition: fill-opacity 0.15s, stroke-opacity 0.15s, stroke-width 0.15s, opacity 0.4s ease-in-out;
 
     &:hover { fill-opacity: 0.14; }
 
@@ -1135,18 +1135,18 @@
 
   &__edge {
     stroke-width: 2;
-    transition: stroke 0.2s;
+    transition: stroke 0.2s, opacity 0.4s ease-in-out, d 0.6s cubic-bezier(0.25, 0.8, 0.25, 1);
   }
 
   &__node {
-    transition: opacity 0.2s;
+    transition: opacity 0.4s ease-in-out, transform 0.6s cubic-bezier(0.25, 0.8, 0.25, 1);
     &--dimmed { opacity: 0.25; }
   }
 
   // Fill/stroke are bound per node (cluster colour) via attributes, so no
   // colour is set here — CSS would otherwise override the attributes.
   &__circle {
-    transition: fill 0.15s, stroke 0.15s;
+    transition: fill 0.6s cubic-bezier(0.25, 0.8, 0.25, 1), stroke 0.6s cubic-bezier(0.25, 0.8, 0.25, 1);
   }
 
   &__node-letter {
@@ -2145,4 +2145,88 @@
       border-left-style: solid;
     }
   }
+}
+
+// Fade out transition styles
+.graph-svg__node,
+.graph-svg__blob,
+.lane-box,
+.graph-svg__bridge,
+.graph-svg__edge,
+.graph-svg__lane,
+.graph-svg__divider,
+.graph-svg__blob-label {
+  transition: opacity 0.4s ease-in-out, transform 0.6s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.graph-svg__node--transition-fade-out,
+.graph-svg__blob--transition-fade-out,
+.lane-box--transition-fade-out,
+.graph-svg__bridge--transition-fade-out,
+.graph-svg__edge--transition-fade-out,
+.graph-svg__lane--transition-fade-out,
+.graph-svg__divider--transition-fade-out,
+.graph-svg__blob-label--transition-fade-out {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+// Node rings transition
+.graph-svg__ring {
+  transition: stroke 0.6s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+// Expanding animation overlay
+.ok-graph-transition-overlay {
+  position: absolute;
+  pointer-events: none;
+  z-index: 5;
+  box-sizing: border-box;
+
+  // Initial state centered on the cluster lane
+  left: var(--initial-left);
+  top: var(--initial-top);
+  width: var(--initial-width);
+  height: var(--initial-height);
+  
+  border: 2px solid var(--cluster-color);
+  border-radius: var(--ok-radius-sm);
+  background: color-mix(in srgb, var(--cluster-color) 9%, transparent);
+  
+  // Transition properties for smooth morphing
+  transition: left 0.6s cubic-bezier(0.25, 0.8, 0.25, 1),
+              top 0.6s cubic-bezier(0.25, 0.8, 0.25, 1),
+              width 0.6s cubic-bezier(0.25, 0.8, 0.25, 1),
+              height 0.6s cubic-bezier(0.25, 0.8, 0.25, 1),
+              background 0.6s cubic-bezier(0.25, 0.8, 0.25, 1),
+              border-width 0.6s cubic-bezier(0.25, 0.8, 0.25, 1),
+              border-color 0.6s cubic-bezier(0.25, 0.8, 0.25, 1),
+              border-radius 0.6s cubic-bezier(0.25, 0.8, 0.25, 1);
+
+  &--expand {
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 0;
+    
+    // Colored lines on the left and right sides
+    border-left: 4px solid var(--cluster-color) !important;
+    border-right: 4px solid var(--cluster-color) !important;
+    border-top: 0px solid transparent !important;
+    border-bottom: 0px solid transparent !important;
+    
+    // Background fills the whole space
+    background: color-mix(in srgb, var(--cluster-color) 9%, transparent);
+  }
+}
+
+// Inner view style overlays on the canvas
+.ok-graph-page__canvas--inner-view {
+  border-left: 4px solid var(--inner-cluster-color) !important;
+  border-right: 4px solid var(--inner-cluster-color) !important;
+  background-color: color-mix(in srgb, var(--inner-cluster-color) 9%, var(--ok-surface-container-lowest)) !important;
+  
+  // Animate transition into/out of inner view
+  transition: background-color 0.4s ease, border-color 0.4s ease;
 }

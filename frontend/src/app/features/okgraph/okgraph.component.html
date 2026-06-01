@@ -551,6 +551,8 @@
         <div
           class="ok-graph-page__canvas"
           [class.ok-graph-page__canvas--panning]="panning()"
+          [class.ok-graph-page__canvas--inner-view]="innerViewClusterId() !== null"
+          [style.--inner-cluster-color]="innerViewClusterColor()"
           (click)="onBackgroundClick($event)"
           (wheel)="onWheel($event)"
           (mousedown)="onPanStart($event)"
@@ -653,6 +655,7 @@
                     <path
                       class="graph-svg__bridge"
                       [class.graph-svg__bridge--highlighted]="isBridgeHighlighted(bridge)"
+                      [class.graph-svg__bridge--transition-fade-out]="transitionState() !== null"
                       [style.opacity]="bridgeTransparency() / 100"
                       [attr.d]="bridge.path"
                       [attr.fill]="'url(#bridge-grad-' + bridge.key + ')'"
@@ -666,6 +669,7 @@
                       class="graph-svg__blob"
                       [class.graph-svg__blob--misc]="blob.isMisc"
                       [class.graph-svg__blob--selected]="isClusterSelected(blob.topCluster)"
+                      [class.graph-svg__blob--transition-fade-out]="isBlobOutsideTransitionTarget(blob)"
                       [attr.d]="blob.path"
                       [attr.fill]="blob.color"
                       [attr.stroke]="blob.color"
@@ -676,6 +680,7 @@
                       class="graph-svg__blob"
                       [class.graph-svg__blob--misc]="blob.isMisc"
                       [class.graph-svg__blob--selected]="isClusterSelected(blob.topCluster)"
+                      [class.graph-svg__blob--transition-fade-out]="isBlobOutsideTransitionTarget(blob)"
                       [attr.x]="blob.rectX"
                       [attr.y]="blob.rectY"
                       [attr.width]="blob.rectW"
@@ -690,6 +695,7 @@
                   @if (blob.label) {
                     <text
                       class="graph-svg__blob-label"
+                      [class.graph-svg__blob-label--transition-fade-out]="isBlobOutsideTransitionTarget(blob)"
                       [attr.x]="blobbyShapes() ? blob.x + 16 : blob.rectX + 16"
                       [attr.y]="blobbyShapes() ? blob.y + 22 : blob.rectY + 22"
                       [attr.fill]="blob.color"
@@ -700,6 +706,7 @@
                 @for (div of dividers(); track div.x) {
                   <line
                     class="graph-svg__divider"
+                    [class.graph-svg__divider--transition-fade-out]="transitionState() !== null"
                     [attr.x1]="div.x"
                     [attr.y1]="TOP_PADDING - 5"
                     [attr.x2]="div.x"
@@ -711,6 +718,7 @@
                 @for (lane of laneLines(); track lane.y) {
                   <line
                     class="graph-svg__lane"
+                    [class.graph-svg__lane--transition-fade-out]="transitionState() !== null"
                     [attr.x1]="0"
                     [attr.y1]="lane.y"
                     [attr.x2]="svgWidth()"
@@ -731,6 +739,7 @@
                         class="lane-box"
                         [style.border-left-color]="box.color"
                         [class.lane-box--selected]="isClusterSelected(box.topCluster)"
+                        [class.lane-box--transition-fade-out]="isClusterOutsideTransitionTarget(box.topCluster)"
                         (click)="selectClusterById(box.topCluster, $event)"
                       >
                         <div class="lane-box__header">
@@ -800,6 +809,7 @@
                 @for (edge of edges(); track edge.fromId + edge.toId) {
                   <path
                     class="graph-svg__edge"
+                    [class.graph-svg__edge--transition-fade-out]="isEdgeOutsideTransitionTarget(edge)"
                     [style.opacity]="linkTransparency() / 100"
                     [attr.stroke]="edgeStroke(edge)"
                     [attr.d]="edgePath(edge)"
@@ -812,6 +822,8 @@
                     class="graph-svg__node"
                     [class.graph-svg__node--selected]="isSelected(node)"
                     [class.graph-svg__node--dimmed]="selectedNodeId() && !isSelected(node) && !isConnected(node)"
+                    [class.graph-svg__node--transition-fade-out]="isNodeOutsideTransitionTarget(node)"
+                    [style.transform]="'translate(' + node.x + 'px, ' + node.y + 'px)'"
                     (click)="selectNode(node, $event)"
                     (dblclick)="onNodeDblClick(node, $event)"
                     (mouseenter)="onNodeEnter(node)"
@@ -820,8 +832,8 @@
                   >
                     <circle
                       class="graph-svg__circle"
-                      [attr.cx]="node.x"
-                      [attr.cy]="node.y"
+                      cx="0"
+                      cy="0"
                       r="22"
                       [attr.fill]="nodeFill(node)"
                       [attr.stroke]="nodeStroke(node)"
@@ -831,8 +843,8 @@
                     @for (r of node.rings; track $index) {
                       <circle
                         class="graph-svg__ring"
-                        [attr.cx]="node.x"
-                        [attr.cy]="node.y"
+                        cx="0"
+                        cy="0"
                         [attr.r]="r"
                         fill="none"
                         [attr.stroke]="nodeStroke(node)"
@@ -840,22 +852,22 @@
                     }
                     <text
                       class="graph-svg__node-letter material-symbols-outlined"
-                      [attr.x]="node.x"
-                      [attr.y]="node.y - 3"
+                      x="0"
+                      y="-3"
                       text-anchor="middle"
                       dominant-baseline="central"
                     >{{ getArchetypeIcon(node.paper.predicted_main_archetype) }}</text>
                     <text
                       class="graph-svg__node-score"
-                      [attr.x]="node.x"
-                      [attr.y]="node.y + 11"
+                      x="0"
+                      y="11"
                       text-anchor="middle"
                       dominant-baseline="central"
                     >{{ (node.paper.ok_score ?? 0).toFixed(1) }}</text>
                     <text
                       class="graph-svg__node-label"
-                      [attr.x]="node.x"
-                      [attr.y]="node.y + 36"
+                      x="0"
+                      y="36"
                       text-anchor="middle"
                     >{{ nodeLabel(node) }}</text>
 
@@ -864,8 +876,8 @@
                         class="graph-svg__star material-symbols-outlined"
                         [class.graph-svg__star--gold]="node.star === 'gold'"
                         [class.graph-svg__star--silver]="node.star === 'silver'"
-                        [attr.x]="node.x + 17"
-                        [attr.y]="node.y - 17"
+                        x="17"
+                        y="-17"
                         text-anchor="middle"
                         dominant-baseline="central"
                       >star</text>
@@ -874,8 +886,8 @@
                     @if (isSeedNode(node) && showSeedMarkers()) {
                       <text
                         class="graph-svg__seed-icon material-symbols-outlined"
-                        [attr.x]="node.x - 17"
-                        [attr.y]="node.y - 17"
+                        x="-17"
+                        y="-17"
                         text-anchor="middle"
                         dominant-baseline="central"
                       >eco</text>
@@ -888,9 +900,9 @@
                         [class.graph-svg__expand-btn--disabled]="!canExpandPast(node)"
                         (click)="onExpandArrowClick(node, 'past', $event)"
                       >
-                        <circle [attr.cx]="node.x - 34" [attr.cy]="node.y" r="11" class="graph-svg__expand-bg" />
+                        <circle cx="-34" cy="0" r="11" class="graph-svg__expand-bg" />
                         <path
-                          [attr.d]="'M ' + (node.x - 31) + ' ' + node.y + ' l -6 0 m 3 -3 l -3 3 l 3 3'"
+                          d="M -31 0 l -6 0 m 3 -3 l -3 3 l 3 3"
                           class="graph-svg__expand-arrow"
                         />
                       </g>
@@ -900,9 +912,9 @@
                         [class.graph-svg__expand-btn--disabled]="!canExpandFuture(node)"
                         (click)="onExpandArrowClick(node, 'future', $event)"
                       >
-                        <circle [attr.cx]="node.x + 34" [attr.cy]="node.y" r="11" class="graph-svg__expand-bg" />
+                        <circle cx="34" cy="0" r="11" class="graph-svg__expand-bg" />
                         <path
-                          [attr.d]="'M ' + (node.x + 31) + ' ' + node.y + ' l 6 0 m -3 -3 l 3 3 l -3 3'"
+                          d="M 31 0 l 6 0 m -3 -3 l 3 3 l -3 3"
                           class="graph-svg__expand-arrow"
                         />
                       </g>
@@ -955,7 +967,23 @@
             </div>
           </div>
         </div>
+
+        <!-- Transition Overlay -->
+        @if (transitionState(); as state) {
+          <div 
+            class="ok-graph-transition-overlay"
+            [class.ok-graph-transition-overlay--expand]="state.stage === 'expand' || state.stage === 'shift'"
+            [style.--initial-left.px]="getScreenRect(state.rect).x"
+            [style.--initial-top.px]="getScreenRect(state.rect).y"
+            [style.--initial-width.px]="getScreenRect(state.rect).w"
+            [style.--initial-height.px]="getScreenRect(state.rect).h"
+            [style.--cluster-color]="state.color"
+          >
+          </div>
+        }
+
       </div>
+    </div>
 
         <!-- Candidate popup (sub-cluster representatives) -->
         @if (expandPopup(); as popup) {
