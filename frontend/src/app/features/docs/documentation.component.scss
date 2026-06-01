@@ -338,10 +338,10 @@ $brand: var(--ok-primary-raw);
 
   // Archetype Theme Colors (matching results paper cards)
   &__archetype-card--innovator {
-    border-left: 3px solid rgba(var(--ok-secondary-rgb), 0.7);
+    border-left: 3px solid rgba(168, 85, 247, 0.7);
     .docs__archetype-icon {
-      color: rgb(var(--ok-secondary-rgb));
-      background: rgba(var(--ok-secondary-rgb), 0.12);
+      color: rgb(168, 85, 247);
+      background: rgba(168, 85, 247, 0.12);
     }
   }
 
@@ -378,10 +378,10 @@ $brand: var(--ok-primary-raw);
   }
 
   &__archetype-card--evaluator {
-    border-left: 3px solid rgba(var(--ok-tertiary-rgb), 0.7);
+    border-left: 3px solid rgba(14, 165, 233, 0.7);
     .docs__archetype-icon {
-      color: rgb(var(--ok-tertiary-rgb));
-      background: rgba(var(--ok-tertiary-rgb), 0.12);
+      color: rgb(14, 165, 233);
+      background: rgba(14, 165, 233, 0.12);
     }
   }
 
