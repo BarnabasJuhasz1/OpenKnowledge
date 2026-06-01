@@ -45,6 +45,7 @@ interface RenderNode {
   colorStrong: string; // higher-contrast variant for highlights
   star: 'gold' | 'silver' | null; // gold = top 1% ok-score, silver = top 5%, null = neither
   rings: number[];     // radii of inner rings (one per representative level); [] for a leaf
+  clusterId: number;   // active cluster/lane ID in current view
 }
 
 /** A merged-blob connector between two highest-level cluster blobs whose
@@ -72,7 +73,7 @@ interface ExpandPopup {
 const YEAR_GAP = 180;
 const LEFT_PADDING = 80;
 const LANE_NODE_VGAP = 64;     // vertical gap between stacked nodes in one lane
-const LANE_MIN_HEIGHT = 130;
+const LANE_MIN_HEIGHT = 220;
 const LANE_PAD = 40;           // extra vertical breathing room per lane
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
@@ -377,8 +378,27 @@ export class OkGraphComponent implements OnInit {
   }
 
   readonly TOP_PADDING = TOP_PADDING;
+  readonly innerViewClusterId = signal<number | null>(null);
+  readonly innerViewClusterColor = computed(() => {
+    const id = this.innerViewClusterId();
+    return id === null ? '' : this.clusterColorFor(id);
+  });
+  readonly innerViewClusterName = computed(() => {
+    const id = this.innerViewClusterId();
+    return id === null ? '' : this.clusterName(id);
+  });
+  readonly baseNodesFiltered = computed(() => {
+    const base = this.baseNodes();
+    const T = this.innerViewClusterId();
+    if (T === null) return base;
+    const top = this.topLevel();
+    if (top < 0) return base;
+    const topComm = this.communitiesAtLevel()(top);
+    return base.filter((_, idx) => topComm[idx] === T);
+  });
+
   readonly selectedNodeId = signal<string | null>(null);
-  // Highest-level cluster (topCluster) the user has selected, or null.
+  // Highest-level cluster (topCluster or subcluster ID depending on view) the user has selected, or null.
   readonly selectedClusterId = signal<number | null>(null);
   readonly hoveredNodeId = signal<string | null>(null);
   readonly panelCollapsed = this.state.panelCollapsed;
@@ -404,6 +424,8 @@ export class OkGraphComponent implements OnInit {
   readonly blobMerging = signal(true);
   // Unified vertical expansion option (make all horizontal lane heights identical).
   readonly unifiedVerticalExpansion = signal(false);
+  readonly useInGraphCards = signal(true);
+  readonly leftPadding = computed(() => this.useInGraphCards() ? 380 : 80);
 
   // Transparency settings (0% to 100% visibility/opacity, default 50%).
   readonly bridgeTransparency = signal<number>(50);
@@ -518,8 +540,8 @@ export class OkGraphComponent implements OnInit {
     return c;
   });
 
-  /** Cluster colour, with the Miscellaneous cluster forced to neutral grey. */
-  private clusterColorFor(topCluster: number): string {
+  private clusterColorFor(topCluster: number, isSubcluster = false): string {
+    if (isSubcluster) return clusterColor(topCluster);
     return topCluster === this.miscTopCluster() ? MISC_COLOR : clusterColor(topCluster);
   }
 
@@ -686,7 +708,7 @@ export class OkGraphComponent implements OnInit {
 
   private readonly placedById = computed(() => new Map(this.state.placed().map(p => [p.id, p])));
 
-  private readonly laneLayout = computed(() => {
+  readonly laneLayout = computed(() => {
     const levels = this.levels();
     // Drop yearless nodes, then apply the per-tier node filter so the layout
     // (lanes, year columns, blobs, edges) is recomputed as if the filtered-out
@@ -700,6 +722,7 @@ export class OkGraphComponent implements OnInit {
       dividers: [] as { x: number }[], laneLines: [] as { y: number }[],
       blobs: [] as Blob[], bridges: [] as Bridge[],
       width: 400, height: 300,
+      laneBoxes: [] as any[],
     };
     if (!levels.length || placed.length === 0) return empty;
 
@@ -707,45 +730,74 @@ export class OkGraphComponent implements OnInit {
     const topComm = this.communitiesAtLevel()(top);
     const misc = this.miscTopCluster();
 
+    const innerId = this.innerViewClusterId();
+    const isInner = innerId !== null;
+    const currentTopLevel = isInner ? Math.max(0, top - 1) : top;
+    const currentComm = this.communitiesAtLevel()(currentTopLevel);
+
+    const placedFiltered = placed
+      .filter(p => !isInner || p.topCluster === innerId);
+
+    if (placedFiltered.length === 0) return empty;
+
     // Cluster size (membership over all base nodes) per highest-level cluster.
     const sizeOf = new Map<number, number>();
-    for (const c of topComm) sizeOf.set(c, (sizeOf.get(c) ?? 0) + 1);
+    if (!isInner) {
+      for (const c of currentComm) sizeOf.set(c, (sizeOf.get(c) ?? 0) + 1);
+    } else {
+      for (let i = 0; i < currentComm.length; i++) {
+        if (topComm[i] === innerId) {
+          const c = currentComm[i];
+          sizeOf.set(c, (sizeOf.get(c) ?? 0) + 1);
+        }
+      }
+    }
 
     // Cluster-connection weights: number of citation edges joining two *different*
-    // top clusters (Miscellaneous excluded, exactly as the merge bridges are
-    // derived). Drives the connectivity-aware lane ordering below.
+    // clusters. Drives the connectivity-aware lane ordering below.
     const idxOf = new Map(this.baseNodes().map((n, i) => [n.paper_id, i]));
     const pairWeight = new Map<string, number>();
     for (const e of (this.state.rawGraph()?.edges ?? [])) {
       const u = idxOf.get(e.source);
       const v = idxOf.get(e.target);
       if (u == null || v == null) continue;
-      const tu = topComm[u], tv = topComm[v];
+      const tu = currentComm[u], tv = currentComm[v];
       if (tu === tv) continue;
-      if (tu === misc || tv === misc) continue;
-      const key = tu < tv ? `${tu}|${tv}` : `${tv}|${tu}`;
-      pairWeight.set(key, (pairWeight.get(key) ?? 0) + 1);
+      if (!isInner) {
+        if (tu === misc || tv === misc) continue;
+        const key = tu < tv ? `${tu}|${tv}` : `${tv}|${tu}`;
+        pairWeight.set(key, (pairWeight.get(key) ?? 0) + 1);
+      } else {
+        if (topComm[u] === innerId && topComm[v] === innerId) {
+          const isMiscU = currentTopLevel === 0 && tu === misc;
+          const isMiscV = currentTopLevel === 0 && tv === misc;
+          if (isMiscU || isMiscV) continue;
+          const key = tu < tv ? `${tu}|${tv}` : `${tv}|${tu}`;
+          pairWeight.set(key, (pairWeight.get(key) ?? 0) + 1);
+        }
+      }
     }
 
-    // Lanes: every highest-level cluster, ordered to minimise bridge overlap —
-    // most-connected cluster centred, single-link clusters next to their partner.
+    // Lanes: ordered to minimise bridge overlap.
     const laneClusters = orderLanesByConnectivity(
-      [...sizeOf.keys()], pairWeight, sizeOf, misc,
+      [...sizeOf.keys()], pairWeight, sizeOf, isInner ? null : misc,
     );
     const laneIndex = new Map<number, number>();
     laneClusters.forEach((c, i) => laneIndex.set(c, i));
     const numLanes = laneClusters.length;
 
     // Year columns (x).
-    const years = [...new Set(placed.map(p => p.paper.year!))].sort((a, b) => a - b);
+    const leftPad = this.leftPadding();
+    const years = [...new Set(placedFiltered.map(p => p.paper.year!))].sort((a, b) => a - b);
     const yearX = new Map<number, number>();
-    years.forEach((y, i) => yearX.set(y, LEFT_PADDING + i * YEAR_GAP));
+    years.forEach((y, i) => yearX.set(y, leftPad + i * YEAR_GAP));
 
     // Group by (lane, year) to size lanes and stack within a cell.
     const cells = new Map<string, PlacedNode[]>();
     let maxCell = 1;
-    for (const p of placed) {
-      const lane = laneIndex.get(p.topCluster) ?? 0;
+    for (const p of placedFiltered) {
+      const nodeClusterId = !isInner ? p.topCluster : currentComm[p.repIndex];
+      const lane = laneIndex.get(nodeClusterId) ?? 0;
       const key = `${lane}|${p.paper.year}`;
       let arr = cells.get(key);
       if (!arr) { arr = []; cells.set(key, arr); }
@@ -795,16 +847,18 @@ export class OkGraphComponent implements OnInit {
       members.forEach((p, j) => {
         const x = yearX.get(p.paper.year!)!;
         const y = laneCenter + (j - (k - 1) / 2) * LANE_NODE_VGAP;
-        const color = this.clusterColorFor(p.topCluster);
+        const nodeClusterId = !isInner ? p.topCluster : currentComm[p.repIndex];
+        const color = this.clusterColorFor(nodeClusterId, isInner);
         nodes.push({
           id: p.id, paper: p.paper, x, y,
           letter: letterOf.get(p.id) ?? '?',
           color, colorStrong: lighten(color),
           star: this.starFor(p.paper.ok_score ?? 0),
           rings: this.ringsForLevel(p.level),
+          clusterId: nodeClusterId,
         });
-        const b = boxes.get(p.topCluster);
-        if (!b) boxes.set(p.topCluster, { minX: x, maxX: x, minY: y, maxY: y });
+        const b = boxes.get(nodeClusterId);
+        if (!b) boxes.set(nodeClusterId, { minX: x, maxX: x, minY: y, maxY: y });
         else {
           b.minX = Math.min(b.minX, x); b.maxX = Math.max(b.maxX, x);
           b.minY = Math.min(b.minY, y); b.maxY = Math.max(b.maxY, y);
@@ -812,29 +866,30 @@ export class OkGraphComponent implements OnInit {
       });
     }
 
-    // One coloured blob per highest-level cluster, around its representatives.
+    // One coloured blob per cluster, around its representatives.
     const PAD_X = 38, PAD_TOP = 40, PAD_BOTTOM = 50;
     const blobs: Blob[] = [];
 
-    // Group placed nodes by topCluster to easily find their years.
+    // Group placed nodes by active clusterId to easily find their years.
     const clusterNodesMap = new Map<number, PlacedNode[]>();
-    for (const p of placed) {
-      let arr = clusterNodesMap.get(p.topCluster);
+    for (const p of placedFiltered) {
+      const nodeClusterId = !isInner ? p.topCluster : currentComm[p.repIndex];
+      let arr = clusterNodesMap.get(nodeClusterId);
       if (!arr) {
         arr = [];
-        clusterNodesMap.set(p.topCluster, arr);
+        clusterNodesMap.set(nodeClusterId, arr);
       }
       arr.push(p);
     }
 
-    for (const [topCluster, members] of clusterNodesMap) {
+    for (const [nodeClusterId, members] of clusterNodesMap) {
       const yearsInCluster = members.map(m => m.paper.year!);
       const minYear = Math.min(...yearsInCluster);
       const maxYear = Math.max(...yearsInCluster);
 
       const clusterYears = years.filter(y => y >= minYear && y <= maxYear);
 
-      const lane = laneIndex.get(topCluster) ?? 0;
+      const lane = laneIndex.get(nodeClusterId) ?? 0;
       const laneCenter = laneCenters[lane];
 
       const points: { x: number; topY: number; bottomY: number }[] = [];
@@ -842,9 +897,6 @@ export class OkGraphComponent implements OnInit {
         const x = yearX.get(y)!;
         const cellMembers = cells.get(`${lane}|${y}`);
         const k = cellMembers ? cellMembers.length : 0;
-
-        // If there are no papers in this cluster for this year, treat it as 1 paper height
-        // to maintain a continuous lane connection.
         const effectiveK = k > 0 ? k : 1;
 
         const minY_node = laneCenter - ((effectiveK - 1) / 2) * LANE_NODE_VGAP;
@@ -860,8 +912,8 @@ export class OkGraphComponent implements OnInit {
       let path = '';
       if (points.length > 0) {
         const n = points.length - 1;
-        const dx = 70; // horizontal control point offset for smooth S-curves
-        const capDx = PAD_X * 1.33; // control point offset for rounded end caps
+        const dx = 70;
+        const capDx = PAD_X * 1.33;
 
         path = `M ${points[0].x} ${points[0].topY}`;
 
@@ -884,15 +936,15 @@ export class OkGraphComponent implements OnInit {
         path += ' Z';
       }
 
-      const b = boxes.get(topCluster);
+      const b = boxes.get(nodeClusterId);
       const rectX = b ? b.minX - PAD_X : points[0].x - PAD_X;
       const rectY = b ? b.minY - PAD_TOP : points[0].topY;
       const rectW = b ? (b.maxX - b.minX) + 2 * PAD_X : 2 * PAD_X;
       const rectH = b ? (b.maxY - b.minY) + PAD_TOP + PAD_BOTTOM : points[0].bottomY - points[0].topY;
 
-      const isMisc = topCluster === misc;
+      const isMisc = !isInner && nodeClusterId === misc;
       blobs.push({
-        topCluster,
+        topCluster: nodeClusterId,
         x: points[0].x - PAD_X,
         y: points[0].topY,
         path,
@@ -900,18 +952,14 @@ export class OkGraphComponent implements OnInit {
         rectY,
         rectW,
         rectH,
-        color: this.clusterColorFor(topCluster),
+        color: this.clusterColorFor(nodeClusterId, isInner),
         isMisc,
         label: isMisc ? 'Miscellaneous' : '',
       });
     }
 
-    // Merge bridges: join the blobs of two highest-level clusters when their
-    // sub-clusters (one level below this, the highest, view) are connected — i.e.
-    // the representative papers of two sub-clusters in different top clusters share
-    // a citation edge. The bridge is anchored between those representatives.
     const bridges = this.blobMerging()
-      ? this.buildBridges(top, topComm, laneIndex, laneCenters, boxes, nodes, years, yearX)
+      ? this.buildBridges(currentTopLevel, currentComm, laneIndex, laneCenters, boxes, nodes, years, yearX)
       : [];
 
     const dividers: { x: number }[] = [];
@@ -923,12 +971,12 @@ export class OkGraphComponent implements OnInit {
     for (let i = 0; i <= numLanes; i++) laneLines.push({ y: laneYStart[i] });
 
     const width = years.length
-      ? yearX.get(years[years.length - 1])! + LEFT_PADDING + 40
+      ? yearX.get(years[years.length - 1])! + 80
       : 400;
     const height = laneYStart[numLanes] + 20;
 
     // Manual links between placed-with-year nodes.
-    const known = new Set(placed.map(p => p.id));
+    const known = new Set(placedFiltered.map(p => p.id));
     const seen = new Set<string>();
     const edges: LayoutEdge[] = [];
     for (const e of this.state.links()) {
@@ -939,10 +987,103 @@ export class OkGraphComponent implements OnInit {
       edges.push(e);
     }
 
+    const laneBoxes = laneClusters.map((id, i) => {
+      const isMisc = !isInner && id === misc;
+      const name = isMisc ? 'Miscellaneous' : (isInner ? `Subcluster ${id}` : `Cluster ${id}`);
+      const color = this.clusterColorFor(id, isInner);
+      
+      const repIndex = currentTopLevel >= 0 ? this.repIndexOfCluster(currentTopLevel, id) : -1;
+      const repTitle = repIndex >= 0 ? (this.baseNodes()[repIndex]?.title ?? '') : '';
+      const size = currentTopLevel >= 0 ? this.clusterSize(currentTopLevel, id) : 0;
+
+      const visiblePapers = placedFiltered.filter(p => {
+        const nodeClusterId = !isInner ? p.topCluster : currentComm[p.repIndex];
+        return nodeClusterId === id;
+      }).length;
+      
+      const totalPapers = this.baseNodes().filter((n, idx) => {
+        if (isInner) {
+          return topComm[idx] === innerId && currentComm[idx] === id;
+        }
+        return currentComm[idx] === id;
+      }).length;
+
+      const visibleSeeds = placedFiltered.filter(p => {
+        const nodeClusterId = !isInner ? p.topCluster : currentComm[p.repIndex];
+        return nodeClusterId === id && this.state.initialSeedIds().has(paperId(p.paper));
+      }).length;
+      
+      const totalSeeds = this.baseNodes().filter((n, idx) => {
+        if (isInner) {
+          return topComm[idx] === innerId && currentComm[idx] === id && this.state.initialSeedIds().has(n.paper_id);
+        }
+        return currentComm[idx] === id && this.state.initialSeedIds().has(n.paper_id);
+      }).length;
+
+      const visibleGold = placedFiltered.filter(p => {
+        const nodeClusterId = !isInner ? p.topCluster : currentComm[p.repIndex];
+        return nodeClusterId === id && this.starFor(p.paper.ok_score ?? 0) === 'gold';
+      }).length;
+      
+      const totalGold = this.baseNodes().filter((n, idx) => {
+        if (isInner) {
+          return topComm[idx] === innerId && currentComm[idx] === id && this.starFor(repScore(n)) === 'gold';
+        }
+        return currentComm[idx] === id && this.starFor(repScore(n)) === 'gold';
+      }).length;
+
+      const visibleSilver = placedFiltered.filter(p => {
+        const nodeClusterId = !isInner ? p.topCluster : currentComm[p.repIndex];
+        return nodeClusterId === id && this.starFor(p.paper.ok_score ?? 0) === 'silver';
+      }).length;
+      
+      const totalSilver = this.baseNodes().filter((n, idx) => {
+        if (isInner) {
+          return topComm[idx] === innerId && currentComm[idx] === id && this.starFor(repScore(n)) === 'silver';
+        }
+        return currentComm[idx] === id && this.starFor(repScore(n)) === 'silver';
+      }).length;
+
+      let summary: ClusterSummary | undefined = undefined;
+      if (!isMisc && repIndex >= 0) {
+        const repNode = this.baseNodes()[repIndex];
+        if (repNode) {
+          const rawTop = this.summaries.getTopLevel();
+          if (rawTop >= 0) {
+            const targetRawLvl = !isInner ? rawTop : rawTop - 1;
+            if (targetRawLvl >= 0) {
+              const rawComm = this.communitiesAtLevel()(targetRawLvl)[repIndex];
+              if (rawComm !== undefined) {
+                summary = this.summaries.summaryAt(targetRawLvl, rawComm);
+              }
+            }
+          }
+        }
+      }
+
+      return {
+        topCluster: id,
+        laneIndex: i,
+        name,
+        color,
+        isMisc,
+        size,
+        repTitle,
+        totalPapers: `${visiblePapers} / ${totalPapers}`,
+        totalSeeds: `${visibleSeeds} / ${totalSeeds}`,
+        totalGoldStars: `${visibleGold} / ${totalGold}`,
+        totalSilverStars: `${visibleSilver} / ${totalSilver}`,
+        yStart: laneYStart[i],
+        height: laneHeights[i],
+        summary
+      };
+    });
+
     return {
       nodes, edges,
       yearColumns: years.map(y => ({ year: y, x: yearX.get(y)! })),
       dividers, laneLines, blobs, bridges, width, height,
+      laneBoxes,
     };
   });
 
@@ -997,7 +1138,7 @@ export class OkGraphComponent implements OnInit {
     // Map an arbitrary year onto the (index-spaced) year axis.
     const yearToX = (yr: number): number => {
       if (yearX.has(yr)) return yearX.get(yr)!;
-      if (!years.length) return LEFT_PADDING;
+      if (!years.length) return this.leftPadding();
       if (yr <= years[0]) return yearX.get(years[0])!;
       if (yr >= years[years.length - 1]) return yearX.get(years[years.length - 1])!;
       for (let i = 0; i < years.length - 1; i++) {
@@ -1022,7 +1163,7 @@ export class OkGraphComponent implements OnInit {
       const laneCenter = laneCenters[lane];
       const box = boxes.get(parentTop);
       let x = repNode.year != null ? yearToX(repNode.year)
-            : box ? (box.minX + box.maxX) / 2 : LEFT_PADDING;
+            : box ? (box.minX + box.maxX) / 2 : this.leftPadding();
       if (box) x = Math.min(Math.max(x, box.minX), box.maxX);
       return { x, y: laneCenter };
     };
@@ -1155,33 +1296,36 @@ export class OkGraphComponent implements OnInit {
     if (id === null) return null;
     const blob = this.blobs().find(b => b.topCluster === id);
     if (!blob) return null;
-    const top = this.topLevel();
+    const innerId = this.innerViewClusterId();
+    const isInner = innerId !== null;
+    const top = isInner ? Math.max(0, this.topLevel() - 1) : this.topLevel();
     const repIndex = top >= 0 ? this.repIndexOfCluster(top, id) : -1;
     const repTitle = repIndex >= 0 ? (this.baseNodes()[repIndex]?.title ?? '') : '';
     const size = top >= 0 ? this.clusterSize(top, id) : 0;
 
     const base = this.baseNodes();
-    const topComm = this.communitiesAtLevel()(top);
+    const topComm = this.communitiesAtLevel()(this.topLevel());
+    const currentComm = this.communitiesAtLevel()(top);
     const paperClusterMap = new Map<string, number>();
     for (let i = 0; i < base.length; i++) {
-      paperClusterMap.set(base[i].paper_id, topComm[i]);
+      paperClusterMap.set(base[i].paper_id, currentComm[i]);
     }
 
     const visiblePapers = this.nodes().filter(n => paperClusterMap.get(n.id) === id).length;
-    const totalPapers = base.filter((n, i) => topComm[i] === id).length;
+    const totalPapers = base.filter((n, i) => (!isInner || topComm[i] === innerId) && currentComm[i] === id).length;
 
     const visibleSeeds = this.nodes().filter(n => this.isSeedNode(n) && paperClusterMap.get(n.id) === id).length;
-    const totalSeeds = base.filter((n, i) => topComm[i] === id && this.state.initialSeedIds().has(n.paper_id)).length;
+    const totalSeeds = base.filter((n, i) => (!isInner || topComm[i] === innerId) && currentComm[i] === id && this.state.initialSeedIds().has(n.paper_id)).length;
 
     const visibleGold = this.nodes().filter(n => n.star === 'gold' && paperClusterMap.get(n.id) === id).length;
-    const totalGold = base.filter((n, i) => topComm[i] === id && this.starFor(repScore(n)) === 'gold').length;
+    const totalGold = base.filter((n, i) => (!isInner || topComm[i] === innerId) && currentComm[i] === id && this.starFor(repScore(n)) === 'gold').length;
 
     const visibleSilver = this.nodes().filter(n => n.star === 'silver' && paperClusterMap.get(n.id) === id).length;
-    const totalSilver = base.filter((n, i) => topComm[i] === id && this.starFor(repScore(n)) === 'silver').length;
+    const totalSilver = base.filter((n, i) => (!isInner || topComm[i] === innerId) && currentComm[i] === id && this.starFor(repScore(n)) === 'silver').length;
 
     return {
       id,
-      name: this.clusterName(id),
+      name: isInner ? `Subcluster ${id}` : this.clusterName(id),
       color: blob.color,
       repTitle,
       size,
@@ -1197,28 +1341,24 @@ export class OkGraphComponent implements OnInit {
     return this.selectedClusterId() === topCluster;
   }
 
-  /**
-   * AI summary for the selected top-level cluster. The summary service keys by
-   * (hierarchyIndex, communityId) over the shared raw graph; the OK-Graph's
-   * top-level community ids match it only while the keyword filter is off (the
-   * filter re-clusters a subset, producing a different id space). When filtered,
-   * we return undefined rather than show a mismatched summary.
-   */
   readonly selectedClusterSummary = computed<ClusterSummary | undefined>(() => {
     const id = this.selectedClusterId();
     if (id === null) return undefined;
-    const top = this.topLevel();
+    const isInner = this.innerViewClusterId() !== null;
+    const top = isInner ? Math.max(0, this.topLevel() - 1) : this.topLevel();
     const repIndex = top >= 0 ? this.repIndexOfCluster(top, id) : -1;
     const repNode = repIndex >= 0 ? this.baseNodes()[repIndex] : undefined;
     if (!repNode) return undefined;
 
-    const rawComm = this.summaries.getRawCommunity(repNode.paper_id);
-    if (rawComm === undefined) return undefined;
-
     const rawTop = this.summaries.getTopLevel();
     if (rawTop < 0) return undefined;
+    const targetRawLvl = isInner ? rawTop - 1 : rawTop;
+    if (targetRawLvl < 0) return undefined;
 
-    return this.summaries.summaryAt(rawTop, rawComm);
+    const rawComm = this.communitiesAtLevel()(targetRawLvl)[repIndex];
+    if (rawComm === undefined) return undefined;
+
+    return this.summaries.summaryAt(targetRawLvl, rawComm);
   });
 
   // --- interaction -----------------------------------------------------------
@@ -1251,13 +1391,23 @@ export class OkGraphComponent implements OnInit {
     this.selectedClusterId.set(blob.topCluster);
   }
 
+  /** Select a cluster by its ID directly. */
+  selectClusterById(id: number, event: MouseEvent): void {
+    event.stopPropagation();
+    if (this.didPan) return;
+    this.expandPopup.set(null);
+    this.selectedNodeId.set(null);
+    this.selectedClusterId.set(id);
+  }
+
   /** Click on bare canvas background → deselect the cluster (and node) + popups. */
   onBackgroundClick(event: MouseEvent): void {
     if (this.didPan) return;
     const t = event.target as Element;
     if (t.closest('.graph-svg__node') || t.closest('.graph-svg__blob') ||
         t.closest('.zoom-controls') || t.closest('.expand-popup') ||
-        t.closest('.graph-settings') || t.closest('.cluster-popup')) {
+        t.closest('.graph-settings') || t.closest('.cluster-popup') ||
+        t.closest('.lane-box')) {
       return;
     }
     this.selectedClusterId.set(null);
@@ -1359,8 +1509,24 @@ export class OkGraphComponent implements OnInit {
   clearGraph(): void {
     this.selectedNodeId.set(null);
     this.selectedClusterId.set(null);
+    this.innerViewClusterId.set(null);
     this.expandPopup.set(null);
     this.state.clear();
+  }
+
+  moveInside(clusterId: number, event?: MouseEvent): void {
+    event?.stopPropagation();
+    this.innerViewClusterId.set(clusterId);
+    this.selectedClusterId.set(null);
+    this.selectedNodeId.set(null);
+    this.expandPopup.set(null);
+  }
+
+  resetToMainView(): void {
+    this.innerViewClusterId.set(null);
+    this.selectedClusterId.set(null);
+    this.selectedNodeId.set(null);
+    this.expandPopup.set(null);
   }
 
   // --- rendering helpers -----------------------------------------------------

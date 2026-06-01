@@ -248,8 +248,14 @@
     } @else {
       <div class="ok-graph-page__canvas-wrap">
         <div class="ok-graph-page__canvas-container">
-          <!-- Static white header on top of the years -->
           <div class="ok-graph-header">
+            @if (innerViewClusterId() !== null) {
+              <div class="ok-graph-header__view-badge" [style.border-left-color]="innerViewClusterColor()">
+                <span class="material-symbols-outlined" [style.color]="innerViewClusterColor()">subdirectory_arrow_right</span>
+                <span>Inside: <strong>{{ innerViewClusterName() }}</strong></span>
+                <button class="ok-graph-header__back-btn" (click)="resetToMainView()" title="Back to main view">&times;</button>
+              </div>
+            }
             <div class="ok-graph-header__stats">
               <div class="ok-graph-header__stat">
                 <span class="material-symbols-outlined ok-graph-header__icon ok-graph-header__icon--clusters">account_tree</span>
@@ -501,6 +507,25 @@
                       </button>
                     </label>
 
+                    <div class="graph-settings__subhead">Cluster summaries</div>
+                    <label class="graph-settings__row">
+                      <span class="graph-settings__label">
+                        In-graph lane cards
+                        <span class="graph-settings__hint">
+                          Show summaries as boxes in swimlanes vs. left panel popups
+                        </span>
+                      </span>
+                      <button
+                        class="graph-settings__switch"
+                        [class.graph-settings__switch--on]="useInGraphCards()"
+                        (click)="useInGraphCards.set(!useInGraphCards())"
+                        role="switch"
+                        [attr.aria-checked]="useInGraphCards()"
+                      >
+                        <span class="graph-settings__knob"></span>
+                      </button>
+                    </label>
+
                     <div class="graph-settings__subhead">Clustering</div>
                     <div class="graph-settings__row">
                       <button
@@ -540,8 +565,9 @@
           (mouseup)="onPanEnd()"
           (mouseleave)="onPanEnd()"
         >
+
           <!-- Selected-cluster popup, pinned to the top-left of the canvas -->
-          @if (selectedCluster(); as cluster) {
+          @if (!useInGraphCards() && selectedCluster(); as cluster) {
             <div class="cluster-popup">
               <span class="cluster-popup__swatch" [style.background]="cluster.color"></span>
               <div class="cluster-popup__body">
@@ -586,6 +612,12 @@
                   } @else if (summaries.running()) {
                     <span class="cluster-popup__summary cluster-popup__summary--pending">Summarizing…</span>
                   }
+                }
+                @if (!cluster.isMisc && innerViewClusterId() === null) {
+                  <button class="cluster-popup__move-btn" (click)="moveInside(cluster.id, $event)">
+                    <span class="material-symbols-outlined">zoom_in</span>
+                    Move Inside
+                  </button>
                 }
               </div>
               <button class="cluster-popup__close" (click)="closeClusterPopup()" title="Deselect cluster">&times;</button>
@@ -691,6 +723,85 @@
                     [attr.x2]="svgWidth()"
                     [attr.y2]="lane.y"
                   />
+                }
+
+                <!-- Horizontal swimlane info boxes on the left -->
+                @if (useInGraphCards()) {
+                  @for (box of laneLayout().laneBoxes; track box.topCluster) {
+                    <foreignObject
+                      [attr.x]="20"
+                      [attr.y]="box.yStart + 15"
+                      [attr.width]="300"
+                      [attr.height]="box.height - 30"
+                    >
+                      <div
+                        class="lane-box"
+                        [style.border-left-color]="box.color"
+                        [class.lane-box--selected]="isClusterSelected(box.topCluster)"
+                        (click)="selectClusterById(box.topCluster, $event)"
+                      >
+                        <div class="lane-box__header">
+                          <span class="lane-box__swatch" [style.background]="box.color"></span>
+                          <div class="lane-box__title-group">
+                            <span class="lane-box__name">{{ box.name }}</span>
+                            <span class="lane-box__meta">{{ box.size }} paper{{ box.size === 1 ? '' : 's' }}</span>
+                          </div>
+                        </div>
+                        
+                        @if (!box.isMisc && box.repTitle) {
+                          <span class="lane-box__rep" [title]="box.repTitle">
+                            <strong>Rep:</strong> {{ box.repTitle }}
+                          </span>
+                        }
+
+                        <div class="lane-box__stats">
+                          <div class="lane-box__stat" title="Papers count">
+                            <span class="material-symbols-outlined lane-box__icon lane-box__icon--papers">description</span>
+                            <span class="lane-box__stat-value">{{ box.totalPapers }}</span>
+                          </div>
+                          <div class="lane-box__stat" title="Seeds count">
+                            <span class="material-symbols-outlined lane-box__icon lane-box__icon--seeds">eco</span>
+                            <span class="lane-box__stat-value">{{ box.totalSeeds }}</span>
+                          </div>
+                          <div class="lane-box__stat" title="Gold stars count">
+                            <span class="material-symbols-outlined lane-box__icon lane-box__icon--gold">star</span>
+                            <span class="lane-box__stat-value">{{ box.totalGoldStars }}</span>
+                          </div>
+                          <div class="lane-box__stat" title="Silver stars count">
+                            <span class="material-symbols-outlined lane-box__icon lane-box__icon--silver">star</span>
+                            <span class="lane-box__stat-value">{{ box.totalSilverStars }}</span>
+                          </div>
+                        </div>
+
+                        @if (!box.isMisc) {
+                          @if (box.summary; as s) {
+                            @if (s.status === 'done') {
+                              @if (s.title) {
+                                <span class="lane-box__summary-title">{{ s.title }}</span>
+                              }
+                              <span class="lane-box__summary">{{ s.summary }}</span>
+                            } @else if (s.status !== 'error') {
+                              <span class="lane-box__summary lane-box__summary--pending">Summarizing…</span>
+                            }
+                          } @else if (summaries.running()) {
+                            <span class="lane-box__summary lane-box__summary--pending">Summarizing…</span>
+                          }
+                        }
+                        @if (!box.isMisc && innerViewClusterId() === null) {
+                          @if (isClusterSelected(box.topCluster)) {
+                            <button 
+                              class="lane-box__move-btn" 
+                              (click)="moveInside(box.topCluster, $event)"
+                              style="margin-top: 0.6rem;"
+                            >
+                              <span class="material-symbols-outlined">zoom_in</span>
+                              Move Inside
+                            </button>
+                          }
+                        }
+                      </div>
+                    </foreignObject>
+                  }
                 }
 
                 @for (edge of edges(); track edge.fromId + edge.toId) {
@@ -822,6 +933,34 @@
               </g>
             </svg>
           }
+
+          <!-- View navigation bar at the bottom -->
+          <div class="ok-graph-bottom-bar">
+            <span class="ok-graph-bottom-bar__label">Active View:</span>
+            <div class="ok-graph-bottom-bar__tabs">
+              <button 
+                class="ok-graph-bottom-bar__tab"
+                [class.ok-graph-bottom-bar__tab--active]="innerViewClusterId() === null"
+                (click)="resetToMainView()"
+              >
+                <span class="material-symbols-outlined">grid_view</span>
+                Main View
+              </button>
+              
+              @if (innerViewClusterId() !== null) {
+                <div class="ok-graph-bottom-bar__separator">
+                  <span class="material-symbols-outlined">chevron_right</span>
+                </div>
+                <button 
+                  class="ok-graph-bottom-bar__tab ok-graph-bottom-bar__tab--active ok-graph-bottom-bar__tab--inner"
+                  [style.border-left-color]="innerViewClusterColor()"
+                >
+                  <span class="material-symbols-outlined" [style.color]="innerViewClusterColor()">subdirectory_arrow_right</span>
+                  {{ innerViewClusterName() }}
+                </button>
+              }
+            </div>
+          </div>
         </div>
       </div>
 
