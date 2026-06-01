@@ -192,8 +192,8 @@
   }
 }
 
-// ── Database multi-select dropdown ──
-.db-select {
+// ── Database & Archetype multi-select dropdowns ──
+.db-select, .arch-select {
   position: relative;
 
   &__toggle {
@@ -237,7 +237,6 @@
     position: absolute;
     left: 0;
     right: 0;
-    bottom: calc(100% + 0.35rem);
     z-index: 20;
     max-height: 280px;
     overflow-y: auto;
@@ -318,6 +317,14 @@
     font-weight: 800;
     line-height: 1;
   }
+}
+
+.db-select .db-select__menu {
+  bottom: calc(100% + 0.35rem);
+}
+
+.arch-select .arch-select__menu {
+  top: calc(100% + 0.35rem);
 }
 
 @keyframes spin-arrows {

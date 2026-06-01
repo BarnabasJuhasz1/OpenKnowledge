@@ -103,14 +103,30 @@
   </section>
 
   <!-- Archetype -->
-  <section class="sidebar__section">
+  <section class="sidebar__section sidebar__section--archetypes">
     <h4 class="sidebar__label">Archetype</h4>
-    <select class="sidebar__select" [(ngModel)]="archetype">
-      <option [ngValue]="null">All archetypes</option>
-      @for (arch of archetypes; track arch) {
-        <option [value]="arch">{{ arch }}</option>
+    <div class="arch-select" [class.arch-select--open]="archetypesOpen">
+      <button type="button" class="arch-select__toggle" (click)="toggleArchetypesMenu()">
+        <span class="arch-select__summary">{{ archetypesSummary }}</span>
+        <svg class="arch-select__chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      @if (archetypesOpen) {
+        <div class="arch-select__menu">
+          <label class="arch-select__option arch-select__option--all">
+            <input type="checkbox" [checked]="allArchetypesSelected" (change)="toggleAllArchetypes($event)" />
+            <span class="arch-select__name">All archetypes</span>
+          </label>
+          <div class="arch-select__divider"></div>
+          @for (arch of archetypes; track arch) {
+            <label class="arch-select__option">
+              <input type="checkbox" [checked]="isArchetypeSelected(arch)" (change)="toggleArchetype(arch)" />
+              <span class="arch-select__name">{{ arch }}</span>
+              <span class="arch-select__count">{{ getArchetypePaperCount(arch) }}</span>
+            </label>
+          }
+        </div>
       }
-    </select>
+    </div>
   </section>
 
   <!-- Databases / source filter (multi-select dropdown) -->

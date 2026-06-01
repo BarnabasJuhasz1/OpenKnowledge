@@ -27,8 +27,18 @@ export interface FilterState {
   codeOnly: boolean;
   peerReviewedOnly: boolean;
   openAccessOnly: boolean;
-  archetype: string | null;
 }
+
+export const ALL_ARCHETYPES = [
+  'The Innovator',
+  'The Evaluator',
+  'The Combiner',
+  'The Analyst',
+  'The Synthesizer',
+  'The Translator',
+  'The Architect',
+  'The Resource Creator',
+] as const;
 
 export function paperId(p: Paper): string {
   return p.doi || p.arxiv_id || p.semantic_scholar_id || p.openalex_id || p.title;
@@ -100,6 +110,7 @@ export class SearchStateService {
   graphInitialized = false;
 
   readonly sortField = signal<SortField>('relevancy');
+  readonly selectedArchetypes = signal<Set<string>>(new Set(ALL_ARCHETYPES));
   readonly filters = signal<FilterState>({
     yearMin: null,
     yearMax: null,
@@ -108,7 +119,6 @@ export class SearchStateService {
     codeOnly: false,
     peerReviewedOnly: false,
     openAccessOnly: false,
-    archetype: null,
   });
 
   readonly totalRaw = computed(() => {
@@ -184,6 +194,7 @@ export class SearchStateService {
     const papers = this.scoredPapers();
     const f = this.filters();
     const sort = this.sortField();
+    const selectedArchs = this.selectedArchetypes();
 
     let result = papers.filter(p => {
       if (f.yearMin != null && (p.year == null || p.year < f.yearMin)) return false;
@@ -193,7 +204,15 @@ export class SearchStateService {
       if (f.codeOnly && !p.has_public_code && !p.code_url) return false;
       if (f.peerReviewedOnly && !p.is_peer_reviewed) return false;
       if (f.openAccessOnly && !p.is_open_access) return false;
-      if (f.archetype && p.predicted_main_archetype !== f.archetype && p.predicted_second_tier_archetype !== f.archetype) return false;
+      
+      // Filter out if the paper has a main or second-tier archetype that is NOT selected.
+      // If it doesn't have an archetype (null, undefined, 'None'), it shouldn't be filtered out.
+      if (p.predicted_main_archetype && p.predicted_main_archetype !== 'None' && !selectedArchs.has(p.predicted_main_archetype)) {
+        return false;
+      }
+      if (p.predicted_second_tier_archetype && p.predicted_second_tier_archetype !== 'None' && !selectedArchs.has(p.predicted_second_tier_archetype)) {
+        return false;
+      }
       return true;
     });
 
@@ -347,6 +366,23 @@ export class SearchStateService {
     this.currentPage.set(1);
   }
 
+  /** Toggle a single archetype in/out of the selected set. */
+  toggleArchetype(name: string): void {
+    this.selectedArchetypes.update(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+    this.currentPage.set(1);
+  }
+
+  /** Select or clear every archetype at once. */
+  setAllArchetypes(selected: boolean): void {
+    this.selectedArchetypes.set(selected ? new Set(ALL_ARCHETYPES) : new Set());
+    this.currentPage.set(1);
+  }
+
   updateFilter(partial: Partial<FilterState>): void {
     this.filters.update(prev => ({ ...prev, ...partial }));
     this.currentPage.set(1);
@@ -361,10 +397,10 @@ export class SearchStateService {
       codeOnly: false,
       peerReviewedOnly: false,
       openAccessOnly: false,
-      archetype: null,
     });
     this.sortField.set('relevancy');
     this.selectedSources.set(new Set(ALL_SOURCES));
+    this.selectedArchetypes.set(new Set(ALL_ARCHETYPES));
     this.currentPage.set(1);
   }
 

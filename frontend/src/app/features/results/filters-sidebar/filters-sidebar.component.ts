@@ -1,6 +1,6 @@
 import { Component, ElementRef, HostListener, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ALL_SOURCES, SearchStateService, SortField } from '../../../core/services/search-state.service';
+import { ALL_SOURCES, SearchStateService, SortField, ALL_ARCHETYPES } from '../../../core/services/search-state.service';
 
 @Component({
   selector: 'app-filters-sidebar',
@@ -15,6 +15,9 @@ export class FiltersSidebarComponent {
 
   /** Whether the databases dropdown menu is open. */
   databasesOpen = false;
+
+  /** Whether the archetypes dropdown menu is open. */
+  archetypesOpen = false;
 
   get sortField(): SortField {
     return this.state.sortField();
@@ -84,23 +87,40 @@ export class FiltersSidebarComponent {
     this.state.updateFilter({ openAccessOnly: val });
   }
 
-  readonly archetypes = [
-    'The Innovator',
-    'The Evaluator',
-    'The Combiner',
-    'The Analyst',
-    'The Synthesizer',
-    'The Translator',
-    'The Architect',
-    'The Resource Creator',
-  ];
+  readonly archetypes = ALL_ARCHETYPES;
 
-  get archetype(): string | null {
-    return this.state.filters().archetype;
+  toggleArchetypesMenu(): void {
+    this.archetypesOpen = !this.archetypesOpen;
   }
 
-  set archetype(val: string | null) {
-    this.state.updateFilter({ archetype: val || null });
+  get allArchetypesSelected(): boolean {
+    return this.state.selectedArchetypes().size === ALL_ARCHETYPES.length;
+  }
+
+  isArchetypeSelected(name: string): boolean {
+    return this.state.selectedArchetypes().has(name);
+  }
+
+  toggleArchetype(name: string): void {
+    this.state.toggleArchetype(name);
+  }
+
+  toggleAllArchetypes(event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.state.setAllArchetypes(checked);
+  }
+
+  get archetypesSummary(): string {
+    const count = this.state.selectedArchetypes().size;
+    if (count === ALL_ARCHETYPES.length) return 'All archetypes';
+    if (count === 0) return 'No archetypes';
+    return `${count} of ${ALL_ARCHETYPES.length} archetypes`;
+  }
+
+  getArchetypePaperCount(arch: string): number {
+    return this.state.allScoredPapers().filter(p =>
+      p.predicted_main_archetype === arch || p.predicted_second_tier_archetype === arch
+    ).length;
   }
 
   /** Toggle the databases dropdown menu open/closed. */
@@ -113,6 +133,9 @@ export class FiltersSidebarComponent {
   onDocumentClick(event: MouseEvent): void {
     if (this.databasesOpen && !this.host.nativeElement.contains(event.target)) {
       this.databasesOpen = false;
+    }
+    if (this.archetypesOpen && !this.host.nativeElement.contains(event.target)) {
+      this.archetypesOpen = false;
     }
   }
 
@@ -146,7 +169,7 @@ export class FiltersSidebarComponent {
     return f.yearMin != null || f.yearMax != null
       || f.citationMin != null || f.citationMax != null
       || f.codeOnly || f.peerReviewedOnly || f.openAccessOnly
-      || f.archetype != null
+      || this.state.selectedArchetypes().size < ALL_ARCHETYPES.length
       || this.state.sortField() !== 'relevancy'
       || !this.allSourcesSelected;
   }
