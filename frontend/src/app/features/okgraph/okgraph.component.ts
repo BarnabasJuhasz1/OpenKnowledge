@@ -371,9 +371,9 @@ export class OkGraphComponent {
   // current view) by drawing a blended bridge between them.
   readonly blobMerging = signal(true);
 
-  // Transparency settings (0% to 100% transparency).
-  readonly bridgeTransparency = signal<number>(0);
-  readonly linkTransparency = signal<number>(0);
+  // Transparency settings (0% to 100% visibility/opacity, default 50%).
+  readonly bridgeTransparency = signal<number>(50);
+  readonly linkTransparency = signal<number>(50);
 
   toggleSettings(): void { this.settingsOpen.update(v => !v); }
   closeSettings(): void { this.settingsOpen.set(false); }

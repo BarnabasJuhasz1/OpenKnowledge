@@ -527,7 +527,7 @@
                     <path
                       class="graph-svg__bridge"
                       [class.graph-svg__bridge--highlighted]="isBridgeHighlighted(bridge)"
-                      [style.opacity]="1 - bridgeTransparency() / 100"
+                      [style.opacity]="bridgeTransparency() / 100"
                       [attr.d]="bridge.path"
                       [attr.fill]="'url(#bridge-grad-' + bridge.key + ')'"
                       [attr.stroke]="'url(#bridge-grad-' + bridge.key + ')'"
@@ -596,7 +596,7 @@
                 @for (edge of edges(); track edge.fromId + edge.toId) {
                   <path
                     class="graph-svg__edge"
-                    [style.opacity]="1 - linkTransparency() / 100"
+                    [style.opacity]="linkTransparency() / 100"
                     [attr.stroke]="edgeStroke(edge)"
                     [attr.d]="edgePath(edge)"
                     fill="none"

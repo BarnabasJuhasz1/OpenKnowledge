@@ -1029,9 +1029,9 @@
     transition: fill-opacity 0.15s, stroke-opacity 0.15s, stroke-width 0.15s;
 
     &--highlighted {
-      fill-opacity: 0.28;
-      stroke-opacity: 0.85;
-      stroke-width: 2.5;
+      fill-opacity: 0.5;
+      stroke-opacity: 1.0;
+      stroke-width: 4.0;
     }
   }
 
