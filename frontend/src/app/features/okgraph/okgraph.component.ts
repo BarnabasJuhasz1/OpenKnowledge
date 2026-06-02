@@ -9,6 +9,7 @@ import { Paper } from '../../core/models/paper.model';
 import { citNodeToPaper, repScore } from './cit-node';
 import { clusterColor, lighten, withAlpha, blendColors, MISC_COLOR } from './community-colors';
 import { edgePath as buildEdgePath, LayoutEdge, TOP_PADDING, NODE_RADIUS, orderLanesByConnectivity } from './graph-layout';
+import { yearExpandQueues } from './year-expand';
 import { getArchetypeIcon } from '../../shared/utils/archetype-icons';
 import { SearchStateService, paperId } from '../../core/services/search-state.service';
 import { CitGraphService, CitGraphNode, CitGraphEdge } from '../../core/services/citgraph.service';
@@ -440,6 +441,13 @@ export class OkGraphComponent implements OnInit {
   readonly expandPopup = signal<ExpandPopup | null>(null);
   readonly panning = signal(false);
 
+  // Year-axis selection: the single year the user has picked on the axis (or
+  // null). Selecting a year highlights its vertical lane and reveals the Expand
+  // button, which drills the per-cluster year queue (see expandYear()).
+  readonly selectedYear = signal<number | null>(null);
+  // Half-width (world units) of the highlighted vertical band around a year.
+  readonly YEAR_HIGHLIGHT_HALF = 46;
+
   // Settings panel.
   readonly settingsOpen = signal(false);
   readonly clearConfirmOpen = signal(false);
@@ -479,6 +487,7 @@ export class OkGraphComponent implements OnInit {
   // Transparency settings (0% to 100% visibility/opacity, default 50%).
   readonly bridgeTransparency = signal<number>(50);
   readonly linkTransparency = signal<number>(50);
+  readonly gridTransparency = signal<number>(50);
 
   toggleSettings(): void { this.settingsOpen.update(v => !v); }
   closeSettings(): void { this.settingsOpen.set(false); }
@@ -672,6 +681,7 @@ export class OkGraphComponent implements OnInit {
     this.selectedNodeId.set(null);
     this.selectedClusterId.set(null);
     this.expandPopup.set(null);
+    this.selectedYear.set(null);
     const levels = this.levels();
     if (!levels.length || !this.baseNodes().length) {
       this.state.placed.set([]); this.state.links.set([]); return;
@@ -1496,7 +1506,7 @@ export class OkGraphComponent implements OnInit {
     if (t.closest('.graph-svg__node') || t.closest('.graph-svg__blob') ||
         t.closest('.zoom-controls') || t.closest('.expand-popup') ||
         t.closest('.graph-settings') || t.closest('.cluster-popup') ||
-        t.closest('.lane-box')) {
+        t.closest('.lane-box') || t.closest('.graph-svg__axis')) {
       return;
     }
     this.selectedClusterId.set(null);
@@ -1570,6 +1580,100 @@ export class OkGraphComponent implements OnInit {
     this.expandPopup.set(null);
   }
 
+  // --- year-axis selection + expand ------------------------------------------
+
+  /** Toggle the selected year on the axis (single selection). */
+  selectYear(year: number): void {
+    this.expandPopup.set(null);
+    this.selectedYear.update(cur => (cur === year ? null : year));
+  }
+
+  /** World x of the selected year's column, or null when it isn't a column. */
+  readonly selectedYearX = computed<number | null>(() => {
+    const y = this.selectedYear();
+    if (y === null) return null;
+    const col = this.yearColumns().find(c => c.year === y);
+    return col ? col.x : null;
+  });
+
+  /**
+   * Per-lane-cluster ordered candidate queues for the selected year — the nodes
+   * the Expand button will drill through. Mirrors laneLayout()'s view derivation
+   * so it matches the clusters currently on screen; built via the pure
+   * yearExpandQueues() helper and mapped onto PlacedNodes.
+   */
+  private readonly yearCandidateQueues = computed<Map<number, PlacedNode[]>>(() => {
+    const year = this.selectedYear();
+    const levels = this.levels();
+    const base = this.baseNodes();
+    if (year === null || !levels.length || !base.length) return new Map();
+
+    const top = levels.length - 1;
+    const innerId = this.innerViewClusterId();
+    const isInner = innerId !== null;
+    const currentTopLevel = isInner ? Math.max(0, top - 1) : top;
+    const currentComm = this.communitiesAtLevel()(currentTopLevel);
+    const topComm = this.communitiesAtLevel()(top);
+
+    const commAtLevel: number[][] = [];
+    for (let L = 0; L <= currentTopLevel; L++) commAtLevel[L] = this.communitiesAtLevel()(L);
+
+    const nodeYear = base.map(n => n.year ?? null);
+    const nodeScore = base.map(n => repScore(n));
+    const inView = base.map((_, i) => !isInner || topComm[i] === innerId);
+
+    const placedIds = new Set(this.state.placed().map(p => p.id));
+    const isPlaced = (i: number) => placedIds.has(base[i].paper_id);
+
+    const raw = yearExpandQueues({
+      commAtLevel, currentTopLevel, nodeYear, nodeScore,
+      laneClusterOf: currentComm, inView, selectedYear: year, isPlaced,
+    });
+
+    const queues = new Map<number, PlacedNode[]>();
+    for (const [cluster, cands] of raw) {
+      queues.set(cluster, cands.map(c => this.buildPlaced(c.level, c.community, c.paperIndex)));
+    }
+    return queues;
+  });
+
+  /** Whether any shown cluster still has an un-placed node from the selected year. */
+  readonly canExpandYear = computed(() => {
+    for (const q of this.yearCandidateQueues().values()) if (q.length) return true;
+    return false;
+  });
+
+  /**
+   * Expand the selected year: for every shown cluster, place the next node from
+   * its year queue (the highest-level, highest-ok-score not-yet-placed candidate).
+   * Each new node is linked to its cluster's coarsest placed node so the graph
+   * stays connected. Repeated clicks drill further down each queue.
+   */
+  expandYear(): void {
+    const queues = this.yearCandidateQueues();
+    if (!queues.size) return;
+
+    // Coarsest placed node per top-level cluster — the parent to link new nodes to.
+    const parentByCluster = new Map<number, PlacedNode>();
+    for (const p of this.state.placed()) {
+      const cur = parentByCluster.get(p.topCluster);
+      if (!cur || p.level > cur.level) parentByCluster.set(p.topCluster, p);
+    }
+
+    const toAdd: PlacedNode[] = [];
+    const newLinks: LayoutEdge[] = [];
+    for (const [cluster, queue] of queues) {
+      const cand = queue[0];
+      if (!cand) continue;
+      toAdd.push(cand);
+      const parent = parentByCluster.get(cand.topCluster) ?? parentByCluster.get(cluster);
+      if (parent && parent.id !== cand.id) newLinks.push({ fromId: parent.id, toId: cand.id });
+    }
+    if (!toAdd.length) return;
+    this.state.placed.update(p => [...p, ...toAdd]);
+    if (newLinks.length) this.state.links.update(l => [...l, ...newLinks]);
+  }
+
   canExpandPast(node: RenderNode): boolean {
     const p = this.placedById().get(node.id);
     return !!p && this.splitByTime(p, 'past').length > 0;
@@ -1601,6 +1705,7 @@ export class OkGraphComponent implements OnInit {
     this.innerViewClusterId.set(null);
     this.innerViewAnchor.set(null);
     this.expandPopup.set(null);
+    this.selectedYear.set(null);
     this.state.clear();
   }
 
@@ -1672,6 +1777,7 @@ export class OkGraphComponent implements OnInit {
       this.selectedClusterId.set(null);
       this.selectedNodeId.set(null);
       this.expandPopup.set(null);
+      this.selectedYear.set(null);
       this.transitionState.update(s => s && { ...s, stage: 'shift' });
     }), 700);
 
@@ -1691,6 +1797,7 @@ export class OkGraphComponent implements OnInit {
     this.selectedClusterId.set(null);
     this.selectedNodeId.set(null);
     this.expandPopup.set(null);
+    this.selectedYear.set(null);
   }
 
   // --- transition animation helpers -------------------------------------------
@@ -1838,7 +1945,7 @@ export class OkGraphComponent implements OnInit {
     // Let nodes / arrows / controls handle their own clicks.
     if (t.closest('.graph-svg__node') || t.closest('.zoom-controls') ||
         t.closest('.expand-popup') || t.closest('.graph-settings') ||
-        t.closest('.cluster-popup')) {
+        t.closest('.cluster-popup') || t.closest('.graph-svg__axis')) {
       return;
     }
     this.expandPopup.set(null);
