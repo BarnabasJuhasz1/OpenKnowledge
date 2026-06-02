@@ -982,6 +982,15 @@
                     (dblclick)="onYearDblClick(col.year); $event.stopPropagation()"
                   >{{ col.year }}</text>
 
+                  @if (isYearExpandable(col.year)) {
+                    <circle
+                      [attr.cx]="axisX(col.x)"
+                      [attr.cy]="AXIS_HEIGHT - 5"
+                      r="3"
+                      class="graph-svg__year-dot"
+                    />
+                  }
+
                   @if (selectedYear() === col.year) {
                     <foreignObject
                       [attr.x]="axisX(col.x) - 44"
@@ -1016,6 +1025,15 @@
                     (click)="selectGap(gap); $event.stopPropagation()"
                     (dblclick)="onGapDblClick(gap); $event.stopPropagation()"
                   >&#8596;</text>
+
+                  @if (isGapExpandable(gap)) {
+                    <circle
+                      [attr.cx]="axisX(gap.x)"
+                      [attr.cy]="AXIS_HEIGHT - 5"
+                      r="3"
+                      class="graph-svg__gap-dot"
+                    />
+                  }
 
                   @if (isGapSelected(gap)) {
                     <foreignObject

@@ -107,3 +107,72 @@ describe('middleYears', () => {
     expect(middleYears(2019, 2010)).toEqual([2014, 2015]);
   });
 });
+
+function getExpandableYears(opts: {
+  levels: any[];
+  baseNodes: any[];
+  innerViewClusterId: number | null;
+  communitiesAtLevel: (level: number) => number[];
+  placedIds: Set<string>;
+}): Set<number> {
+  const { levels, baseNodes, innerViewClusterId, communitiesAtLevel, placedIds } = opts;
+  if (!levels.length || !baseNodes.length) return new Set();
+
+  const top = levels.length - 1;
+  const innerId = innerViewClusterId;
+  const isInner = innerId !== null;
+  const topComm = communitiesAtLevel(top);
+
+  const result = new Set<number>();
+
+  for (let i = 0; i < baseNodes.length; i++) {
+    const node = baseNodes[i];
+    if (node.year == null) continue;
+    const inView = !isInner || topComm[i] === innerId;
+    if (!inView) continue;
+    const isPlaced = placedIds.has(node.paper_id);
+    if (isPlaced) continue;
+
+    result.add(node.year);
+  }
+  return result;
+}
+
+describe('getExpandableYears', () => {
+  it('correctly returns years containing unplaced nodes in view', () => {
+    const baseNodes = [
+      { paper_id: 'p0', year: 2020 },
+      { paper_id: 'p1', year: 2020 },
+      { paper_id: 'p2', year: 2021 },
+      { paper_id: 'p3', year: 2020 },
+      { paper_id: 'p4', year: 2020 },
+      { paper_id: 'p5', year: 2019 },
+    ];
+    const levels = [[], []];
+    const topComm = [10, 10, 10, 11, 11, 11];
+    const communitiesAtLevel = (level: number) => topComm;
+
+    // Initially, no nodes placed
+    const placedIds = new Set<string>();
+    const years = getExpandableYears({
+      levels,
+      baseNodes,
+      innerViewClusterId: null,
+      communitiesAtLevel,
+      placedIds,
+    });
+    expect(years).toEqual(new Set([2020, 2021, 2019]));
+
+    // If 'p0', 'p2', 'p5' are placed
+    const placedIds2 = new Set(['p0', 'p2', 'p5']);
+    const years2 = getExpandableYears({
+      levels,
+      baseNodes,
+      innerViewClusterId: null,
+      communitiesAtLevel,
+      placedIds: placedIds2,
+    });
+    // 2020 still has unplaced nodes ('p1', 'p3', 'p4'). But 2021 (p2) and 2019 (p5) are fully placed.
+    expect(years2).toEqual(new Set([2020]));
+  });
+});

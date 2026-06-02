@@ -1166,7 +1166,7 @@
     &:hover { fill: var(--ok-on-surface); }
 
     &--expandable {
-      fill: var(--ok-on-surface);
+      fill: var(--ok-primary-raw, #6366f1);
       font-weight: 800;
     }
 
@@ -1178,8 +1178,8 @@
   }
 
   &__year-dot {
-    fill: var(--ok-primary);
-    opacity: 0.75;
+    fill: var(--ok-primary-raw, #6366f1);
+    opacity: 0.85;
     pointer-events: none;
   }
 
@@ -1196,8 +1196,8 @@
     &:hover { fill: var(--ok-on-surface); opacity: 1; }
 
     &--expandable {
-      opacity: 0.85;
-      fill: var(--ok-on-surface);
+      opacity: 0.8;
+      fill: var(--ok-primary-raw, #6366f1);
     }
 
     &--selected {
@@ -1207,8 +1207,8 @@
   }
 
   &__gap-dot {
-    fill: var(--ok-primary);
-    opacity: 0.75;
+    fill: var(--ok-primary-raw, #6366f1);
+    opacity: 0.85;
     pointer-events: none;
   }
 
