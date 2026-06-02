@@ -1161,6 +1161,46 @@
     font-size: 13px;
     font-weight: 700;
     font-family: inherit;
+    transition: fill var(--ok-transition-fast);
+
+    &:hover { fill: var(--ok-on-surface); }
+
+    &--selected {
+      fill: var(--ok-primary);
+      font-size: 14px;
+    }
+  }
+
+  // In-between marker (`↔`) sitting on the axis between two non-consecutive
+  // year columns. Click to expand on the middle year(s) of that gap.
+  &__gap-icon {
+    fill: var(--ok-on-surface-variant);
+    font-size: 16px;
+    font-weight: 700;
+    font-family: inherit;
+    opacity: 0.55;
+    transition: fill var(--ok-transition-fast), opacity var(--ok-transition-fast);
+
+    &:hover { fill: var(--ok-on-surface); opacity: 1; }
+
+    &--selected {
+      fill: var(--ok-primary);
+      opacity: 1;
+    }
+  }
+
+  // Translucent band marking the selected year's vertical lane. Never intercepts
+  // pointer events so nodes/blobs underneath stay clickable.
+  &__year-highlight {
+    fill: rgba(var(--ok-primary-rgb), 0.08);
+    stroke: rgba(var(--ok-primary-rgb), 0.22);
+    stroke-width: 1;
+    pointer-events: none;
+
+    // The in-between band uses a dashed stroke to read as "between" columns.
+    &--gap {
+      stroke-dasharray: 5 4;
+    }
   }
 
   &__axis-bg { fill: var(--ok-bg); }
@@ -2063,6 +2103,45 @@
 
   &:active {
     transform: translateY(0);
+  }
+}
+
+.year-expand-btn {
+  // Compact pill under the selected year label on the sticky axis.
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  width: 88px;
+  padding: 0.3rem 0.5rem;
+  font-family: var(--ok-font-label, inherit);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--ok-on-primary);
+  background: var(--ok-primary);
+  border: none;
+  border-radius: var(--ok-radius-sm);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  transition: opacity var(--ok-transition-fast), transform var(--ok-transition-fast);
+
+  span {
+    font-size: 16px;
+    font-variation-settings: 'FILL' 1;
+  }
+
+  &:hover:not(:disabled) {
+    opacity: 0.9;
+    transform: translateY(-1px);
+  }
+
+  &:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
 }
 
