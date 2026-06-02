@@ -1165,10 +1165,22 @@
 
     &:hover { fill: var(--ok-on-surface); }
 
+    &--expandable {
+      fill: var(--ok-on-surface);
+      font-weight: 800;
+    }
+
     &--selected {
       fill: var(--ok-primary);
       font-size: 14px;
+      font-weight: 800;
     }
+  }
+
+  &__year-dot {
+    fill: var(--ok-primary);
+    opacity: 0.75;
+    pointer-events: none;
   }
 
   // In-between marker (`↔`) sitting on the axis between two non-consecutive
@@ -1183,10 +1195,21 @@
 
     &:hover { fill: var(--ok-on-surface); opacity: 1; }
 
+    &--expandable {
+      opacity: 0.85;
+      fill: var(--ok-on-surface);
+    }
+
     &--selected {
       fill: var(--ok-primary);
       opacity: 1;
     }
+  }
+
+  &__gap-dot {
+    fill: var(--ok-primary);
+    opacity: 0.75;
+    pointer-events: none;
   }
 
   // Translucent band marking the selected year's vertical lane. Never intercepts

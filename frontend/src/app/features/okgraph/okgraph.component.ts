@@ -1618,6 +1618,26 @@ export class OkGraphComponent implements OnInit {
       cur && cur.leftYear === gap.leftYear && cur.rightYear === gap.rightYear ? null : gap);
   }
 
+  /** Double click a year: select it and immediately expand if possible. */
+  onYearDblClick(year: number): void {
+    this.expandPopup.set(null);
+    this.selectedGap.set(null);
+    this.selectedYear.set(year);
+    if (this.canExpandYear()) {
+      this.expandYear();
+    }
+  }
+
+  /** Double click a gap: select it and immediately expand if possible. */
+  onGapDblClick(gap: { leftYear: number; rightYear: number }): void {
+    this.expandPopup.set(null);
+    this.selectedYear.set(null);
+    this.selectedGap.set(gap);
+    if (this.canExpandGap()) {
+      this.expandGap();
+    }
+  }
+
   /** World x of the selected year's column, or null when it isn't a column. */
   readonly selectedYearX = computed<number | null>(() => {
     const y = this.selectedYear();
@@ -1693,6 +1713,46 @@ export class OkGraphComponent implements OnInit {
       queues.set(cluster, cands.map(c => this.buildPlaced(c.level, c.community, c.paperIndex)));
     }
     return queues;
+  }
+
+  /** Years that contain at least one unplaced candidate paper in the current view. */
+  readonly expandableYears = computed<Set<number>>(() => {
+    const levels = this.levels();
+    const base = this.baseNodes();
+    if (!levels.length || !base.length) return new Set();
+
+    const top = levels.length - 1;
+    const innerId = this.innerViewClusterId();
+    const isInner = innerId !== null;
+    const topComm = this.communitiesAtLevel()(top);
+
+    const placedIds = new Set(this.state.placed().map(p => p.id));
+    const result = new Set<number>();
+
+    for (let i = 0; i < base.length; i++) {
+      const node = base[i];
+      if (node.year == null) continue;
+      // Is it in view?
+      const inView = !isInner || topComm[i] === innerId;
+      if (!inView) continue;
+      // Is it placed?
+      const isPlaced = placedIds.has(node.paper_id);
+      if (isPlaced) continue;
+
+      result.add(node.year);
+    }
+    return result;
+  });
+
+  /** Whether the given year is expandable in the current view. */
+  isYearExpandable(year: number): boolean {
+    return this.expandableYears().has(year);
+  }
+
+  /** Whether the given gap is expandable in the current view. */
+  isGapExpandable(gap: { leftYear: number; rightYear: number }): boolean {
+    const midYears = middleYears(gap.leftYear, gap.rightYear);
+    return midYears.some(y => this.expandableYears().has(y));
   }
 
   /** Candidate queues for the selected year (empty when no year is selected). */
