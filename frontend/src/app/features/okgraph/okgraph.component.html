@@ -794,7 +794,7 @@
                 @if (useInGraphCards()) {
                   @for (box of laneLayout().laneBoxes; track box.topCluster) {
                     <foreignObject
-                      [attr.x]="staggeredCards() ? box.cardX : cardAlignedX"
+                      [attr.x]="box.cardX"
                       [attr.y]="box.yStart + (box.height - cardHeight) / 2"
                       [attr.width]="cardWidth"
                       [attr.height]="cardHeight"

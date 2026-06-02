@@ -950,12 +950,14 @@ export class OkGraphComponent implements OnInit {
     // moves relative to the fixed rep. Done before blobs/bridges/dividers so they
     // derive from the shifted yearX / lane positions and stay consistent.
     const anchor = isInner ? this.innerViewAnchor() : null;
+    let dx = 0;
+    let dy = 0;
     if (anchor && nodes.length) {
       const a = nodes.find(n => n.id === anchor.id);
       const natX = a ? a.x : nodes.reduce((s, n) => s + n.x, 0) / nodes.length;
       const natY = a ? a.y : nodes.reduce((s, n) => s + n.y, 0) / nodes.length;
-      const dx = anchor.x - natX;
-      const dy = anchor.y - natY;
+      dx = anchor.x - natX;
+      dy = anchor.y - natY;
       if (dx !== 0 || dy !== 0) {
         for (const n of nodes) { n.x += dx; n.y += dy; }
         for (const b of boxes.values()) {
@@ -1166,9 +1168,11 @@ export class OkGraphComponent implements OnInit {
       // node instead of in the shared left-aligned column. Falls back to the
       // aligned x when the cluster has no drawn nodes.
       const clusterBox = boxes.get(id);
-      const cardX = clusterBox
-        ? clusterBox.minX - NODE_RADIUS - 16 - this.cardWidth
-        : this.cardAlignedX;
+      const cardX = this.staggeredCards()
+        ? (clusterBox
+            ? clusterBox.minX - NODE_RADIUS - 16 - this.cardWidth
+            : this.cardAlignedX + dx)
+        : this.cardAlignedX + dx;
 
       return {
         topCluster: id,
