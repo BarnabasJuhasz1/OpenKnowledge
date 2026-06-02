@@ -1165,11 +1165,6 @@
 
     &:hover { fill: var(--ok-on-surface); }
 
-    &--expandable {
-      fill: var(--ok-primary-raw, #6366f1);
-      font-weight: 800;
-    }
-
     &--selected {
       fill: var(--ok-primary);
       font-size: 14px;
@@ -1194,11 +1189,6 @@
     transition: fill var(--ok-transition-fast), opacity var(--ok-transition-fast);
 
     &:hover { fill: var(--ok-on-surface); opacity: 1; }
-
-    &--expandable {
-      opacity: 0.8;
-      fill: var(--ok-primary-raw, #6366f1);
-    }
 
     &--selected {
       fill: var(--ok-primary);

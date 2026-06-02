@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Component, HostListener, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -1527,6 +1527,13 @@ export class OkGraphComponent implements OnInit {
     this.selectedClusterId.set(null);
     this.selectedNodeId.set(null);
     this.expandPopup.set(null);
+  }
+
+  /** Global document click handler to deselect selected timeline year/gaps when clicking outside */
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: MouseEvent): void {
+    this.selectedYear.set(null);
+    this.selectedGap.set(null);
   }
 
   closeClusterPopup(): void {

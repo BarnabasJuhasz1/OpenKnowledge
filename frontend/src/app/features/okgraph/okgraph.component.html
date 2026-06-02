@@ -973,7 +973,6 @@
                   <text
                     class="graph-svg__year-label"
                     [class.graph-svg__year-label--selected]="selectedYear() === col.year"
-                    [class.graph-svg__year-label--expandable]="isYearExpandable(col.year)"
                     [attr.x]="axisX(col.x)"
                     [attr.y]="AXIS_HEIGHT - 14"
                     text-anchor="middle"
@@ -1017,7 +1016,6 @@
                   <text
                     class="graph-svg__gap-icon"
                     [class.graph-svg__gap-icon--selected]="isGapSelected(gap)"
-                    [class.graph-svg__gap-icon--expandable]="isGapExpandable(gap)"
                     [attr.x]="axisX(gap.x)"
                     [attr.y]="AXIS_HEIGHT - 13"
                     text-anchor="middle"
