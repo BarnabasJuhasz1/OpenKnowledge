@@ -759,7 +759,9 @@
                       <div
                         class="lane-box"
                         [style.border-left-color]="box.color"
-                        [style.border-color]="isClusterSelected(box.topCluster) ? box.color : null"
+                        [style.border-top-color]="isClusterSelected(box.topCluster) ? box.color : null"
+                        [style.border-right-color]="isClusterSelected(box.topCluster) ? box.color : null"
+                        [style.border-bottom-color]="isClusterSelected(box.topCluster) ? box.color : null"
                         [class.lane-box--selected]="isClusterSelected(box.topCluster)"
                         [class.lane-box--transition-fade-out]="isClusterOutsideTransitionTarget(box.topCluster)"
                         (click)="selectClusterById(box.topCluster, $event)"
