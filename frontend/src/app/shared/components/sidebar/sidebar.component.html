@@ -1,0 +1,108 @@
+<aside class="sidebar" [class.sidebar--collapsed]="collapsed()">
+  <!-- Collapse / expand toggle -->
+  <button
+    type="button"
+    class="sidebar__collapse-btn"
+    (click)="toggleCollapse()"
+    [attr.aria-expanded]="!collapsed()"
+    [attr.aria-label]="collapsed() ? 'Expand sidebar' : 'Collapse sidebar'"
+    [title]="collapsed() ? 'Expand sidebar' : 'Collapse sidebar'"
+  >
+    <span class="material-symbols-outlined sidebar__nav-icon">
+      {{ collapsed() ? 'chevron_right' : 'chevron_left' }}
+    </span>
+  </button>
+
+  <!-- Top-level tabs -->
+  <nav class="sidebar__top" aria-label="Dashboard">
+    <a
+      class="sidebar__nav-link"
+      routerLink="/dashboard/home"
+      routerLinkActive="sidebar__nav-link--active"
+      [title]="collapsed() ? 'Dashboard' : null"
+    >
+      <span class="material-symbols-outlined sidebar__nav-icon">dashboard</span>
+      <span class="sidebar__nav-label">Dashboard</span>
+    </a>
+    <a
+      class="sidebar__nav-link"
+      routerLink="/dashboard/projects"
+      routerLinkActive="sidebar__nav-link--active"
+      [title]="collapsed() ? 'My Projects' : null"
+    >
+      <span class="material-symbols-outlined sidebar__nav-icon">folder_open</span>
+      <span class="sidebar__nav-label">My Projects</span>
+    </a>
+  </nav>
+
+  <hr class="sidebar__divider" />
+
+  <!-- Active project + its features -->
+  @if (activeProject(); as project) {
+    <div
+      class="sidebar__active"
+      aria-hidden="false"
+      [title]="collapsed() ? project.name : null"
+    >
+      <span
+        class="sidebar__active-dot"
+        [style.background]="project.color || 'var(--ok-primary-raw)'"
+      ></span>
+      <span class="sidebar__active-name">{{ project.name }}</span>
+    </div>
+    <nav class="sidebar__nav" aria-label="Project features">
+      @for (feature of features; track feature.path) {
+        <a
+          class="sidebar__nav-link sidebar__nav-link--feature"
+          [routerLink]="featureLink(feature.path)"
+          routerLinkActive="sidebar__nav-link--active"
+          [title]="collapsed() ? feature.label : null"
+        >
+          <span class="material-symbols-outlined sidebar__nav-icon">{{ feature.icon }}</span>
+          <span class="sidebar__nav-label">{{ feature.label }}</span>
+        </a>
+      }
+    </nav>
+  } @else {
+    <p class="sidebar__no-project">
+      No project selected.
+      <a routerLink="/dashboard/projects">Choose a project</a> to use its
+      features.
+    </p>
+  }
+
+  <!-- Documentation + Settings (pinned to the bottom of the sidebar) -->
+  <nav class="sidebar__settings" aria-label="Help and settings">
+    <a
+      class="sidebar__nav-link"
+      routerLink="/docs"
+      routerLinkActive="sidebar__nav-link--active"
+      [title]="collapsed() ? 'Documentation' : null"
+    >
+      <span class="material-symbols-outlined sidebar__nav-icon">description</span>
+      <span class="sidebar__nav-label">Documentation</span>
+    </a>
+    <hr class="sidebar__divider" />
+    <a
+      class="sidebar__nav-link"
+      routerLink="/dashboard/settings"
+      routerLinkActive="sidebar__nav-link--active"
+      [title]="collapsed() ? 'Settings' : null"
+    >
+      <span class="material-symbols-outlined sidebar__nav-icon">settings</span>
+      <span class="sidebar__nav-label">Settings</span>
+    </a>
+
+    <!-- Signed-in user (avatar + name), moved here from the global top nav. -->
+    @if (auth.isAuthenticated()) {
+      <div class="sidebar__user" [title]="collapsed() ? displayName() : null">
+        @if (auth.user()?.avatar_url) {
+          <img class="sidebar__avatar" [src]="auth.user()!.avatar_url" alt="" />
+        } @else {
+          <span class="material-symbols-outlined sidebar__avatar-icon">account_circle</span>
+        }
+        <span class="sidebar__user-name">{{ displayName() }}</span>
+      </div>
+    }
+  </nav>
+</aside>

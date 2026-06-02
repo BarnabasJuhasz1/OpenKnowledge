@@ -1,8 +1,6 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import {
   RouterOutlet,
-  RouterLink,
-  RouterLinkActive,
   ActivatedRoute,
   ActivatedRouteSnapshot,
   Router,
@@ -12,16 +10,15 @@ import { filter } from 'rxjs';
 import { ProjectService } from '../../core/services/project.service';
 import { ProjectContextService } from '../../core/services/project-context.service';
 
-interface FeatureLink {
-  path: string;
-  label: string;
-  icon: string;
-}
-
+/**
+ * Dashboard shell for /dashboard routes. The navigation rail moved to the
+ * global app shell (SidebarComponent); this component now only hosts the
+ * feature pages and keeps the active project in sync with the URL.
+ */
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [RouterOutlet],
   templateUrl: './dashboard.component.html',
   styleUrl: './dashboard.component.scss',
 })
@@ -31,32 +28,10 @@ export class DashboardComponent implements OnInit {
   private readonly projectService = inject(ProjectService);
   private readonly projectContext = inject(ProjectContextService);
 
-  private static readonly COLLAPSE_KEY = 'ok-sidebar-collapsed';
-
   readonly projects = this.projectService.projects;
   readonly activeProjectId = this.projectContext.activeProjectId;
-  readonly activeProject = this.projectContext.activeProject;
-
-  /** Whether the sidebar is collapsed to an icons-only rail. Persisted. */
-  readonly collapsed = signal<boolean>(this.readCollapsed());
-
-  readonly features: FeatureLink[] = [
-    { path: 'search', label: 'Search', icon: 'search' },
-    { path: 'research', label: 'Results', icon: 'list_alt' },
-    { path: 'graph', label: 'Graph', icon: 'hub' },
-    { path: 'library', label: 'Library', icon: 'menu_book' },
-    { path: 'project-settings', label: 'Project Settings', icon: 'tune' },
-  ];
 
   ngOnInit(): void {
-    // Keep the sidebar's project list current.
-    if (this.projects().length === 0) {
-      this.projectService.load().subscribe({
-        next: () => this.validateActiveProject(),
-        error: () => {},
-      });
-    }
-
     // Pick up the active project from the URL on first load and every
     // subsequent navigation into a :projectId route.
     this.syncActiveProjectFromUrl();
@@ -93,30 +68,6 @@ export class DashboardComponent implements OnInit {
     if (id === null || this.projects().length === 0) return;
     if (!this.projects().some(p => p.id === id)) {
       this.projectContext.setActiveProject(null);
-    }
-  }
-
-  /** Route into the active project's feature view. */
-  featureLink(path: string): (string | number)[] {
-    return ['/dashboard', this.activeProjectId() ?? 0, path];
-  }
-
-  /** Toggle the icons-only collapsed state and persist the choice. */
-  toggleCollapse(): void {
-    const next = !this.collapsed();
-    this.collapsed.set(next);
-    try {
-      localStorage.setItem(DashboardComponent.COLLAPSE_KEY, String(next));
-    } catch {
-      // Storage may be unavailable (private mode); collapse still works for the session.
-    }
-  }
-
-  private readCollapsed(): boolean {
-    try {
-      return localStorage.getItem(DashboardComponent.COLLAPSE_KEY) === 'true';
-    } catch {
-      return false;
     }
   }
 }

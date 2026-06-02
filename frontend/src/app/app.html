@@ -1,5 +1,18 @@
 <app-top-nav />
-<router-outlet />
+
+<!--
+  App shell: the navigation rail is rendered globally so it stays visible on
+  every signed-in route (compact off the dashboard). When signed out there is
+  no rail and the content spans the full width.
+-->
+<div class="app-shell">
+  @if (auth.isAuthenticated()) {
+    <app-sidebar />
+  }
+  <div class="app-shell__main">
+    <router-outlet />
+  </div>
+</div>
 
 <!-- Toast notifications -->
 @for (toast of notifications.toasts(); track toast.id) {

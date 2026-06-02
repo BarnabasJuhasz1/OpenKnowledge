@@ -3,8 +3,18 @@
 // Wrapper styles mirror the global Settings page; section content is provided by
 // the embedded Discovery / Analysis components (their own scoped styles apply).
 // ============================================================================
+:host {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}
+
 .settings {
-  min-height: calc(100vh - var(--ok-topnav-height));
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
   padding: var(--ok-space-10) var(--ok-space-8);
   background: var(--ok-bg);
   overflow-y: auto;

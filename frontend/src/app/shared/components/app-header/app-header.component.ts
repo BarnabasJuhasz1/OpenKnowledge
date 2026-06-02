@@ -1,5 +1,6 @@
-import { Component, input } from '@angular/core';
+import { Component, input, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { ThemeService } from '../../../core/services/theme.service';
 
 @Component({
   selector: 'app-header',
@@ -10,4 +11,5 @@ import { RouterLink } from '@angular/router';
 })
 export class AppHeaderComponent {
   readonly activeRoute = input<string>('');
+  readonly themeSvc = inject(ThemeService);
 }

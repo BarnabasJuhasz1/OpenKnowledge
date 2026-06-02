@@ -4,6 +4,7 @@ import { NavigationEnd, Router, RouterLink } from '@angular/router';
 import { filter } from 'rxjs';
 import { AuthService } from '../../../core/services/auth.service';
 import { LoginModalComponent } from '../../../features/auth/login-modal.component';
+import { ThemeService } from '../../../core/services/theme.service';
 
 const GITHUB_REPO = 'BarnabasJuhasz1/OpenKnowledge';
 
@@ -18,6 +19,7 @@ export class TopNavComponent implements OnInit {
   private readonly http = inject(HttpClient);
   private readonly router = inject(Router);
   protected readonly auth = inject(AuthService);
+  protected readonly themeSvc = inject(ThemeService);
 
   readonly repoUrl = `https://github.com/${GITHUB_REPO}`;
   readonly stars = signal<number | null>(null);
@@ -25,7 +27,7 @@ export class TopNavComponent implements OnInit {
 
   ngOnInit(): void {
     this.http
-      .get<{ stargazers_count: number }>(`https://api.github.com/repos/${GITHUB_REPO}`)
+      .get<{ stargazers_count: number }>(`/api/github/stars/${GITHUB_REPO}`)
       .subscribe({
         next: (repo) => this.stars.set(repo.stargazers_count),
         error: () => this.stars.set(null),

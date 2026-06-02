@@ -1,7 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import { CitGraphNode, CitGraphEdge } from './citgraph.service';
 import { louvain, LouvainResult } from '../../features/citgraph/louvain';
-import { LayoutEdge } from '../../features/graph/graph-layout';
+import { LayoutEdge } from '../../features/okgraph/graph-layout';
 import { Paper } from '../models/paper.model';
 import { matchesNodeKeywords } from '../../shared/utils/keyword-match';
 
@@ -26,6 +26,7 @@ export interface HierarchyPayload {
   keywords: string[];         // flattened keyword query for title+abstract matching
   seedId: string;             // origin paper — always kept so the filter matches the Cit-Graph stage
   prefiltered: boolean;       // true → the Cit-Graph already dropped non-matching papers
+  initialSeedIds?: string[];  // paper IDs initially selected to construct this graph
 }
 
 /**
@@ -49,12 +50,34 @@ export class OkGraphStateService {
   readonly placed = signal<PlacedNode[]>([]);
   readonly links = signal<LayoutEdge[]>([]);
 
+  /** Open/collapsed state of the right-side details panel. Defaults to true (collapsed) when no paper selected. */
+  readonly panelCollapsed = signal(true);
+  /** User preference tracking if the panel should automatically open on selecting a paper. Defaults to true. */
+  readonly autoOpenEnabled = signal(true);
+
   /** Whether the keyword filter is currently applied on the OK-Graph. */
   readonly filterActive = signal(false);
   /** True when the Cit-Graph prefiltered: the OK-Graph filter is then locked on. */
   readonly prefiltered = signal(false);
   /** Flattened keyword query; empty → nothing to filter (toggle disabled). */
   readonly keywords = signal<string[]>([]);
+
+  /** Paper IDs initially selected for constructing this graph. */
+  readonly initialSeedIds = signal<Set<string>>(new Set());
+
+  /**
+   * The raw citation graph (base nodes + edges) the current hierarchy was built
+   * from, plus the Louvain resolution used. Shared so the Clustering (Cit-Graph)
+   * page can reflect a graph that was built+clustered in the background from the
+   * OK-Graph page. Null until the first exploration.
+   */
+  readonly rawGraph = signal<{
+    nodes: CitGraphNode[];
+    edges: CitGraphEdge[];
+    seedId: string;
+    resolution: number;
+    maxLevels: number;
+  } | null>(null);
 
   // Originals kept so the filter can be toggled off (restore) or on (re-cluster).
   private allNodes: CitGraphNode[] = [];
@@ -77,8 +100,21 @@ export class OkGraphStateService {
     // cannot be turned off (the discarded papers were never sent).
     this.filterActive.set(p.prefiltered);
 
+    if (p.initialSeedIds) {
+      this.initialSeedIds.set(new Set(p.initialSeedIds));
+    } else {
+      this.initialSeedIds.set(new Set(p.seedId ? [p.seedId] : []));
+    }
+
     this.nodes.set(p.nodes);
     this.louvain.set(p.louvain);
+    this.rawGraph.set({
+      nodes: p.nodes,
+      edges: p.edges,
+      seedId: p.seedId,
+      resolution: p.resolution,
+      maxLevels: p.maxLevels,
+    });
     this.hasContent.set(p.nodes.length > 0 && p.louvain.levels.length > 0);
     // New dataset → drop any previous exploration; the view re-seeds top reps.
     this.placed.set([]);
@@ -135,9 +171,13 @@ export class OkGraphStateService {
     this.hasContent.set(false);
     this.placed.set([]);
     this.links.set([]);
+    this.panelCollapsed.set(true);
+    this.autoOpenEnabled.set(true);
     this.filterActive.set(false);
     this.prefiltered.set(false);
     this.keywords.set([]);
+    this.initialSeedIds.set(new Set());
+    this.rawGraph.set(null);
     this.allNodes = [];
     this.allEdges = [];
     this.originalLouvain = null;

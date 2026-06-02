@@ -1,3 +1,27 @@
+// ============================================================================
+// App shell — global navigation rail + content, sitting below the top nav.
+// Uses min-height (not a fixed height) so flow-scrolling pages like the
+// landing page keep their natural body scroll while the sticky rail follows.
+// ============================================================================
+.app-shell {
+  display: flex;
+  align-items: stretch;
+  min-height: calc(100vh - var(--ok-topnav-height));
+}
+
+.app-shell__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 768px) {
+  .app-shell {
+    flex-direction: column;
+  }
+}
+
 .toast {
   position: fixed;
   bottom: 1.5rem;

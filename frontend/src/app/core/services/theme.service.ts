@@ -47,6 +47,11 @@ export class ThemeService {
       const theme = this.theme();
       try {
         document.documentElement.setAttribute('data-theme', theme);
+        const iconHref = theme === 'light' ? 'openknowledge_icon.svg' : 'openknowledge_icon_white.svg';
+        const link = document.querySelector("link[rel*='icon']") as HTMLLinkElement | null;
+        if (link) {
+          link.href = iconHref;
+        }
       } catch {
         /* non-browser environment — ignore */
       }

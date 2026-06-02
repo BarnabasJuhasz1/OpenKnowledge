@@ -63,7 +63,6 @@ export class QueryInputComponent implements OnChanges {
     this.shelfOpen.set(false);
     this.query.set(item.query_text);
     this.shelf.markUsed(item.id).subscribe();
-    this.search.emit(item.query_text);
   }
 
   saveToShelf(): void {

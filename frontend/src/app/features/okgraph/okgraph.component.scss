@@ -80,7 +80,7 @@
 
   .setup-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: var(--ok-space-4);
     animation: ok-slide-up var(--ok-transition-slow);
     min-height: 0;
@@ -95,6 +95,7 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
+    min-width: 0;
     transition: transform var(--ok-transition), box-shadow var(--ok-transition);
 
     &:hover {
@@ -217,6 +218,45 @@
     display: flex;
     flex-direction: column;
     height: 210px;
+    min-width: 0;
+  }
+
+  .seed-source-tabs {
+    display: flex;
+    gap: var(--ok-space-2);
+    margin-bottom: var(--ok-space-3);
+    border-bottom: 1px solid var(--ok-outline-variant);
+    padding-bottom: var(--ok-space-2);
+    flex-shrink: 0;
+  }
+
+  .seed-source-tab {
+    background: transparent;
+    border: none;
+    font-family: var(--ok-font-label);
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--ok-on-surface-variant);
+    padding: var(--ok-space-1) var(--ok-space-2);
+    border-radius: var(--ok-radius-sm);
+    cursor: pointer;
+    transition: background var(--ok-transition-fast), color var(--ok-transition-fast);
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--ok-on-surface);
+    }
+
+    &--active {
+      color: var(--ok-primary);
+      background: rgba(var(--ok-primary-rgb), 0.1);
+      font-weight: 600;
+
+      &:hover {
+        background: rgba(var(--ok-primary-rgb), 0.15);
+        color: var(--ok-primary);
+      }
+    }
   }
 
   .papers-list-empty {
@@ -315,15 +355,43 @@
     background: rgba(255, 255, 255, 0.02);
     border: 1px solid rgba(255, 255, 255, 0.05);
     border-radius: var(--ok-radius);
-    transition: background var(--ok-transition);
+    transition: background var(--ok-transition), border-color var(--ok-transition);
+    min-width: 0;
 
     &:hover {
       background: rgba(255, 255, 255, 0.04);
     }
 
+    &--library {
+      cursor: pointer;
+      user-select: none;
+
+      &:hover {
+        border-color: rgba(var(--ok-primary-rgb), 0.3);
+        background: rgba(255, 255, 255, 0.04);
+      }
+    }
+
+    &--selected {
+      background: rgba(var(--ok-primary-rgb), 0.04);
+      border-color: rgba(var(--ok-primary-rgb), 0.2);
+    }
+
+    &__checkbox {
+      font-size: 1.25rem;
+      color: var(--ok-outline);
+      flex-shrink: 0;
+      transition: color var(--ok-transition-fast);
+
+      &--selected {
+        color: #4caf50;
+      }
+    }
+
     &__icon {
       font-size: 1.25rem;
-      color: var(--ok-primary);
+      color: #4caf50;
+      font-variation-settings: 'FILL' 1;
       flex-shrink: 0;
     }
 
@@ -599,6 +667,14 @@
     position: relative;
   }
 
+  &__canvas-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    position: relative;
+  }
+
   &__canvas {
     flex: 1;
     min-height: 0;
@@ -607,9 +683,114 @@
     cursor: grab;
     user-select: none;
 
+    // Column layout so the bottom navigation bar reserves its own space below
+    // the graph instead of being pushed past the clipped (overflow:hidden) edge.
+    display: flex;
+    flex-direction: column;
+
     &--panning { cursor: grabbing; }
   }
+
+  // No-nodes fallback fills the canvas so the bottom bar stays at the bottom.
+  &__empty {
+    flex: 1 1 0;
+    min-height: 0;
+  }
 }
+
+// Static white header on top of the years
+.ok-graph-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 1.5rem;
+  background: var(--ok-surface-container-lowest);
+  border-bottom: 1px solid var(--ok-outline-variant);
+  z-index: 10;
+
+  &__stats {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  &__stat {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+
+    &--cluster {
+      max-width: 18rem;
+      min-width: 0;
+
+      .ok-graph-header__value {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+    }
+  }
+
+  &__swatch {
+    flex: 0 0 auto;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12) inset;
+  }
+
+  &__icon {
+    font-size: 18px;
+    font-variation-settings: 'FILL' 1;
+
+    &--clusters {
+      color: var(--ok-primary);
+    }
+    &--papers {
+      color: var(--ok-on-surface-variant);
+    }
+    &--seeds {
+      color: #4caf50;
+    }
+    &--gold {
+      color: #f5b400;
+    }
+    &--silver {
+      color: #cbd2da;
+    }
+  }
+
+  &__label {
+    font-family: var(--ok-font-label);
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--ok-outline);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  &__value {
+    font-family: var(--ok-font-label);
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: var(--ok-on-surface);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__divider {
+    width: 1px;
+    height: 18px;
+    background: var(--ok-outline-variant);
+  }
+}
+
 
 // Zoom controls
 .zoom-controls {
@@ -661,11 +842,9 @@
   }
 }
 
-// Display settings (gear + popover), stacked above the zoom controls.
+// Display settings (gear + popover), dropdown in header actions.
 .graph-settings {
-  position: absolute;
-  bottom: calc(0.75rem + 38px);
-  left: 0.75rem;
+  position: relative;
   z-index: 11;
 
   &__btn {
@@ -674,16 +853,21 @@
     justify-content: center;
     width: 30px;
     height: 30px;
-    border: 1px solid var(--ok-glass-border);
+    border: 1px solid var(--ok-outline-variant);
     border-radius: var(--ok-radius);
-    background: var(--ok-glass-bg);
-    backdrop-filter: blur(var(--ok-glass-blur));
+    background: var(--ok-surface-container-lowest);
     color: var(--ok-on-surface-variant);
     cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
     transition: background var(--ok-transition-fast), color var(--ok-transition-fast);
     &:hover { background: var(--ok-surface-container-high); color: var(--ok-on-surface); }
     &--active { color: var(--ok-primary); border-color: rgba(var(--ok-primary-rgb), 0.5); }
+    &--danger {
+      &:hover {
+        background: rgba(239, 68, 68, 0.12);
+        color: #ef4444;
+        border-color: rgba(239, 68, 68, 0.4);
+      }
+    }
   }
 
   &__backdrop {
@@ -694,8 +878,9 @@
 
   &__panel {
     position: absolute;
-    bottom: calc(100% + 8px);
-    left: 0;
+    top: calc(100% + 8px);
+    right: 0;
+    left: auto;
     z-index: 15;
     width: 250px;
     max-height: 70vh;
@@ -770,6 +955,14 @@
     &--silver { color: #cbd2da; }
   }
 
+  &__seed {
+    font-family: 'Material Symbols Outlined', inherit;
+    font-size: 14px;
+    font-variation-settings: 'FILL' 1;
+    line-height: 1;
+    color: #4caf50;
+  }
+
   &__switch {
     position: relative;
     flex-shrink: 0;
@@ -798,10 +991,110 @@
     transition: transform var(--ok-transition-fast);
     .graph-settings__switch--on & { transform: translateX(16px); }
   }
+
+  &__slider-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0.55rem 0.85rem;
+  }
+
+  &__slider-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  &__slider-label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--ok-on-surface);
+  }
+
+  &__slider-value {
+    font-family: var(--ok-font-label);
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--ok-primary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__range-input {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--ok-outline-variant);
+    outline: none;
+    cursor: pointer;
+    transition: background var(--ok-transition);
+
+    &::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--ok-primary-raw);
+      border: 2px solid var(--ok-surface-container-lowest);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+      cursor: pointer;
+      transition: transform var(--ok-transition-fast);
+
+      &:hover {
+        transform: scale(1.15);
+      }
+    }
+  }
+
+  &__view-clusters-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--ok-space-2);
+    width: 100%;
+    padding: 0.55rem 0.9rem;
+    border: none;
+    border-radius: var(--ok-radius-md);
+    background: var(--ok-gradient-primary);
+    color: #fff;
+    font-family: var(--ok-font-label);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(var(--ok-primary-rgb), 0.25);
+    transition: all var(--ok-transition);
+
+    .material-symbols-outlined {
+      font-size: 16px;
+    }
+
+    &:hover:not([disabled]) {
+      box-shadow: 0 6px 16px rgba(var(--ok-primary-rgb), 0.35);
+      filter: brightness(1.08);
+      transform: translateY(-1px);
+    }
+
+    &:active:not([disabled]) {
+      transform: translateY(0);
+    }
+
+    &[disabled], &:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      box-shadow: none;
+      filter: none;
+      transform: none;
+    }
+  }
 }
 
 .graph-svg {
   display: block;
+  // Fill the space above the bottom navigation bar within the flex-column canvas.
+  flex: 1 1 0;
+  min-height: 0;
 
   &__divider {
     stroke: var(--ok-outline-variant);
@@ -820,6 +1113,10 @@
     fill-opacity: 0.09;
     stroke-opacity: 0.45;
     stroke-width: 1.5;
+    cursor: pointer;
+    transition: fill-opacity 0.15s, stroke-opacity 0.15s, stroke-width 0.15s, opacity 0.4s ease-in-out;
+
+    &:hover { fill-opacity: 0.14; }
 
     // The Miscellaneous catch-all reads as a muted, dashed lane so it is clearly
     // not one of the "real" topic clusters.
@@ -827,6 +1124,26 @@
       fill-opacity: 0.06;
       stroke-opacity: 0.55;
       stroke-dasharray: 8 6;
+    }
+
+    // A selected cluster reads brighter, with a stronger outline.
+    &--selected {
+      fill-opacity: 0.2;
+      stroke-opacity: 0.9;
+      stroke-width: 2.5;
+    }
+  }
+
+  // Merge neck joining two cluster blobs. Slightly stronger fill than a blob so
+  // the overlap reads as a deliberate connection rather than a rendering seam.
+  &__bridge {
+    fill-opacity: 0.12;
+    stroke: none;
+    pointer-events: none;
+    transition: fill-opacity 0.15s;
+
+    &--highlighted {
+      fill-opacity: 0.5;
     }
   }
 
@@ -851,18 +1168,18 @@
 
   &__edge {
     stroke-width: 2;
-    transition: stroke 0.2s;
+    transition: stroke 0.2s, opacity 0.4s ease-in-out, d 0.6s cubic-bezier(0.25, 0.8, 0.25, 1);
   }
 
   &__node {
-    transition: opacity 0.2s;
+    transition: opacity 0.4s ease-in-out, transform 0.6s cubic-bezier(0.25, 0.8, 0.25, 1);
     &--dimmed { opacity: 0.25; }
   }
 
   // Fill/stroke are bound per node (cluster colour) via attributes, so no
   // colour is set here — CSS would otherwise override the attributes.
   &__circle {
-    transition: fill 0.15s, stroke 0.15s;
+    transition: fill 0.6s cubic-bezier(0.25, 0.8, 0.25, 1), stroke 0.6s cubic-bezier(0.25, 0.8, 0.25, 1);
   }
 
   &__node-letter {
@@ -914,6 +1231,17 @@
     &--silver { fill: #cbd2da; }
   }
 
+  &__seed-icon {
+    font-family: 'Material Symbols Outlined', inherit;
+    font-size: 17px;
+    font-variation-settings: 'FILL' 1;
+    pointer-events: none;
+    paint-order: stroke;
+    stroke: rgba(0, 0, 0, 0.45);
+    stroke-width: 0.6px;
+    fill: #4caf50;
+  }
+
   &__expand-btn {
     cursor: pointer;
     &--disabled { opacity: 0.25; pointer-events: none; }
@@ -942,6 +1270,151 @@
 }
 
 // Candidate popup
+// Selected-cluster popup, pinned to the top-left of the canvas.
+.cluster-popup {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 16;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  max-width: 340px;
+  padding: 0.65rem 0.75rem;
+  background: var(--ok-glass-bg-floating);
+  backdrop-filter: blur(var(--ok-glass-blur-floating));
+  border: 1px solid var(--ok-glass-border);
+  border-radius: var(--ok-radius-md);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+
+  &__swatch {
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    margin-top: 2px;
+    border-radius: 4px;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15) inset;
+  }
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+  }
+
+  &__label {
+    font-family: var(--ok-font-label);
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: var(--ok-outline);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  &__name {
+    font-family: var(--ok-font-label);
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: var(--ok-on-surface);
+  }
+
+  &__rep {
+    font-size: 0.8rem;
+    color: var(--ok-on-surface-variant);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__meta {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--ok-outline);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    column-gap: 0.8rem;
+    row-gap: 0.35rem;
+    margin-top: 0.45rem;
+    padding-top: 0.45rem;
+    border-top: 1px solid var(--ok-glass-border);
+  }
+
+  &__stat {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.72rem;
+    white-space: nowrap;
+  }
+
+  &__icon {
+    font-family: 'Material Symbols Outlined', inherit;
+    font-size: 14px;
+    line-height: 1;
+    flex-shrink: 0;
+    font-variation-settings: 'FILL' 1;
+
+    &--papers { color: var(--ok-on-surface-variant); }
+    &--seeds { color: #4caf50; }
+    &--gold { color: #f5b400; }
+    &--silver { color: #cbd2da; }
+  }
+
+  &__stat-label {
+    font-weight: 500;
+    color: var(--ok-outline);
+  }
+
+  &__stat-value {
+    font-weight: 700;
+    color: var(--ok-on-surface);
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  &__summary-title {
+    margin-top: 0.35rem;
+    font-family: var(--ok-font-label);
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--ok-on-surface);
+  }
+
+  &__summary {
+    margin-top: 0.2rem;
+    font-size: 0.76rem;
+    line-height: 1.45;
+    color: var(--ok-on-surface-variant);
+    max-height: 160px;
+    overflow-y: auto;
+
+    &--pending {
+      font-style: italic;
+      color: var(--ok-outline);
+    }
+  }
+
+  &__close {
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    color: var(--ok-on-surface-variant);
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 0.15rem;
+    border-radius: var(--ok-radius-sm);
+    transition: background var(--ok-transition-fast), color var(--ok-transition-fast);
+    &:hover { background: var(--ok-surface-container-high); color: var(--ok-on-surface); }
+  }
+}
+
 .expand-popup-backdrop {
   position: absolute;
   inset: 0;
@@ -1022,12 +1495,17 @@
 }
 
 .panel-toggle {
-  z-index: 12;
+  // The toggle floats too, riding the floating panel's left edge. When the
+  // panel is open it sits at right:360px; when collapsed it hugs the right edge.
+  position: absolute;
+  top: 50%;
+  right: 360px;
+  transform: translateY(-50%);
+  z-index: 21;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 22px;
-  align-self: center;
   height: 48px;
   border: 1px solid var(--ok-outline-variant);
   border-right: none;
@@ -1036,20 +1514,29 @@
   color: var(--ok-on-surface-variant);
   cursor: pointer;
   flex-shrink: 0;
-  margin-right: -1px;
   box-shadow: -2px 0 6px rgba(0, 0, 0, 0.1);
-  transition: background var(--ok-transition-fast), color var(--ok-transition-fast);
+  transition: background var(--ok-transition-fast), color var(--ok-transition-fast), right var(--ok-transition-fast);
   &:hover { background: var(--ok-surface-container-high); color: var(--ok-on-surface); }
+  &--collapsed { right: 0; }
 }
 
 .detail-panel {
+  // Float the panel as an overlay anchored to the canvas-wrap's right edge so
+  // it sits ON TOP of the header + canvas instead of stealing layout width and
+  // squeezing the header graphics to the left.
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
   width: 360px;
-  flex-shrink: 0;
+  max-width: 100%;
+  z-index: 20;
   background: var(--ok-surface-container-low);
   border-left: 1px solid var(--ok-outline-variant);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  overflow: hidden;
 
   &__add-section {
     padding: 1.25rem;
@@ -1135,6 +1622,9 @@
     display: flex;
     flex-direction: column;
     gap: 1rem;
+    height: 100%;
+    min-height: 0;
+    box-sizing: border-box;
   }
 
   &__paper-title {
@@ -1169,7 +1659,13 @@
     &--archetype-second { background: rgba(var(--ok-tertiary-rgb), 0.12); color: var(--ok-tertiary); border: 1px solid rgba(var(--ok-tertiary-rgb), 0.2); }
   }
 
-  &__section { display: flex; flex-direction: column; gap: 0.35rem; }
+  &__section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    flex: 1;
+    min-height: 0;
+  }
 
   &__section-title {
     font-family: var(--ok-font-label);
@@ -1186,7 +1682,9 @@
     color: var(--ok-on-surface-variant);
     line-height: 1.6;
     margin: 0;
-    max-height: 200px;
+    max-height: none;
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
   }
 
@@ -1251,4 +1749,579 @@
     color: var(--ok-outline);
     max-width: 220px;
   }
+}
+
+// Clear Graph Confirmation Modal
+.graph-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--ok-space-4, 1rem);
+  background: rgba(8, 11, 20, 0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: graph-modal-fade 0.2s ease-out;
+}
+
+.graph-modal {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  padding: 2rem;
+  border-radius: var(--ok-radius-lg, 16px);
+  background: var(--ok-glass-bg-floating, var(--ok-surface));
+  backdrop-filter: blur(var(--ok-glass-blur-floating, 12px));
+  border: 1px solid var(--ok-glass-border, var(--ok-outline-variant));
+  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.45);
+  animation: graph-modal-pop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  text-align: center;
+
+  &__title {
+    margin: 0 0 0.75rem;
+    font-family: var(--ok-font-headline);
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--ok-on-surface);
+  }
+
+  &__text {
+    margin: 0 0 1.75rem;
+    font-size: 0.92rem;
+    line-height: 1.5;
+    color: var(--ok-on-surface-variant);
+  }
+
+  &__actions {
+    display: flex;
+    justify-content: center;
+    gap: 0.75rem;
+  }
+
+  &__btn {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.65rem 1rem;
+    border-radius: var(--ok-radius-full, 24px);
+    border: 1px solid var(--ok-outline-variant);
+    background: var(--ok-surface-container, var(--ok-hover-overlay));
+    color: var(--ok-on-surface);
+    font-family: var(--ok-font-label);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background var(--ok-transition), border-color var(--ok-transition), transform var(--ok-transition);
+
+    &:hover {
+      background: var(--ok-hover-overlay-strong, var(--ok-hover-overlay));
+      border-color: var(--ok-outline);
+      transform: translateY(-1px);
+    }
+    &:active {
+      transform: translateY(0);
+    }
+
+    &--danger {
+      background: #ba1a1a;
+      border-color: #ba1a1a;
+      color: #ffffff;
+
+      &:hover {
+        background: #ba1a1a;
+        background-image: linear-gradient(rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.08));
+        border-color: #93000a;
+        color: #ffffff;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(186, 26, 26, 0.3);
+      }
+      &:active {
+        transform: translateY(0);
+        box-shadow: none;
+      }
+    }
+  }
+}
+
+@keyframes graph-modal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes graph-modal-pop {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.lane-box {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0.6rem;
+  height: 100%;
+  padding: 0.75rem 0.85rem;
+  background: var(--ok-surface-container-low, #fff);
+  border: 1px solid var(--ok-outline-variant, #e5e7eb);
+  border-left: 5px solid;
+  border-radius: var(--ok-radius-md, 12px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  box-sizing: border-box;
+  // Fixed-size card: never scroll on either axis; overflowing text is clamped.
+  overflow: hidden;
+  cursor: pointer;
+  transition: box-shadow var(--ok-transition-fast), transform var(--ok-transition-fast), border-color var(--ok-transition-fast), background var(--ok-transition-fast);
+
+  // Text column; the Move Inside button sits beside it and stays visible.
+  &__body {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  &:hover {
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+    background: var(--ok-surface-container, #f9fafb);
+  }
+
+  &--selected {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    border-color: var(--ok-primary, #2563eb);
+    background: var(--ok-surface-container-high, #fff);
+  }
+
+  &__header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+  }
+
+  &__swatch {
+    flex-shrink: 0;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1) inset;
+  }
+
+  &__title-group {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  &__name {
+    font-family: var(--ok-font-label, inherit);
+    font-size: 0.9rem;
+    font-weight: 800;
+    color: var(--ok-on-surface, #111827);
+  }
+
+  &__meta {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--ok-outline, #9ca3af);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.4rem;
+    margin-bottom: 0.5rem;
+    padding: 0.4rem 0;
+    border-top: 1px solid var(--ok-outline-variant, #f3f4f6);
+    border-bottom: 1px solid var(--ok-outline-variant, #f3f4f6);
+  }
+
+  &__stat {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.7rem;
+  }
+
+  &__icon {
+    font-family: 'Material Symbols Outlined', inherit;
+    font-size: 13px;
+    line-height: 1;
+    flex-shrink: 0;
+    font-variation-settings: 'FILL' 1;
+
+    &--papers { color: var(--ok-outline, #6b7280); }
+    &--seeds { color: #4caf50; }
+    &--gold { color: #f5b400; }
+    &--silver { color: #cbd2da; }
+  }
+
+  &__stat-value {
+    font-weight: 700;
+    color: var(--ok-on-surface, #111827);
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__summary-title {
+    font-family: var(--ok-font-label, inherit);
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--ok-on-surface, #111827);
+    margin-bottom: 0.2rem;
+  }
+
+  &__summary {
+    font-size: 0.72rem;
+    line-height: 1.4;
+    color: var(--ok-on-surface-variant, #4b5563);
+    // Clamp to fit the fixed card height instead of scrolling.
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+
+    &--pending {
+      font-style: italic;
+      color: var(--ok-outline, #9ca3af);
+      -webkit-line-clamp: 1;
+    }
+  }
+}
+
+/* Cluster Drilldown Features */
+
+.cluster-popup__move-btn {
+  align-self: flex-start;
+  margin-top: 0.6rem;
+  padding: 0.35rem 0.65rem;
+  font-family: var(--ok-font-label);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--ok-on-primary);
+  background: var(--ok-primary);
+  border: none;
+  border-radius: var(--ok-radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transition: opacity var(--ok-transition-fast), transform var(--ok-transition-fast);
+
+  span {
+    font-size: 14px;
+    font-variation-settings: 'FILL' 1;
+  }
+
+  &:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+}
+
+.lane-box__move-btn {
+  // Pinned to the right of the card, vertically centred, always visible.
+  flex: 0 0 auto;
+  align-self: center;
+  width: 64px;
+  padding: 0.5rem 0.35rem;
+  font-family: var(--ok-font-label, inherit);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
+  color: var(--ok-on-primary);
+  background: var(--ok-primary);
+  border: none;
+  border-radius: var(--ok-radius-sm);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: opacity var(--ok-transition-fast), transform var(--ok-transition-fast);
+
+  span {
+    font-size: 18px;
+    font-variation-settings: 'FILL' 1;
+  }
+
+  &:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+}
+
+.ok-graph-header__view-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.6rem;
+  background: rgba(var(--ok-primary-rgb), 0.08);
+  border: 1px solid var(--ok-outline-variant);
+  border-left: 4px solid;
+  border-radius: var(--ok-radius-sm);
+  font-size: 0.8rem;
+  color: var(--ok-on-surface);
+
+  span {
+    display: flex;
+    align-items: center;
+  }
+
+  .material-symbols-outlined {
+    font-size: 16px;
+    font-variation-settings: 'FILL' 1;
+  }
+
+  strong {
+    color: var(--ok-on-surface);
+    margin-left: 0.2rem;
+  }
+}
+
+.ok-graph-header__back-btn {
+  border: none;
+  background: transparent;
+  color: var(--ok-outline);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.15rem;
+  margin-left: 0.4rem;
+  border-radius: var(--ok-radius-sm);
+  transition: background var(--ok-transition-fast), color var(--ok-transition-fast);
+  
+  &:hover { 
+    background: var(--ok-surface-container-high); 
+    color: var(--ok-on-surface); 
+  }
+}
+
+.ok-graph-bottom-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--ok-space-3);
+  padding: 0.5rem 1.5rem;
+  background: var(--ok-surface-container-lowest);
+  border-top: 1px solid var(--ok-outline-variant);
+  z-index: 10;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+
+  &__label {
+    font-family: var(--ok-font-label);
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--ok-outline);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  &__tabs {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  &__separator {
+    display: flex;
+    align-items: center;
+    color: var(--ok-outline);
+    
+    span {
+      font-size: 16px;
+    }
+  }
+
+  &__tab {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.75rem;
+    background: transparent;
+    border: 1px solid transparent;
+    border-left: 3px solid transparent;
+    border-radius: var(--ok-radius-sm);
+    color: var(--ok-on-surface-variant);
+    font-family: var(--ok-font-label);
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--ok-transition-fast);
+
+    span {
+      font-size: 16px;
+    }
+
+    &:hover {
+      background: var(--ok-surface-container-high);
+      color: var(--ok-on-surface);
+    }
+
+    &--active {
+      color: var(--ok-on-surface);
+      background: rgba(var(--ok-primary-rgb), 0.06);
+      border-color: var(--ok-outline-variant);
+      border-left-color: var(--ok-primary);
+    }
+
+    &--inner {
+      border-left-width: 3px;
+      border-left-style: solid;
+    }
+  }
+}
+
+// Fade out transition styles
+.graph-svg__node,
+.graph-svg__blob,
+.lane-box,
+.graph-svg__bridge,
+.graph-svg__edge,
+.graph-svg__lane,
+.graph-svg__divider,
+.graph-svg__blob-label {
+  transition: opacity 0.4s ease-in-out, transform 0.6s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+// When the inner-view layout is swapped in, its nodes/blobs/lanes are brand-new
+// DOM elements: without an entry style they would pop in at full opacity all at
+// once (a panel-wide flash). @starting-style makes only newly-created elements
+// fade in from transparent — elements that persist across the swap (e.g. the
+// target cluster's foundational node) keep their current opacity and never blink.
+.graph-svg__node,
+.graph-svg__blob,
+.graph-svg__blob-label,
+.graph-svg__lane,
+.graph-svg__divider {
+  @starting-style {
+    opacity: 0;
+  }
+}
+
+.graph-svg__node--transition-fade-out,
+.graph-svg__blob--transition-fade-out,
+.lane-box--transition-fade-out,
+.graph-svg__bridge--transition-fade-out,
+.graph-svg__edge--transition-fade-out,
+.graph-svg__lane--transition-fade-out,
+.graph-svg__divider--transition-fade-out,
+.graph-svg__blob-label--transition-fade-out {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+// Node rings transition
+.graph-svg__ring {
+  transition: stroke 0.6s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+// Expanding animation overlay
+.ok-graph-transition-overlay {
+  position: absolute;
+  pointer-events: none;
+  z-index: 5;
+  box-sizing: border-box;
+
+  // Initial state centered on the cluster lane
+  left: var(--initial-left);
+  top: var(--initial-top);
+  width: var(--initial-width);
+  height: var(--initial-height);
+  
+  border: 2px solid var(--cluster-color);
+  border-radius: var(--ok-radius-sm);
+  // No fill: the inner-view tint is supplied by the canvas itself (settled before
+  // the nodes move). Filling here too would stack a second tint and pulse.
+  background: transparent;
+
+  opacity: 1;
+
+  // Transition properties for smooth morphing
+  transition: left 0.6s cubic-bezier(0.25, 0.8, 0.25, 1),
+              top 0.6s cubic-bezier(0.25, 0.8, 0.25, 1),
+              width 0.6s cubic-bezier(0.25, 0.8, 0.25, 1),
+              height 0.6s cubic-bezier(0.25, 0.8, 0.25, 1),
+              background 0.6s cubic-bezier(0.25, 0.8, 0.25, 1),
+              border-width 0.6s cubic-bezier(0.25, 0.8, 0.25, 1),
+              border-color 0.6s cubic-bezier(0.25, 0.8, 0.25, 1),
+              border-radius 0.6s cubic-bezier(0.25, 0.8, 0.25, 1),
+              opacity 0.4s ease-out;
+
+  &--expand {
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 0;
+    
+    // Colored lines on the left and right sides
+    border-left: 4px solid var(--cluster-color) !important;
+    border-right: 4px solid var(--cluster-color) !important;
+    border-top: 0px solid transparent !important;
+    border-bottom: 0px solid transparent !important;
+  }
+
+  // Final stage: the inner view is settled underneath, so fade the full-panel
+  // overlay out smoothly instead of destroying it in a single frame (which read
+  // as the whole panel flashing).
+  &--reveal {
+    opacity: 0;
+  }
+
+  // Blob expansion: instead of a clean rectangle growing to fill the canvas, the
+  // overlay reads as a noisy, organic blob — a translucent floodfill with an
+  // irregular outline that wobbles via an animated turbulence displacement
+  // filter (#ok-graph-blob-noise). The displacement distorts the element's edges
+  // into a random, ever-shifting boundary rather than straight sides.
+  &--blob {
+    // Soft cluster-tinted floodfill so the growing shape is a filled blob.
+    background: color-mix(in srgb, var(--cluster-color) 16%, transparent);
+    border: 3px solid var(--cluster-color);
+    // Organic, lopsided rounding (the classic "blob" radius) — never a rectangle.
+    border-radius: 42% 58% 63% 37% / 55% 41% 59% 45%;
+    filter: url(#ok-graph-blob-noise);
+
+    &.ok-graph-transition-overlay--expand {
+      // Keep the blobby outline and full noisy border while filling the canvas —
+      // override the rectangular --expand rule (radius 0, side-only borders).
+      border: 3px solid var(--cluster-color) !important;
+      border-radius: 38% 62% 47% 53% / 57% 43% 61% 39% !important;
+    }
+  }
+}
+
+// Off-screen host for the turbulence <filter> the blob overlay references; the
+// SVG itself draws nothing.
+.ok-graph-blob-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+// Inner view style overlays on the canvas
+.ok-graph-page__canvas--inner-view {
+  border-left: 4px solid var(--inner-cluster-color) !important;
+  border-right: 4px solid var(--inner-cluster-color) !important;
+  background-color: color-mix(in srgb, var(--inner-cluster-color) 9%, var(--ok-surface-container-lowest)) !important;
+  
+  // Animate transition into/out of inner view
+  transition: background-color 0.4s ease, border-color 0.4s ease;
 }

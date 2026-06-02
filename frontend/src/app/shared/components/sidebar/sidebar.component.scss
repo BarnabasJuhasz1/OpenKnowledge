@@ -1,0 +1,259 @@
+// ============================================================================
+// Persistent left navigation rail. Sits below the global top nav and stays
+// visible on every signed-in route (including the landing page), where it is
+// forced to its compact, icons-only form.
+// ============================================================================
+$sidebar-width: 240px;
+$sidebar-width-collapsed: 76px;
+
+:host {
+  display: block;
+}
+
+.sidebar {
+  position: sticky;
+  top: var(--ok-topnav-height);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  width: $sidebar-width;
+  height: calc(100vh - var(--ok-topnav-height));
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--ok-space-6) var(--ok-space-4);
+  background: var(--ok-surface-container-lowest);
+  border-right: 1px solid var(--ok-outline-variant);
+  transition: width var(--ok-transition);
+
+  // --- Collapse / expand toggle ----------------------------------------------
+  &__collapse-btn {
+    align-self: flex-end;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    margin-bottom: var(--ok-space-2);
+    padding: 0;
+    border: none;
+    border-radius: var(--ok-radius-md);
+    background: transparent;
+    color: var(--ok-on-surface-variant);
+    cursor: pointer;
+    transition: color var(--ok-transition), background var(--ok-transition);
+
+    &:hover {
+      color: var(--ok-on-surface);
+      background: var(--ok-hover-overlay);
+    }
+  }
+
+  // --- Top-level tabs --------------------------------------------------------
+  &__top {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ok-space-1);
+  }
+
+  &__divider {
+    margin: var(--ok-space-4) var(--ok-space-2);
+    border: none;
+    border-top: 1px solid var(--ok-outline-variant);
+  }
+
+  // --- Active project (unclickable header) -----------------------------------
+  &__active {
+    display: flex;
+    align-items: center;
+    gap: var(--ok-space-3);
+    padding: 0.5rem var(--ok-space-3);
+    margin-bottom: var(--ok-space-2);
+    font-family: var(--ok-font-label);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ok-on-surface);
+  }
+
+  &__active-dot {
+    flex-shrink: 0;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+  }
+
+  &__active-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__no-project {
+    padding: 0 var(--ok-space-3);
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--ok-on-surface-variant);
+
+    a { color: var(--ok-primary-raw); font-weight: 600; }
+  }
+
+  &__nav {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ok-space-1);
+  }
+
+  &__nav-link {
+    display: flex;
+    align-items: center;
+    gap: var(--ok-space-3);
+    padding: 0.7rem var(--ok-space-3);
+    border-radius: var(--ok-radius-md);
+    font-family: var(--ok-font-label);
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ok-on-surface-variant);
+    text-decoration: none;
+    transition: color var(--ok-transition), background var(--ok-transition);
+
+    &:hover {
+      color: var(--ok-on-surface);
+      background: var(--ok-hover-overlay);
+      text-decoration: none;
+    }
+
+    &--active {
+      color: #fff;
+      background: var(--ok-gradient-primary);
+      box-shadow: 0 4px 14px 0 var(--ok-shadow-primary);
+
+      &:hover {
+        color: #fff;
+        background: var(--ok-gradient-primary);
+      }
+    }
+
+    // Feature links sit visually under the active-project header.
+    &--feature {
+      margin-left: var(--ok-space-3);
+      font-size: 14px;
+    }
+  }
+
+  &__nav-icon {
+    font-size: 20px;
+  }
+
+  // --- Settings (bottom-pinned) ----------------------------------------------
+  &__settings {
+    margin-top: auto;
+    padding-top: var(--ok-space-2);
+  }
+
+  // --- Signed-in user chip (moved here from the global top nav) --------------
+  &__user {
+    display: flex;
+    align-items: center;
+    gap: var(--ok-space-3);
+    padding: 0.6rem var(--ok-space-3);
+    margin-top: var(--ok-space-1);
+  }
+
+  &__avatar {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--ok-radius-full);
+    object-fit: cover;
+    border: 1px solid var(--ok-outline-variant);
+  }
+
+  &__avatar-icon {
+    flex-shrink: 0;
+    font-size: 28px !important;
+    color: var(--ok-on-surface-variant);
+  }
+
+  &__user-name {
+    font-family: var(--ok-font-label);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ok-on-surface);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  // --- Collapsed (icons-only rail) -------------------------------------------
+  &--collapsed {
+    width: $sidebar-width-collapsed;
+    padding-left: var(--ok-space-2);
+    padding-right: var(--ok-space-2);
+
+    .sidebar__collapse-btn {
+      align-self: center;
+    }
+
+    // Hide every text label; leave only the icons/dots/avatar visible.
+    .sidebar__nav-label,
+    .sidebar__active-name,
+    .sidebar__user-name,
+    .sidebar__no-project {
+      display: none;
+    }
+
+    // Center the icons and drop the feature indent.
+    .sidebar__nav-link {
+      justify-content: center;
+      gap: 0;
+      padding-left: 0;
+      padding-right: 0;
+    }
+
+    .sidebar__nav-link--feature {
+      margin-left: 0;
+    }
+
+    // Active-project header collapses to just its color dot.
+    .sidebar__active {
+      justify-content: center;
+      gap: 0;
+      padding-left: 0;
+      padding-right: 0;
+    }
+
+    // User chip collapses to just the avatar.
+    .sidebar__user {
+      justify-content: center;
+      gap: 0;
+      padding-left: 0;
+      padding-right: 0;
+    }
+  }
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    position: static;
+    width: 100%;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--ok-outline-variant);
+    padding: var(--ok-space-3) var(--ok-space-4);
+
+    .sidebar__divider { display: none; }
+    .sidebar__active { margin-bottom: 0; }
+
+    .sidebar__top,
+    .sidebar__nav {
+      flex-direction: row;
+      flex-wrap: wrap;
+      gap: var(--ok-space-2);
+    }
+
+    .sidebar__nav-link { padding: 0.5rem 0.8rem; font-size: 14px; }
+    .sidebar__nav-link--feature { margin-left: 0; }
+    .sidebar__nav-label { display: none; }
+  }
+}

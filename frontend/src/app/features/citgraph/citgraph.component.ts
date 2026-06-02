@@ -1,18 +1,11 @@
-import { Component, ElementRef, HostListener, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { CitGraphService, CitGraphNode, CitGraphEdge, CitGraphResponse } from '../../core/services/citgraph.service';
-import { DemoModeService } from '../../core/services/demo-mode.service';
-import { BookshelfService, BookshelfItem } from '../../core/services/bookshelf.service';
+import { RouterLink } from '@angular/router';
+import { CitGraphNode, CitGraphResponse } from '../../core/services/citgraph.service';
 import { louvain, getCommunitiesAtLevel, LouvainResult } from './louvain';
-import { Router } from '@angular/router';
-import { NotificationService } from '../../core/services/notification.service';
 import { OkGraphStateService } from '../../core/services/okgraph-state.service';
-import { ProjectContextService } from '../../core/services/project-context.service';
-import { SearchStateService } from '../../core/services/search-state.service';
+import { ClusterSummaryService, ClusterSummary } from '../../core/services/cluster-summary.service';
 import { getArchetypeIcon } from '../../shared/utils/archetype-icons';
-import { parseQuery } from '../../shared/utils/query-parser';
-import { matchesNodeKeywords } from '../../shared/utils/keyword-match';
 
 interface LayoutNode {
   id: string;
@@ -59,42 +52,34 @@ const MISC_COLOR = '#6b7280';
 @Component({
   selector: 'app-citgraph',
   standalone: true,
-  imports: [DecimalPipe, FormsModule],
+  imports: [DecimalPipe, RouterLink],
   templateUrl: './citgraph.component.html',
   styleUrl: './citgraph.component.scss',
 })
 export class CitGraphComponent {
-  private readonly citgraphSvc = inject(CitGraphService);
-  private readonly demo = inject(DemoModeService);
-  private readonly bookshelfSvc = inject(BookshelfService);
-  private readonly router = inject(Router);
-  private readonly notify = inject(NotificationService);
   private readonly okGraphState = inject(OkGraphStateService);
-  private readonly projectContext = inject(ProjectContextService);
-  private readonly searchState = inject(SearchStateService);
-  private readonly elRef = inject(ElementRef);
+  private readonly summaries = inject(ClusterSummaryService);
 
-  /** Flattened keyword query (title + abstract filter source). */
-  readonly keywords = computed(() => parseQuery(this.searchState.rawQuery()));
-  /** Whether the user has enabled the pre-clustering keyword filter. */
-  readonly filterByKeywords = signal(false);
-  /** The filter is only meaningful once a keyword query exists. */
-  readonly canFilter = computed(() => this.keywords().length > 0);
+  /** Background cluster-summarization progress (drives the toolbar bar). */
+  readonly summaryProgress = this.summaries.progress;
+  readonly summaryRunning = this.summaries.running;
+  readonly summaryPercent = this.summaries.percent;
 
-  toggleKeywordFilter(): void { this.filterByKeywords.update(v => !v); }
+  /**
+   * AI summary for the inspected cluster at the active level. Display level L
+   * (≥1) maps to hierarchy index L-1, and the cluster id is the community id at
+   * that index — the exact key the summary service stores under (both run the
+   * same deterministic Louvain over the shared raw graph).
+   */
+  readonly clusterSummary = computed<ClusterSummary | undefined>(() => {
+    const c = this.clusterInspection();
+    if (!c) return undefined;
+    return this.summaries.summaryAt(c.level - 1, c.id);
+  });
 
   getArchetypeIcon(archetype?: string | null): string {
     return getArchetypeIcon(archetype);
   }
-
-  readonly bookshelfOpen = signal(false);
-  readonly bookshelfItems = signal<BookshelfItem[]>([]);
-
-  readonly paperId = signal('');
-  readonly kHops = signal(1);
-  readonly maxPerHop = signal(20);
-  readonly loading = signal(false);
-  readonly error = signal<string | null>(null);
 
   readonly graphData = signal<CitGraphResponse | null>(null);
   readonly layoutNodes = signal<LayoutNode[]>([]);
@@ -270,6 +255,7 @@ export class CitGraphComponent {
     // Centroids of coarse clusters can overlap; nudge them apart so each
     // meta-node stays distinct, then shift back into positive bounds so
     // nothing is clipped at the top/left edge. Deterministic for a layout.
+    if (!metaNodes.length) return [];
     spreadClusterNodes(metaNodes);
     const minX = Math.min(...metaNodes.map(n => n.x - n.radius));
     const minY = Math.min(...metaNodes.map(n => n.y - n.radius));
@@ -338,100 +324,33 @@ export class CitGraphComponent {
     return Math.max(600, Math.max(...nodes.map(n => n.y + n.radius)) + 80);
   });
 
-  buildGraph(): void {
-    const id = this.paperId().trim();
-    if (!id) return;
-    this.loading.set(true);
-    this.error.set(null);
-    this.graphData.set(null);
-    this.louvainResult.set(null);
-    this.louvainLevel.set(0);
-    this.selectedNodeId.set(null);
-    this.selectedClusterId.set(null);
-
-    const request$ = this.demo.enabled()
-      ? this.citgraphSvc.buildDemo(id, this.kHops(), this.maxPerHop())
-      : this.citgraphSvc.build(id, this.kHops(), this.maxPerHop());
-
-    request$.subscribe({
-      next: (raw) => {
-        // Pre-clustering keyword filter: drop papers whose title + abstract
-        // match none of the keywords (the seed is always kept), and any edge
-        // that loses an endpoint. The discarded papers never enter the graph.
-        const data = this.applyKeywordFilter(raw);
-        this.graphData.set(data);
-        this.layoutEdges.set(data.edges);
-        this.runLayout(data);
-        // Cluster automatically using the parameters set before building, so the
-        // user gets the clustered graph in one step (no separate Louvain click).
-        this.runLouvain();
-        this.loading.set(false);
-      },
-      error: (err) => {
-        this.loading.set(false);
-        this.error.set(err.error?.detail || 'Failed to build citation graph');
-      },
-    });
+  constructor() {
+    effect(() => {
+      const shared = this.okGraphState.rawGraph();
+      untracked(() => {
+        if (shared && shared.nodes.length) {
+          const data: CitGraphResponse = {
+            nodes: shared.nodes,
+            edges: shared.edges,
+            seed_id: shared.seedId,
+          };
+          this.resolution.set(shared.resolution);
+          this.maxLevels.set(shared.maxLevels ?? 10);
+          this.graphData.set(data);
+          this.layoutEdges.set(data.edges);
+          this.runLayout(data);
+          this.runLouvain();
+        } else {
+          this.graphData.set(null);
+          this.layoutNodes.set([]);
+          this.layoutEdges.set([]);
+          this.louvainResult.set(null);
+        }
+      });
+    }, { allowSignalWrites: true });
   }
 
-  /** Update the Louvain resolution; re-cluster live if a graph is already built. */
-  setResolution(value: number): void {
-    this.resolution.set(value);
-    if (this.graphData()) this.runLouvain();
-  }
 
-  /** Update the max hierarchy levels; re-cluster live if a graph is already built. */
-  setMaxLevels(value: number): void {
-    this.maxLevels.set(value);
-    if (this.graphData()) this.runLouvain();
-  }
-
-  toggleBookshelf(): void {
-    if (this.bookshelfOpen()) {
-      this.bookshelfOpen.set(false);
-      return;
-    }
-    this.bookshelfSvc.list().subscribe({
-      next: (items) => {
-        this.bookshelfItems.set(items);
-        this.bookshelfOpen.set(true);
-      },
-    });
-  }
-
-  pickBookshelfItem(item: BookshelfItem): void {
-    this.bookshelfOpen.set(false);
-    // The stored identifier is a DOI / arXiv / S2 / OpenAlex id (or the CSV
-    // UUID in demo mode), each of which the matching builder resolves directly.
-    // Only populate the input — the graph is built when the user clicks Build,
-    // after they've set the hop/clustering parameters.
-    this.paperId.set(item.paper_identifier);
-  }
-
-  @HostListener('document:click', ['$event'])
-  onDocumentClick(event: MouseEvent): void {
-    if (this.bookshelfOpen() && !this.elRef.nativeElement.contains(event.target)) {
-      this.bookshelfOpen.set(false);
-    }
-  }
-
-  /**
-   * If the pre-clustering filter is on, keep only the seed plus papers whose
-   * title + abstract match the keyword query, and drop edges that reference a
-   * removed paper. Returns the input unchanged when the filter is off or there
-   * are no keywords.
-   */
-  private applyKeywordFilter(data: CitGraphResponse): CitGraphResponse {
-    const kw = this.keywords();
-    if (!this.filterByKeywords() || !kw.length) return data;
-
-    const nodes = data.nodes.filter(
-      n => n.paper_id === data.seed_id || matchesNodeKeywords(n, kw),
-    );
-    const kept = new Set(nodes.map(n => n.paper_id));
-    const edges = data.edges.filter(e => kept.has(e.source) && kept.has(e.target));
-    return { ...data, nodes, edges };
-  }
 
   private runLayout(data: CitGraphResponse): void {
     const nodes: LayoutNode[] = data.nodes.map((n, i) => ({
@@ -452,55 +371,124 @@ export class CitGraphComponent {
 
     const idxMap = new Map(nodes.map((n, i) => [n.id, i]));
 
-    const iterations = 120;
+    // Scale iterations based on node count to ensure high performance
+    let iterations = 120;
+    if (nodes.length > 2000) {
+      iterations = 30;
+    } else if (nodes.length > 1000) {
+      iterations = 60;
+    }
+
     const repulsion = 5000;
     const attraction = 0.005;
     const damping = 0.9;
     const centerGravity = 0.01;
     const cx = 400, cy = 300;
+    const cellSize = 150;
+    const maxRepulsionDistSq = 22500; // 150^2
 
     for (let iter = 0; iter < iterations; iter++) {
       const temp = 1 - iter / iterations;
 
+      // Group nodes into spatial grid cells for O(N) repulsion calculations
+      const grid = new Map<string, number[]>();
       for (let i = 0; i < nodes.length; i++) {
-        for (let j = i + 1; j < nodes.length; j++) {
-          const dx = nodes[j].x - nodes[i].x;
-          const dy = nodes[j].y - nodes[i].y;
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          const force = (repulsion * temp) / (dist * dist);
-          const fx = (dx / dist) * force;
-          const fy = (dy / dist) * force;
-          nodes[i].vx -= fx;
-          nodes[i].vy -= fy;
-          nodes[j].vx += fx;
-          nodes[j].vy += fy;
+        const cellX = Math.floor(nodes[i].x / cellSize);
+        const cellY = Math.floor(nodes[i].y / cellSize);
+        const key = `${cellX},${cellY}`;
+        let cell = grid.get(key);
+        if (!cell) {
+          cell = [];
+          grid.set(key, cell);
+        }
+        cell.push(i);
+      }
+
+      // Calculate repulsion within and between adjacent cells
+      for (const [key, cellNodes] of grid.entries()) {
+        const parts = key.split(',');
+        const cellX = parseInt(parts[0], 10);
+        const cellY = parseInt(parts[1], 10);
+
+        // Repel within the same cell
+        for (let i = 0; i < cellNodes.length; i++) {
+          const idxI = cellNodes[i];
+          const nodeI = nodes[idxI];
+          for (let j = i + 1; j < cellNodes.length; j++) {
+            const idxJ = cellNodes[j];
+            const nodeJ = nodes[idxJ];
+            const dx = nodeJ.x - nodeI.x;
+            const dy = nodeJ.y - nodeI.y;
+            const distSq = dx * dx + dy * dy || 1;
+            if (distSq > maxRepulsionDistSq) continue;
+            const dist = Math.sqrt(distSq);
+            const force = (repulsion * temp) / (distSq * dist);
+            const fx = dx * force;
+            const fy = dy * force;
+            nodeI.vx -= fx;
+            nodeI.vy -= fy;
+            nodeJ.vx += fx;
+            nodeJ.vy += fy;
+          }
+        }
+
+        // Repel with adjacent cells (only check 4 directions to avoid double counting)
+        const adjOffsets = [
+          [1, -1], [1, 0], [1, 1], [0, 1]
+        ];
+        for (const [ox, oy] of adjOffsets) {
+          const adjKey = `${cellX + ox},${cellY + oy}`;
+          const adjNodes = grid.get(adjKey);
+          if (!adjNodes) continue;
+
+          for (const idxI of cellNodes) {
+            const nodeI = nodes[idxI];
+            for (const idxJ of adjNodes) {
+              const nodeJ = nodes[idxJ];
+              const dx = nodeJ.x - nodeI.x;
+              const dy = nodeJ.y - nodeI.y;
+              const distSq = dx * dx + dy * dy || 1;
+              if (distSq > maxRepulsionDistSq) continue;
+              const dist = Math.sqrt(distSq);
+              const force = (repulsion * temp) / (distSq * dist);
+              const fx = dx * force;
+              const fy = dy * force;
+              nodeI.vx -= fx;
+              nodeI.vy -= fy;
+              nodeJ.vx += fx;
+              nodeJ.vy += fy;
+            }
+          }
         }
       }
 
+      // Edge attraction loop: force = dist * attraction, vector is (dx/dist, dy/dist).
+      // The dist terms cancel out, simplifying the calculation to dx * attraction.
       for (const edge of data.edges) {
         const si = idxMap.get(edge.source);
         const ti = idxMap.get(edge.target);
         if (si === undefined || ti === undefined) continue;
         const dx = nodes[ti].x - nodes[si].x;
         const dy = nodes[ti].y - nodes[si].y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const force = dist * attraction;
-        const fx = (dx / dist) * force;
-        const fy = (dy / dist) * force;
+        const fx = dx * attraction;
+        const fy = dy * attraction;
         nodes[si].vx += fx;
         nodes[si].vy += fy;
         nodes[ti].vx -= fx;
         nodes[ti].vy -= fy;
       }
 
+      // Node displacement and damping
       for (const node of nodes) {
         node.vx += (cx - node.x) * centerGravity;
         node.vy += (cy - node.y) * centerGravity;
         node.vx *= damping;
         node.vy *= damping;
         const maxV = 20 * temp + 1;
-        const v = Math.sqrt(node.vx * node.vx + node.vy * node.vy);
-        if (v > maxV) {
+        const vSq = node.vx * node.vx + node.vy * node.vy;
+        const maxVSq = maxV * maxV;
+        if (vSq > maxVSq) {
+          const v = Math.sqrt(vSq);
           node.vx = (node.vx / v) * maxV;
           node.vy = (node.vy / v) * maxV;
         }
@@ -657,37 +645,6 @@ export class CitGraphComponent {
     this.zoom.update(z =>
       Math.min(Math.max(z + delta, CitGraphComponent.ZOOM_MIN), CitGraphComponent.ZOOM_MAX)
     );
-  }
-
-  sendRepresentativesToGraph(): void {
-    const result = this.louvainResult();
-    if (!result || result.levels.length === 0) {
-      this.notify.show('Run Louvain clustering first');
-      return;
-    }
-
-    // Hand the OK-Graph the full hierarchy (base nodes in Louvain index order +
-    // the dendrogram) plus everything it needs to re-cluster a keyword-filtered
-    // subset itself: the edges, the Louvain params, the keyword query, and
-    // whether we already prefiltered (which locks the OK-Graph filter on).
-    const baseNodes = this.layoutNodes().map(n => n.data);
-    const prefiltered = this.filterByKeywords() && this.keywords().length > 0;
-    this.okGraphState.setHierarchy({
-      nodes: baseNodes,
-      louvain: result,
-      edges: this.graphData()?.edges ?? [],
-      resolution: this.resolution(),
-      maxLevels: this.maxLevels(),
-      keywords: this.keywords(),
-      seedId: this.graphData()?.seed_id ?? '',
-      prefiltered,
-    });
-    this.notify.show('Sent cluster hierarchy to OK-Graph');
-
-    const projectId = this.projectContext.activeProjectId();
-    if (projectId !== null) {
-      this.router.navigate(['/dashboard', projectId, 'graph', 'ok']);
-    }
   }
 }
 

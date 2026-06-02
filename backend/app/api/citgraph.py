@@ -13,8 +13,8 @@ router = APIRouter(prefix="/citgraph", tags=["citgraph"])
 
 class CitGraphRequest(BaseModel):
     paper_id: str
-    k: int = Field(default=1, ge=1, le=3)
-    max_per_hop: int = Field(default=20, ge=1, le=50)
+    k: int = Field(default=1, ge=1, le=10)
+    max_per_hop: int = Field(default=20, ge=1, le=100000)
 
 
 class CitGraphExploreRequest(BaseModel):
@@ -22,7 +22,8 @@ class CitGraphExploreRequest(BaseModel):
     direction: str  # 'past', 'future', 'both'
     include_non_matching: bool = True
     keywords: list[str] = Field(default_factory=list)
-    max_per_hop: int = Field(default=20, ge=1, le=50)
+    k: int = Field(default=1, ge=1, le=10)
+    max_per_hop: int = Field(default=20, ge=1, le=100000)
 
 
 class CitGraphNodeOut(BaseModel):
@@ -138,6 +139,7 @@ async def explore_graph(body: CitGraphExploreRequest):
             direction=body.direction,
             include_non_matching=body.include_non_matching,
             keywords=body.keywords,
+            k=body.k,
             max_per_hop=body.max_per_hop,
             api_key=api_key,
         )
@@ -162,6 +164,7 @@ async def explore_graph_demo(body: CitGraphExploreRequest):
             direction=body.direction,
             include_non_matching=body.include_non_matching,
             keywords=body.keywords,
+            k=body.k,
             max_per_hop=body.max_per_hop,
         )
     except Exception as e:
