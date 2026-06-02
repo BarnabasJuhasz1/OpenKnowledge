@@ -683,7 +683,18 @@
     cursor: grab;
     user-select: none;
 
+    // Column layout so the bottom navigation bar reserves its own space below
+    // the graph instead of being pushed past the clipped (overflow:hidden) edge.
+    display: flex;
+    flex-direction: column;
+
     &--panning { cursor: grabbing; }
+  }
+
+  // No-nodes fallback fills the canvas so the bottom bar stays at the bottom.
+  &__empty {
+    flex: 1 1 0;
+    min-height: 0;
   }
 }
 
@@ -714,6 +725,25 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
+
+    &--cluster {
+      max-width: 18rem;
+      min-width: 0;
+
+      .ok-graph-header__value {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+    }
+  }
+
+  &__swatch {
+    flex: 0 0 auto;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12) inset;
   }
 
   &__icon {
@@ -1062,6 +1092,9 @@
 
 .graph-svg {
   display: block;
+  // Fill the space above the bottom navigation bar within the flex-column canvas.
+  flex: 1 1 0;
+  min-height: 0;
 
   &__divider {
     stroke: var(--ok-outline-variant);
@@ -1825,7 +1858,9 @@
 
 .lane-box {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0.6rem;
   height: 100%;
   padding: 0.75rem 0.85rem;
   background: var(--ok-surface-container-low, #fff);
@@ -1834,9 +1869,19 @@
   border-radius: var(--ok-radius-md, 12px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   box-sizing: border-box;
-  overflow-y: auto;
+  // Fixed-size card: never scroll on either axis; overflowing text is clamped.
+  overflow: hidden;
   cursor: pointer;
   transition: box-shadow var(--ok-transition-fast), transform var(--ok-transition-fast), border-color var(--ok-transition-fast), background var(--ok-transition-fast);
+
+  // Text column; the Move Inside button sits beside it and stays visible.
+  &__body {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
 
   &:hover {
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
@@ -1882,22 +1927,6 @@
     font-weight: 600;
     color: var(--ok-outline, #9ca3af);
     font-variant-numeric: tabular-nums;
-  }
-
-  &__rep {
-    font-size: 0.76rem;
-    color: var(--ok-on-surface-variant, #4b5563);
-    margin-bottom: 0.5rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    line-height: 1.3;
-
-    strong {
-      color: var(--ok-primary, #2563eb);
-    }
   }
 
   &__stats {
@@ -1949,10 +1978,17 @@
     font-size: 0.72rem;
     line-height: 1.4;
     color: var(--ok-on-surface-variant, #4b5563);
+    // Clamp to fit the fixed card height instead of scrolling.
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
 
     &--pending {
       font-style: italic;
       color: var(--ok-outline, #9ca3af);
+      -webkit-line-clamp: 1;
     }
   }
 }
@@ -1993,26 +2029,31 @@
 }
 
 .lane-box__move-btn {
-  align-self: stretch;
-  justify-content: center;
-  margin-top: 0.6rem;
-  padding: 0.4rem;
+  // Pinned to the right of the card, vertically centred, always visible.
+  flex: 0 0 auto;
+  align-self: center;
+  width: 64px;
+  padding: 0.5rem 0.35rem;
   font-family: var(--ok-font-label, inherit);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
   color: var(--ok-on-primary);
   background: var(--ok-primary);
   border: none;
   border-radius: var(--ok-radius-sm);
   cursor: pointer;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.3rem;
+  justify-content: center;
+  gap: 0.2rem;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   transition: opacity var(--ok-transition-fast), transform var(--ok-transition-fast);
 
   span {
-    font-size: 14px;
+    font-size: 18px;
     font-variation-settings: 'FILL' 1;
   }
 
@@ -2159,6 +2200,21 @@
   transition: opacity 0.4s ease-in-out, transform 0.6s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
+// When the inner-view layout is swapped in, its nodes/blobs/lanes are brand-new
+// DOM elements: without an entry style they would pop in at full opacity all at
+// once (a panel-wide flash). @starting-style makes only newly-created elements
+// fade in from transparent — elements that persist across the swap (e.g. the
+// target cluster's foundational node) keep their current opacity and never blink.
+.graph-svg__node,
+.graph-svg__blob,
+.graph-svg__blob-label,
+.graph-svg__lane,
+.graph-svg__divider {
+  @starting-style {
+    opacity: 0;
+  }
+}
+
 .graph-svg__node--transition-fade-out,
 .graph-svg__blob--transition-fade-out,
 .lane-box--transition-fade-out,
@@ -2191,8 +2247,12 @@
   
   border: 2px solid var(--cluster-color);
   border-radius: var(--ok-radius-sm);
-  background: color-mix(in srgb, var(--cluster-color) 9%, transparent);
-  
+  // No fill: the inner-view tint is supplied by the canvas itself (settled before
+  // the nodes move). Filling here too would stack a second tint and pulse.
+  background: transparent;
+
+  opacity: 1;
+
   // Transition properties for smooth morphing
   transition: left 0.6s cubic-bezier(0.25, 0.8, 0.25, 1),
               top 0.6s cubic-bezier(0.25, 0.8, 0.25, 1),
@@ -2201,7 +2261,8 @@
               background 0.6s cubic-bezier(0.25, 0.8, 0.25, 1),
               border-width 0.6s cubic-bezier(0.25, 0.8, 0.25, 1),
               border-color 0.6s cubic-bezier(0.25, 0.8, 0.25, 1),
-              border-radius 0.6s cubic-bezier(0.25, 0.8, 0.25, 1);
+              border-radius 0.6s cubic-bezier(0.25, 0.8, 0.25, 1),
+              opacity 0.4s ease-out;
 
   &--expand {
     left: 0 !important;
@@ -2215,10 +2276,44 @@
     border-right: 4px solid var(--cluster-color) !important;
     border-top: 0px solid transparent !important;
     border-bottom: 0px solid transparent !important;
-    
-    // Background fills the whole space
-    background: color-mix(in srgb, var(--cluster-color) 9%, transparent);
   }
+
+  // Final stage: the inner view is settled underneath, so fade the full-panel
+  // overlay out smoothly instead of destroying it in a single frame (which read
+  // as the whole panel flashing).
+  &--reveal {
+    opacity: 0;
+  }
+
+  // Blob expansion: instead of a clean rectangle growing to fill the canvas, the
+  // overlay reads as a noisy, organic blob — a translucent floodfill with an
+  // irregular outline that wobbles via an animated turbulence displacement
+  // filter (#ok-graph-blob-noise). The displacement distorts the element's edges
+  // into a random, ever-shifting boundary rather than straight sides.
+  &--blob {
+    // Soft cluster-tinted floodfill so the growing shape is a filled blob.
+    background: color-mix(in srgb, var(--cluster-color) 16%, transparent);
+    border: 3px solid var(--cluster-color);
+    // Organic, lopsided rounding (the classic "blob" radius) — never a rectangle.
+    border-radius: 42% 58% 63% 37% / 55% 41% 59% 45%;
+    filter: url(#ok-graph-blob-noise);
+
+    &.ok-graph-transition-overlay--expand {
+      // Keep the blobby outline and full noisy border while filling the canvas —
+      // override the rectangular --expand rule (radius 0, side-only borders).
+      border: 3px solid var(--cluster-color) !important;
+      border-radius: 38% 62% 47% 53% / 57% 43% 61% 39% !important;
+    }
+  }
+}
+
+// Off-screen host for the turbulence <filter> the blob overlay references; the
+// SVG itself draws nothing.
+.ok-graph-blob-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
 }
 
 // Inner view style overlays on the canvas

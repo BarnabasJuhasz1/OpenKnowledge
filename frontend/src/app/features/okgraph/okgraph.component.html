@@ -250,34 +250,42 @@
         <div class="ok-graph-page__canvas-container">
           <div class="ok-graph-header">
             <div class="ok-graph-header__stats">
-              <div class="ok-graph-header__stat">
-                <span class="material-symbols-outlined ok-graph-header__icon ok-graph-header__icon--clusters">account_tree</span>
-                <span class="ok-graph-header__label">Clusters</span>
-                <span class="ok-graph-header__value">{{ totalClusters() }}</span>
-              </div>
+              @if (selectedCluster(); as sc) {
+                <div class="ok-graph-header__stat ok-graph-header__stat--cluster">
+                  <span class="ok-graph-header__swatch" [style.background]="sc.color"></span>
+                  <span class="ok-graph-header__label">Cluster</span>
+                  <span class="ok-graph-header__value" [title]="sc.name">{{ sc.name }}</span>
+                </div>
+              } @else {
+                <div class="ok-graph-header__stat">
+                  <span class="material-symbols-outlined ok-graph-header__icon ok-graph-header__icon--clusters">account_tree</span>
+                  <span class="ok-graph-header__label">Clusters</span>
+                  <span class="ok-graph-header__value">{{ totalClusters() }}</span>
+                </div>
+              }
               <div class="ok-graph-header__divider"></div>
               <div class="ok-graph-header__stat">
                 <span class="material-symbols-outlined ok-graph-header__icon ok-graph-header__icon--papers">description</span>
                 <span class="ok-graph-header__label">Papers</span>
-                <span class="ok-graph-header__value">{{ totalPapers() }}</span>
+                <span class="ok-graph-header__value">{{ selectedCluster()?.totalPapers ?? totalPapers() }}</span>
               </div>
               <div class="ok-graph-header__divider"></div>
               <div class="ok-graph-header__stat">
                 <span class="material-symbols-outlined ok-graph-header__icon ok-graph-header__icon--seeds">eco</span>
                 <span class="ok-graph-header__label">Seeds</span>
-                <span class="ok-graph-header__value">{{ totalSeeds() }}</span>
+                <span class="ok-graph-header__value">{{ selectedCluster()?.totalSeeds ?? totalSeeds() }}</span>
               </div>
               <div class="ok-graph-header__divider"></div>
               <div class="ok-graph-header__stat">
                 <span class="material-symbols-outlined ok-graph-header__icon ok-graph-header__icon--gold">star</span>
                 <span class="ok-graph-header__label">Gold Stars</span>
-                <span class="ok-graph-header__value">{{ totalGoldStars() }}</span>
+                <span class="ok-graph-header__value">{{ selectedCluster()?.totalGoldStars ?? totalGoldStars() }}</span>
               </div>
               <div class="ok-graph-header__divider"></div>
               <div class="ok-graph-header__stat">
                 <span class="material-symbols-outlined ok-graph-header__icon ok-graph-header__icon--silver">star</span>
                 <span class="ok-graph-header__label">Silver Stars</span>
-                <span class="ok-graph-header__value">{{ totalSilverStars() }}</span>
+                <span class="ok-graph-header__value">{{ selectedCluster()?.totalSilverStars ?? totalSilverStars() }}</span>
               </div>
             </div>
 
@@ -444,6 +452,23 @@
                       </button>
                     </label>
 
+                    <div class="graph-settings__subhead">Cluster transition</div>
+                    <label class="graph-settings__row">
+                      <span class="graph-settings__label">
+                        Blob expansion
+                        <span class="graph-settings__hint">expand as a noisy organic blob (not a rectangle) when moving inside</span>
+                      </span>
+                      <button
+                        class="graph-settings__switch"
+                        [class.graph-settings__switch--on]="blobTransition()"
+                        (click)="blobTransition.set(!blobTransition())"
+                        role="switch"
+                        [attr.aria-checked]="blobTransition()"
+                      >
+                        <span class="graph-settings__knob"></span>
+                      </button>
+                    </label>
+
                     <div class="graph-settings__subhead">Transparency</div>
                     <div class="graph-settings__slider-row">
                       <div class="graph-settings__slider-info">
@@ -518,6 +543,25 @@
                         <span class="graph-settings__knob"></span>
                       </button>
                     </label>
+                    @if (useInGraphCards()) {
+                      <label class="graph-settings__row">
+                        <span class="graph-settings__label">
+                          Stagger card positions
+                          <span class="graph-settings__hint">
+                            Place each card just left of its cluster's left-most node instead of a vertical column
+                          </span>
+                        </span>
+                        <button
+                          class="graph-settings__switch"
+                          [class.graph-settings__switch--on]="staggeredCards()"
+                          (click)="staggeredCards.set(!staggeredCards())"
+                          role="switch"
+                          [attr.aria-checked]="staggeredCards()"
+                        >
+                          <span class="graph-settings__knob"></span>
+                        </button>
+                      </label>
+                    }
 
                     <div class="graph-settings__subhead">Clustering</div>
                     <div class="graph-settings__row">
@@ -551,8 +595,8 @@
         <div
           class="ok-graph-page__canvas"
           [class.ok-graph-page__canvas--panning]="panning()"
-          [class.ok-graph-page__canvas--inner-view]="innerViewClusterId() !== null"
-          [style.--inner-cluster-color]="innerViewClusterColor()"
+          [class.ok-graph-page__canvas--inner-view]="canvasInnerView()"
+          [style.--inner-cluster-color]="canvasInnerViewColor()"
           (click)="onBackgroundClick($event)"
           (wheel)="onWheel($event)"
           (mousedown)="onPanStart($event)"
@@ -571,29 +615,6 @@
                 @if (!cluster.isMisc && cluster.repTitle) {
                   <span class="cluster-popup__rep" [title]="cluster.repTitle">{{ cluster.repTitle }}</span>
                 }
-                <span class="cluster-popup__meta">{{ cluster.size }} paper{{ cluster.size === 1 ? '' : 's' }}</span>
-                <div class="cluster-popup__stats">
-                  <div class="cluster-popup__stat">
-                    <span class="material-symbols-outlined cluster-popup__icon cluster-popup__icon--papers">description</span>
-                    <span class="cluster-popup__stat-label">Papers</span>
-                    <span class="cluster-popup__stat-value">{{ cluster.totalPapers }}</span>
-                  </div>
-                  <div class="cluster-popup__stat">
-                    <span class="material-symbols-outlined cluster-popup__icon cluster-popup__icon--seeds">eco</span>
-                    <span class="cluster-popup__stat-label">Seeds</span>
-                    <span class="cluster-popup__stat-value">{{ cluster.totalSeeds }}</span>
-                  </div>
-                  <div class="cluster-popup__stat">
-                    <span class="material-symbols-outlined cluster-popup__icon cluster-popup__icon--gold">star</span>
-                    <span class="cluster-popup__stat-label">Gold</span>
-                    <span class="cluster-popup__stat-value">{{ cluster.totalGoldStars }}</span>
-                  </div>
-                  <div class="cluster-popup__stat">
-                    <span class="material-symbols-outlined cluster-popup__icon cluster-popup__icon--silver">star</span>
-                    <span class="cluster-popup__stat-label">Silver</span>
-                    <span class="cluster-popup__stat-value">{{ cluster.totalSilverStars }}</span>
-                  </div>
-                </div>
                 @if (!cluster.isMisc) {
                   @if (selectedClusterSummary(); as s) {
                     @if (s.status === 'done') {
@@ -655,7 +676,7 @@
                     <path
                       class="graph-svg__bridge"
                       [class.graph-svg__bridge--highlighted]="isBridgeHighlighted(bridge)"
-                      [class.graph-svg__bridge--transition-fade-out]="transitionState() !== null"
+                      [class.graph-svg__bridge--transition-fade-out]="isStructureFadedOut()"
                       [style.opacity]="bridgeTransparency() / 100"
                       [attr.d]="bridge.path"
                       [attr.fill]="'url(#bridge-grad-' + bridge.key + ')'"
@@ -706,7 +727,7 @@
                 @for (div of dividers(); track div.x) {
                   <line
                     class="graph-svg__divider"
-                    [class.graph-svg__divider--transition-fade-out]="transitionState() !== null"
+                    [class.graph-svg__divider--transition-fade-out]="isStructureFadedOut()"
                     [attr.x1]="div.x"
                     [attr.y1]="TOP_PADDING - 5"
                     [attr.x2]="div.x"
@@ -718,7 +739,7 @@
                 @for (lane of laneLines(); track lane.y) {
                   <line
                     class="graph-svg__lane"
-                    [class.graph-svg__lane--transition-fade-out]="transitionState() !== null"
+                    [class.graph-svg__lane--transition-fade-out]="isStructureFadedOut()"
                     [attr.x1]="0"
                     [attr.y1]="lane.y"
                     [attr.x2]="svgWidth()"
@@ -730,10 +751,10 @@
                 @if (useInGraphCards()) {
                   @for (box of laneLayout().laneBoxes; track box.topCluster) {
                     <foreignObject
-                      [attr.x]="20"
-                      [attr.y]="box.yStart + 15"
-                      [attr.width]="300"
-                      [attr.height]="box.height - 30"
+                      [attr.x]="staggeredCards() ? box.cardX : cardAlignedX"
+                      [attr.y]="box.yStart + (box.height - cardHeight) / 2"
+                      [attr.width]="cardWidth"
+                      [attr.height]="cardHeight"
                     >
                       <div
                         class="lane-box"
@@ -742,64 +763,39 @@
                         [class.lane-box--transition-fade-out]="isClusterOutsideTransitionTarget(box.topCluster)"
                         (click)="selectClusterById(box.topCluster, $event)"
                       >
-                        <div class="lane-box__header">
-                          <span class="lane-box__swatch" [style.background]="box.color"></span>
-                          <div class="lane-box__title-group">
-                            <span class="lane-box__name">{{ box.name }}</span>
-                            <span class="lane-box__meta">{{ box.size }} paper{{ box.size === 1 ? '' : 's' }}</span>
+                        <div class="lane-box__body">
+                          <div class="lane-box__header">
+                            <span class="lane-box__swatch" [style.background]="box.color"></span>
+                            <div class="lane-box__title-group">
+                              <span class="lane-box__name">{{ box.name }}</span>
+                            </div>
                           </div>
-                        </div>
-                        
-                        @if (!box.isMisc && box.repTitle) {
-                          <span class="lane-box__rep" [title]="box.repTitle">
-                            <strong>Rep:</strong> {{ box.repTitle }}
-                          </span>
-                        }
 
-                        <div class="lane-box__stats">
-                          <div class="lane-box__stat" title="Papers count">
-                            <span class="material-symbols-outlined lane-box__icon lane-box__icon--papers">description</span>
-                            <span class="lane-box__stat-value">{{ box.totalPapers }}</span>
-                          </div>
-                          <div class="lane-box__stat" title="Seeds count">
-                            <span class="material-symbols-outlined lane-box__icon lane-box__icon--seeds">eco</span>
-                            <span class="lane-box__stat-value">{{ box.totalSeeds }}</span>
-                          </div>
-                          <div class="lane-box__stat" title="Gold stars count">
-                            <span class="material-symbols-outlined lane-box__icon lane-box__icon--gold">star</span>
-                            <span class="lane-box__stat-value">{{ box.totalGoldStars }}</span>
-                          </div>
-                          <div class="lane-box__stat" title="Silver stars count">
-                            <span class="material-symbols-outlined lane-box__icon lane-box__icon--silver">star</span>
-                            <span class="lane-box__stat-value">{{ box.totalSilverStars }}</span>
-                          </div>
-                        </div>
-
-                        @if (!box.isMisc) {
-                          @if (box.summary; as s) {
-                            @if (s.status === 'done') {
-                              @if (s.title) {
-                                <span class="lane-box__summary-title">{{ s.title }}</span>
+                          @if (!box.isMisc) {
+                            @if (box.summary; as s) {
+                              @if (s.status === 'done') {
+                                @if (s.title) {
+                                  <span class="lane-box__summary-title">{{ s.title }}</span>
+                                }
+                                <span class="lane-box__summary">{{ s.summary }}</span>
+                              } @else if (s.status !== 'error') {
+                                <span class="lane-box__summary lane-box__summary--pending">Summarizing…</span>
                               }
-                              <span class="lane-box__summary">{{ s.summary }}</span>
-                            } @else if (s.status !== 'error') {
+                            } @else if (summaries.running()) {
                               <span class="lane-box__summary lane-box__summary--pending">Summarizing…</span>
                             }
-                          } @else if (summaries.running()) {
-                            <span class="lane-box__summary lane-box__summary--pending">Summarizing…</span>
                           }
-                        }
+                        </div>
+
                         @if (!box.isMisc && innerViewClusterId() === null) {
-                          @if (isClusterSelected(box.topCluster)) {
-                            <button 
-                              class="lane-box__move-btn" 
-                              (click)="moveInside(box.topCluster, $event)"
-                              style="margin-top: 0.6rem;"
-                            >
-                              <span class="material-symbols-outlined">zoom_in</span>
-                              Move Inside
-                            </button>
-                          }
+                          <button
+                            class="lane-box__move-btn"
+                            [style.background]="box.color"
+                            (click)="moveInside(box.topCluster, $event)"
+                          >
+                            <span class="material-symbols-outlined">zoom_in</span>
+                            Move Inside
+                          </button>
                         }
                       </div>
                     </foreignObject>
@@ -966,24 +962,42 @@
               }
             </div>
           </div>
+
+          <!-- Transition Overlay -->
+          @if (transitionState(); as state) {
+            <div
+              class="ok-graph-transition-overlay"
+              [class.ok-graph-transition-overlay--expand]="state.stage === 'expand' || state.stage === 'shift' || state.stage === 'reveal'"
+              [class.ok-graph-transition-overlay--reveal]="state.stage === 'reveal'"
+              [class.ok-graph-transition-overlay--blob]="blobTransition()"
+              [style.--initial-left.px]="getScreenRect(state.rect).x"
+              [style.--initial-top.px]="getScreenRect(state.rect).y"
+              [style.--initial-width.px]="getScreenRect(state.rect).w"
+              [style.--initial-height.px]="getScreenRect(state.rect).h"
+              [style.--cluster-color]="state.color"
+            >
+            </div>
+            <!-- Turbulence filter that gives the blob-expansion overlay its noisy,
+                 random edge (referenced via CSS `filter: url(#...)`). -->
+            @if (blobTransition()) {
+              <svg class="ok-graph-blob-defs" aria-hidden="true" focusable="false">
+                <defs>
+                  <filter id="ok-graph-blob-noise" x="-25%" y="-25%" width="150%" height="150%">
+                    <feTurbulence type="fractalNoise" baseFrequency="0.012 0.014"
+                      numOctaves="2" seed="7" result="noise">
+                      <animate attributeName="baseFrequency"
+                        dur="6s" values="0.012 0.014;0.02 0.018;0.012 0.014"
+                        repeatCount="indefinite" />
+                    </feTurbulence>
+                    <feDisplacementMap in="SourceGraphic" in2="noise" scale="46"
+                      xChannelSelector="R" yChannelSelector="G" />
+                  </filter>
+                </defs>
+              </svg>
+            }
+          }
         </div>
-
-        <!-- Transition Overlay -->
-        @if (transitionState(); as state) {
-          <div 
-            class="ok-graph-transition-overlay"
-            [class.ok-graph-transition-overlay--expand]="state.stage === 'expand' || state.stage === 'shift'"
-            [style.--initial-left.px]="getScreenRect(state.rect).x"
-            [style.--initial-top.px]="getScreenRect(state.rect).y"
-            [style.--initial-width.px]="getScreenRect(state.rect).w"
-            [style.--initial-height.px]="getScreenRect(state.rect).h"
-            [style.--cluster-color]="state.color"
-          >
-          </div>
-        }
-
       </div>
-    </div>
 
         <!-- Candidate popup (sub-cluster representatives) -->
         @if (expandPopup(); as popup) {

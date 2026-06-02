@@ -8,7 +8,7 @@ import { getCommunitiesAtLevel, louvain } from '../citgraph/louvain';
 import { Paper } from '../../core/models/paper.model';
 import { citNodeToPaper, repScore } from './cit-node';
 import { clusterColor, lighten, withAlpha, blendColors, MISC_COLOR } from './community-colors';
-import { edgePath as buildEdgePath, LayoutEdge, TOP_PADDING, orderLanesByConnectivity } from './graph-layout';
+import { edgePath as buildEdgePath, LayoutEdge, TOP_PADDING, NODE_RADIUS, orderLanesByConnectivity } from './graph-layout';
 import { getArchetypeIcon } from '../../shared/utils/archetype-icons';
 import { SearchStateService, paperId } from '../../core/services/search-state.service';
 import { CitGraphService, CitGraphNode, CitGraphEdge } from '../../core/services/citgraph.service';
@@ -71,7 +71,7 @@ interface ExpandPopup {
 }
 
 interface TransitionState {
-  stage: 'none' | 'fade-out' | 'expand' | 'shift';
+  stage: 'none' | 'fade-out' | 'expand' | 'shift' | 'reveal';
   targetClusterId: number | null;
   rect: { x: number; y: number; w: number; h: number };
   color: string;
@@ -387,6 +387,16 @@ export class OkGraphComponent implements OnInit {
   readonly TOP_PADDING = TOP_PADDING;
   readonly transitionState = signal<TransitionState | null>(null);
   readonly innerViewClusterId = signal<number | null>(null);
+  // Pins the cluster's representative paper in place when we drill into it. We
+  // capture the rep node's world position in the outer view at the moment of
+  // entry; the inner-view layout is then translated so that same node lands
+  // exactly there (both axes) instead of the whole stack snapping to the top-left.
+  // The representative therefore never moves — every other node shifts by that
+  // same translation and additionally reshuffles into its subcluster lane, so it
+  // moves relative to the fixed representative. `id` is the rep paper id; when it
+  // can't be found in the inner layout (e.g. filtered out), the translation falls
+  // back to mapping the inner layout's centroid to (x, y). Null outside inner view.
+  readonly innerViewAnchor = signal<{ id: string; x: number; y: number } | null>(null);
   readonly innerViewClusterColor = computed(() => {
     const id = this.innerViewClusterId();
     return id === null ? '' : this.clusterColorFor(id);
@@ -394,6 +404,20 @@ export class OkGraphComponent implements OnInit {
   readonly innerViewClusterName = computed(() => {
     const id = this.innerViewClusterId();
     return id === null ? '' : this.clusterName(id);
+  });
+  // Whether the canvas should wear the inner-view tint/frame. Driven off the
+  // transition (from the `expand` stage onward) as well as the committed inner
+  // view, so the background colour finishes settling BEFORE the layout swaps and
+  // the nodes start moving — the background must not change at that moment.
+  readonly canvasInnerView = computed(() => {
+    if (this.innerViewClusterId() !== null) return true;
+    const stage = this.transitionState()?.stage;
+    return stage === 'expand' || stage === 'shift' || stage === 'reveal';
+  });
+  readonly canvasInnerViewColor = computed(() => {
+    const id = this.innerViewClusterId();
+    if (id !== null) return this.clusterColorFor(id);
+    return this.transitionState()?.color ?? '';
   });
   readonly baseNodesFiltered = computed(() => {
     const base = this.baseNodes();
@@ -432,8 +456,25 @@ export class OkGraphComponent implements OnInit {
   readonly blobMerging = signal(true);
   // Unified vertical expansion option (make all horizontal lane heights identical).
   readonly unifiedVerticalExpansion = signal(false);
+  // When moving inside a cluster, expand the transition overlay as a noisy,
+  // organic blob (turbulence-displaced, wobbling edges) instead of a clean
+  // rectangle growing to fill the canvas.
+  readonly blobTransition = signal(false);
   readonly useInGraphCards = signal(true);
-  readonly leftPadding = computed(() => this.useInGraphCards() ? 380 : 80);
+  // When on, cluster cards are not all left-aligned in a vertical column; each is
+  // placed just left of its cluster's left-most node, so they stagger
+  // horizontally following where each cluster starts.
+  readonly staggeredCards = signal(false);
+  // Fixed on-graph cluster card height (px). The card never scrolls and never
+  // resizes with content; the lane simply centres a card of this size.
+  readonly cardHeight = 150;
+  // Fixed on-graph cluster card width (px); kept in sync with the foreignObject.
+  readonly cardWidth = 300;
+  // Default left x for cards when left-aligned (not staggered).
+  readonly cardAlignedX = 20;
+  // Left edge where the first year column / left-most node sits. With in-graph
+  // cards the card occupies x=20..320, so this also sets the gap to the nodes.
+  readonly leftPadding = computed(() => this.useInGraphCards() ? 420 : 80);
 
   // Transparency settings (0% to 100% visibility/opacity, default 50%).
   readonly bridgeTransparency = signal<number>(50);
@@ -753,9 +794,16 @@ export class OkGraphComponent implements OnInit {
     if (!isInner) {
       for (const c of currentComm) sizeOf.set(c, (sizeOf.get(c) ?? 0) + 1);
     } else {
+      // Inside a cluster, only give a lane (and therefore a card) to subclusters
+      // that actually have a node drawn in the graph — i.e. their representative
+      // is currently visualized. Subclusters with no placed node are omitted so
+      // we don't show empty cards for them.
+      const visibleSub = new Set<number>();
+      for (const p of placedFiltered) visibleSub.add(currentComm[p.repIndex]);
       for (let i = 0; i < currentComm.length; i++) {
         if (topComm[i] === innerId) {
           const c = currentComm[i];
+          if (!visibleSub.has(c)) continue;
           sizeOf.set(c, (sizeOf.get(c) ?? 0) + 1);
         }
       }
@@ -872,6 +920,30 @@ export class OkGraphComponent implements OnInit {
           b.minY = Math.min(b.minY, y); b.maxY = Math.max(b.maxY, y);
         }
       });
+    }
+
+    // Pin the entered cluster's representative paper in place. We translate the
+    // whole inner-view layout so the rep node lands exactly where it sat in the
+    // outer view — the representative never moves; everything else carries the
+    // same translation (and has already reshuffled into subcluster lanes), so it
+    // moves relative to the fixed rep. Done before blobs/bridges/dividers so they
+    // derive from the shifted yearX / lane positions and stay consistent.
+    const anchor = isInner ? this.innerViewAnchor() : null;
+    if (anchor && nodes.length) {
+      const a = nodes.find(n => n.id === anchor.id);
+      const natX = a ? a.x : nodes.reduce((s, n) => s + n.x, 0) / nodes.length;
+      const natY = a ? a.y : nodes.reduce((s, n) => s + n.y, 0) / nodes.length;
+      const dx = anchor.x - natX;
+      const dy = anchor.y - natY;
+      if (dx !== 0 || dy !== 0) {
+        for (const n of nodes) { n.x += dx; n.y += dy; }
+        for (const b of boxes.values()) {
+          b.minX += dx; b.maxX += dx; b.minY += dy; b.maxY += dy;
+        }
+        for (const [y, x] of yearX) yearX.set(y, x + dx);
+        for (let i = 0; i < laneCenters.length; i++) laneCenters[i] += dy;
+        for (let i = 0; i < laneYStart.length; i++) laneYStart[i] += dy;
+      }
     }
 
     // One coloured blob per cluster, around its representatives.
@@ -1069,6 +1141,14 @@ export class OkGraphComponent implements OnInit {
         }
       }
 
+      // Staggered placement: sit the card just left of this cluster's left-most
+      // node instead of in the shared left-aligned column. Falls back to the
+      // aligned x when the cluster has no drawn nodes.
+      const clusterBox = boxes.get(id);
+      const cardX = clusterBox
+        ? clusterBox.minX - NODE_RADIUS - 16 - this.cardWidth
+        : this.cardAlignedX;
+
       return {
         topCluster: id,
         laneIndex: i,
@@ -1083,6 +1163,7 @@ export class OkGraphComponent implements OnInit {
         totalSilverStars: `${visibleSilver} / ${totalSilver}`,
         yStart: laneYStart[i],
         height: laneHeights[i],
+        cardX,
         summary
       };
     });
@@ -1518,6 +1599,7 @@ export class OkGraphComponent implements OnInit {
     this.selectedNodeId.set(null);
     this.selectedClusterId.set(null);
     this.innerViewClusterId.set(null);
+    this.innerViewAnchor.set(null);
     this.expandPopup.set(null);
     this.state.clear();
   }
@@ -1528,6 +1610,7 @@ export class OkGraphComponent implements OnInit {
     // Find the blob in the current layout
     const blob = this.blobs().find(b => b.topCluster === clusterId);
     if (!blob) {
+      this.innerViewAnchor.set(null);
       this.innerViewClusterId.set(clusterId);
       this.selectedClusterId.set(null);
       this.selectedNodeId.set(null);
@@ -1542,8 +1625,37 @@ export class OkGraphComponent implements OnInit {
       w: blob.rectW,
       h: blob.rectH
     };
+
+    // Pin the cluster's representative paper: capture its current world position
+    // so the inner-view layout can be translated to keep it exactly here. If the
+    // rep node isn't on screen (filtered out), fall back to the blob centre, which
+    // maps the inner layout's centroid here instead.
+    const repIdx = this.repIndexOfCluster(this.topLevel(), clusterId);
+    const repId = repIdx >= 0 ? this.baseNodes()[repIdx]?.paper_id : undefined;
+    const repNode = repId != null ? this.nodes().find(n => n.id === repId) : undefined;
+    this.innerViewAnchor.set(
+      repNode
+        ? { id: repNode.id, x: repNode.x, y: repNode.y }
+        : { id: '', x: blob.rectX + blob.rectW / 2, y: blob.rectY + blob.rectH / 2 },
+    );
     
-    // Step 1: Fade out (400ms)
+    // The stages overlap rather than each waiting for the previous to finish:
+    //   t=0    fade-out: siblings of the target start fading; overlay sits on the
+    //          target's lane rect.
+    //   t=160  expand:   overlay grows to fill the canvas (0.6s, full ~t=760),
+    //          overlapping the tail of the sibling fade so they read as one motion.
+    //   t=700  shift:    swap in the inner-view layout behind the (now full)
+    //          overlay; target content stays put — it never fades, and the new
+    //          inner content fades in via CSS @starting-style instead of popping.
+    //   t=860  reveal:   fade the full-panel overlay out (0.4s) to uncover the
+    //          settled inner view — never removed instantly (that read as a flash).
+    //   t=1240 end:      drop the overlay element once it is fully transparent.
+    const guard = (fn: () => void) => () => {
+      const state = this.transitionState();
+      if (!state || state.targetClusterId !== clusterId) return;
+      fn();
+    };
+
     this.transitionState.set({
       stage: 'fade-out',
       targetClusterId: clusterId,
@@ -1551,45 +1663,31 @@ export class OkGraphComponent implements OnInit {
       color: blob.color
     });
 
-    setTimeout(() => {
-      const state = this.transitionState();
-      if (!state || state.targetClusterId !== clusterId) return;
+    setTimeout(guard(() => {
+      this.transitionState.update(s => s && { ...s, stage: 'expand' });
+    }), 160);
 
-      // Step 2: Expand (600ms)
-      this.transitionState.set({
-        ...state,
-        stage: 'expand'
-      });
+    setTimeout(guard(() => {
+      this.innerViewClusterId.set(clusterId);
+      this.selectedClusterId.set(null);
+      this.selectedNodeId.set(null);
+      this.expandPopup.set(null);
+      this.transitionState.update(s => s && { ...s, stage: 'shift' });
+    }), 700);
 
-      setTimeout(() => {
-        const state2 = this.transitionState();
-        if (!state2 || state2.targetClusterId !== clusterId) return;
+    setTimeout(guard(() => {
+      this.transitionState.update(s => s && { ...s, stage: 'reveal' });
+    }), 860);
 
-        // Step 3: Shift layout & colors (600ms)
-        this.innerViewClusterId.set(clusterId);
-        this.selectedClusterId.set(null);
-        this.selectedNodeId.set(null);
-        this.expandPopup.set(null);
-
-        this.transitionState.set({
-          ...state2,
-          stage: 'shift'
-        });
-
-        setTimeout(() => {
-          const state3 = this.transitionState();
-          if (!state3 || state3.targetClusterId !== clusterId) return;
-
-          // End transition
-          this.transitionState.set(null);
-        }, 600);
-      }, 600);
-    }, 400);
+    setTimeout(guard(() => {
+      this.transitionState.set(null);
+    }), 1240);
   }
 
   resetToMainView(): void {
     this.transitionState.set(null);
     this.innerViewClusterId.set(null);
+    this.innerViewAnchor.set(null);
     this.selectedClusterId.set(null);
     this.selectedNodeId.set(null);
     this.expandPopup.set(null);
@@ -1609,33 +1707,56 @@ export class OkGraphComponent implements OnInit {
     };
   }
 
+  /** True while the outer-view structure (lanes, dividers, bridges) should stay
+   *  hidden — during fade-out/expand, but NOT once the inner-view layout has been
+   *  swapped in (shift), so the inner view is fully formed before the overlay clears. */
+  /** True once the inner-view layout has been swapped in (shift/reveal): from
+   *  that point everything on screen belongs to the target cluster, so nothing
+   *  should carry the fade-out class. */
+  private innerViewActive(): boolean {
+    const stage = this.transitionState()?.stage;
+    return stage === 'shift' || stage === 'reveal';
+  }
+
+  isStructureFadedOut(): boolean {
+    const state = this.transitionState();
+    return !!state && !this.innerViewActive();
+  }
+
   isNodeOutsideTransitionTarget(node: RenderNode): boolean {
     const state = this.transitionState();
     if (!state) return false;
+    // Once the inner-view layout is active, every node shown belongs to the
+    // target cluster — never fade them (they must not flicker out and back in).
+    if (this.innerViewActive()) return false;
     return node.clusterId !== state.targetClusterId;
   }
 
   isBlobOutsideTransitionTarget(blob: any): boolean {
     const state = this.transitionState();
     if (!state) return false;
-    if (state.stage === 'expand' || state.stage === 'shift') return true;
+    // Inner-view blobs (sub-clusters of the target) should be visible.
+    if (this.innerViewActive()) return false;
+    if (state.stage === 'expand') return true;
     return blob.topCluster !== state.targetClusterId;
   }
 
   isClusterOutsideTransitionTarget(clusterId: number): boolean {
     const state = this.transitionState();
     if (!state) return false;
+    if (this.innerViewActive()) return false;
     return clusterId !== state.targetClusterId;
   }
 
   isEdgeOutsideTransitionTarget(edge: LayoutEdge): boolean {
     const state = this.transitionState();
     if (!state) return false;
-    
+    if (this.innerViewActive()) return false;
+
     const sourceNode = this.nodes().find(n => n.id === edge.fromId);
     const targetNode = this.nodes().find(n => n.id === edge.toId);
     if (!sourceNode || !targetNode) return true;
-    
+
     return sourceNode.clusterId !== state.targetClusterId || targetNode.clusterId !== state.targetClusterId;
   }
 
