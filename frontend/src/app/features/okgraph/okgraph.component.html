@@ -696,6 +696,18 @@
                     rx="14"
                   />
                 }
+                <!-- Selected in-between-gap highlight: same band, centred on the
+                     midpoint between the two non-consecutive year columns. -->
+                @if (selectedGapX() !== null) {
+                  <rect
+                    class="graph-svg__year-highlight graph-svg__year-highlight--gap"
+                    [attr.x]="selectedGapX()! - YEAR_HIGHLIGHT_HALF"
+                    [attr.y]="TOP_PADDING - 5"
+                    [attr.width]="2 * YEAR_HIGHLIGHT_HALF"
+                    [attr.height]="svgHeight() - TOP_PADDING + 5"
+                    rx="14"
+                  />
+                }
                 <!-- Merge bridges: join the blobs of clusters connected one level
                      below the current view. Drawn first so blobs/nodes sit on top. -->
                 @if (blobMerging()) {
@@ -755,7 +767,8 @@
                   <line
                     class="graph-svg__divider"
                     [class.graph-svg__divider--transition-fade-out]="isStructureFadedOut()"
-                    [style.opacity]="gridTransparency() / 100"
+                    [style.opacity]="gridOpacity()"
+                    [style.stroke-width.px]="gridStrokeWidth()"
                     [attr.x1]="div.x"
                     [attr.y1]="TOP_PADDING - 5"
                     [attr.x2]="div.x"
@@ -768,7 +781,8 @@
                   <line
                     class="graph-svg__lane"
                     [class.graph-svg__lane--transition-fade-out]="isStructureFadedOut()"
-                    [style.opacity]="gridTransparency() / 100"
+                    [style.opacity]="gridOpacity()"
+                    [style.stroke-width.px]="gridStrokeWidth()"
                     [attr.x1]="0"
                     [attr.y1]="lane.y"
                     [attr.x2]="svgWidth()"
@@ -978,6 +992,39 @@
                         class="year-expand-btn"
                         [disabled]="!canExpandYear()"
                         (click)="expandYear(); $event.stopPropagation()"
+                      >
+                        <span class="material-symbols-outlined">unfold_more</span>
+                        Expand
+                      </button>
+                    </foreignObject>
+                  }
+                }
+
+                <!-- In-between markers: click the `↔` to expand on the middle
+                     year(s) of a non-consecutive gap (see expandGap()). -->
+                @for (gap of yearGaps(); track gap.leftYear) {
+                  <text
+                    class="graph-svg__gap-icon"
+                    [class.graph-svg__gap-icon--selected]="isGapSelected(gap)"
+                    [attr.x]="axisX(gap.x)"
+                    [attr.y]="AXIS_HEIGHT - 13"
+                    text-anchor="middle"
+                    style="cursor: pointer"
+                    (click)="selectGap(gap); $event.stopPropagation()"
+                  >&#8596;</text>
+
+                  @if (isGapSelected(gap)) {
+                    <foreignObject
+                      [attr.x]="axisX(gap.x) - 44"
+                      [attr.y]="AXIS_HEIGHT + 5"
+                      width="88"
+                      height="32"
+                      style="overflow: visible"
+                    >
+                      <button
+                        class="year-expand-btn"
+                        [disabled]="!canExpandGap()"
+                        (click)="expandGap(); $event.stopPropagation()"
                       >
                         <span class="material-symbols-outlined">unfold_more</span>
                         Expand
