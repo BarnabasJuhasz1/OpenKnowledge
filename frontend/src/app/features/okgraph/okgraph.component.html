@@ -759,6 +759,7 @@
                       <div
                         class="lane-box"
                         [style.border-left-color]="box.color"
+                        [style.border-color]="isClusterSelected(box.topCluster) ? box.color : null"
                         [class.lane-box--selected]="isClusterSelected(box.topCluster)"
                         [class.lane-box--transition-fade-out]="isClusterOutsideTransitionTarget(box.topCluster)"
                         (click)="selectClusterById(box.topCluster, $event)"
