@@ -1,0 +1,29 @@
+
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/backend.dockerfile
+    ports:
+      - "8000:8080"
+    env_file:
+      - backend/.env
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:////app/db-data/openknowledge.db
+      - FRONTEND_URL=http://localhost:4201
+      - OAUTH_REDIRECT_BASE_URL=http://localhost:4201
+    volumes:
+      - backend-db:/app/db-data
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: frontend.dockerfile
+    ports:
+      - "4201:80"
+    depends_on:
+      - backend
+
+volumes:
+  backend-db:
