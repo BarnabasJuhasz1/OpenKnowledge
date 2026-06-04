@@ -1,0 +1,12 @@
+.venv
+.pytest_cache
+*.db
+*.db.bak
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.git
+.gitignore
+backend.dockerfile
+*.md
