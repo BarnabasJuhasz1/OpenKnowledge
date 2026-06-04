@@ -1,4 +1,6 @@
+.env
 .venv
+venv/
 .pytest_cache
 *.db
 *.db.bak
