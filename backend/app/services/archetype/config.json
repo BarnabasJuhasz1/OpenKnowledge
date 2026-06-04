@@ -2,9 +2,9 @@
   "enabled": true,
   "preload_on_startup": true,
   "python_executable": "/home/juhasz/miniforge3/envs/okarchetype/bin/python",
-  "script_path": "/home/juhasz/Desktop/Projects/Open_Knowledge/archetype_classifier/classifier/classify_retrieved_papers.py",
-  "checkpoint_dir": "/home/juhasz/Desktop/Projects/Open_Knowledge/archetype_classifier/models/fast_archetype_model/checkpoint-6402",
-  "label_mapping_path": "/home/juhasz/Desktop/Projects/Open_Knowledge/archetype_classifier/models/fast_archetype_model/label_mapping.json",
+  "script_path": "archetype_classifier/scripts/classify_retrieved_papers.py",
+  "checkpoint_dir": "archetype_classifier/models/fast_archetype_model/checkpoint-6402",
+  "label_mapping_path": "archetype_classifier/models/fast_archetype_model/label_mapping.json",
   "encoder_config": {
     "model_type": "bert",
     "vocab_size": 31090,

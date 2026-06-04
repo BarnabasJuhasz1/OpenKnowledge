@@ -61,12 +61,47 @@ class ArchetypeWorker:
 
     async def _spawn_locked(self) -> None:
         self._ready = False
-        python = self._cfg["python_executable"]
-        script = self._cfg["script_path"]
-        if not Path(python).exists():
-            logger.warning("Archetype python executable not found: %s", python)
-            return
-        if not Path(script).is_file():
+        python = self._cfg.get("python_executable")
+        script = self._cfg.get("script_path")
+
+        # Resolve python executable with fallbacks
+        import shutil
+        import sys
+        
+        python_resolved = False
+        if python:
+            if Path(python).exists():
+                python_resolved = True
+            else:
+                shutil_resolved = shutil.which(python)
+                if shutil_resolved:
+                    python = shutil_resolved
+                    python_resolved = True
+
+        if not python_resolved:
+            # Fallback check for dependencies in current environment
+            has_deps = False
+            try:
+                import torch
+                import transformers
+                import safetensors
+                has_deps = True
+            except ImportError:
+                pass
+            
+            if has_deps:
+                logger.info(
+                    "Configured archetype python executable not found (%s). "
+                    "However, current environment has archetype dependencies installed. Falling back to %s.",
+                    python, sys.executable
+                )
+                python = sys.executable
+                python_resolved = True
+            else:
+                logger.warning("Archetype python executable not found: %s", python)
+                return
+
+        if not script or not Path(script).is_file():
             logger.warning("Archetype script not found: %s", script)
             return
 
