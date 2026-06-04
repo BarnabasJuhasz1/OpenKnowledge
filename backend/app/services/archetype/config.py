@@ -17,16 +17,36 @@ logger = logging.getLogger(__name__)
 _DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "config.json"
 
 
-def get_project_root() -> Path:
-    """Traverse up from this file's path until archetype_classifier is found, or fallback to parent levels."""
+def resolve_archetype_path(relative_path_str: str) -> str:
+    """Resolve a relative path against multiple candidate base directories.
+    
+    Checks in:
+    1. The backend root directory (where config.py's parents resolve to, e.g. Repo/backend or /app)
+    2. The parent directory of the backend (e.g. Repo)
+    3. The workspace root / parent directory of Repo (where archetype_classifier might live as a sibling)
+    """
+    path_val = Path(relative_path_str)
+    if path_val.is_absolute():
+        return str(path_val)
+
     current = Path(__file__).resolve().parent
+    # Gather parent directories as candidate bases
+    candidates = []
     for _ in range(6):
-        if (current / "archetype_classifier").is_dir():
-            return current
+        candidates.append(current)
         if current.parent == current:
             break
         current = current.parent
-    return Path(__file__).resolve().parents[4]  # Fallback to Repo root
+
+    # Search for the first candidate where the relative path actually exists
+    for base in candidates:
+        candidate_path = (base / path_val).resolve()
+        if candidate_path.exists():
+            return str(candidate_path)
+
+    # Fallback: resolve relative to backend root (4 levels up from config.py: Repo/backend/app/services/archetype/config.py)
+    backend_root = Path(__file__).resolve().parents[3]
+    return str((backend_root / path_val).resolve())
 
 
 def config_path() -> Path:
@@ -69,12 +89,10 @@ def load_config() -> dict | None:
         logger.info("Archetype classification disabled.")
         return None
 
-    # Resolve relative paths relative to project root
-    root = get_project_root()
+    # Resolve paths relative to candidate project roots
     for key in ["script_path", "checkpoint_dir", "label_mapping_path"]:
         if key in cfg and cfg[key]:
-            path_val = Path(cfg[key])
-            if not path_val.is_absolute():
-                cfg[key] = str((root / path_val).resolve())
+            cfg[key] = resolve_archetype_path(cfg[key])
 
     return cfg
+

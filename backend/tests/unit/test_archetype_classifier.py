@@ -105,9 +105,13 @@ def test_load_config_env_overrides(monkeypatch, tmp_path):
     monkeypatch.setenv("ARCHETYPE_PYTHON_EXECUTABLE", "python-test")
     monkeypatch.setenv("ARCHETYPE_SCRIPT_PATH", "relative/path/to/script.py")
 
-    # Mock project root to a known path
+    # Mock path resolver to a known path
     fake_root = tmp_path / "project_root"
-    monkeypatch.setattr(arch_config, "get_project_root", lambda: fake_root)
+    monkeypatch.setattr(
+        arch_config,
+        "resolve_archetype_path",
+        lambda rel_path: str((fake_root / rel_path).resolve())
+    )
 
     cfg = arch_config.load_config()
     assert cfg is not None

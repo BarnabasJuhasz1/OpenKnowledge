@@ -15,6 +15,7 @@ services:
       - OAUTH_REDIRECT_BASE_URL=http://localhost:4201
     volumes:
       - backend-db:/app/db-data
+      - ../archetype_classifier/models:/app/archetype_classifier/models
 
   frontend:
     build:

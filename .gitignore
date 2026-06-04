@@ -29,3 +29,6 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# Archetype Classifier model weights and checkpoints
+/backend/archetype_classifier/models/
