@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Component, HostListener, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -9,6 +9,7 @@ import { Paper } from '../../core/models/paper.model';
 import { citNodeToPaper, repScore } from './cit-node';
 import { clusterColor, lighten, withAlpha, blendColors, MISC_COLOR } from './community-colors';
 import { edgePath as buildEdgePath, LayoutEdge, TOP_PADDING, NODE_RADIUS, orderLanesByConnectivity } from './graph-layout';
+import { yearExpandQueues, middleYears } from './year-expand';
 import { getArchetypeIcon } from '../../shared/utils/archetype-icons';
 import { SearchStateService, paperId } from '../../core/services/search-state.service';
 import { CitGraphService, CitGraphNode, CitGraphEdge } from '../../core/services/citgraph.service';
@@ -440,6 +441,18 @@ export class OkGraphComponent implements OnInit {
   readonly expandPopup = signal<ExpandPopup | null>(null);
   readonly panning = signal(false);
 
+  // Year-axis selection: the single year the user has picked on the axis (or
+  // null). Selecting a year highlights its vertical lane and reveals the Expand
+  // button, which drills the per-cluster year queue (see expandYear()).
+  readonly selectedYear = signal<number | null>(null);
+  // Year-axis in-between selection: the gap between two non-consecutive year
+  // columns the user has picked (or null). Mutually exclusive with selectedYear.
+  // Selecting a gap reveals the Expand button, which drills the middle year(s)
+  // of the [leftYear, rightYear] range (see expandGap()).
+  readonly selectedGap = signal<{ leftYear: number; rightYear: number } | null>(null);
+  // Half-width (world units) of the highlighted vertical band around a year.
+  readonly YEAR_HIGHLIGHT_HALF = 46;
+
   // Settings panel.
   readonly settingsOpen = signal(false);
   readonly clearConfirmOpen = signal(false);
@@ -479,6 +492,12 @@ export class OkGraphComponent implements OnInit {
   // Transparency settings (0% to 100% visibility/opacity, default 50%).
   readonly bridgeTransparency = signal<number>(50);
   readonly linkTransparency = signal<number>(50);
+  readonly gridTransparency = signal<number>(50);
+  readonly gridOpacity = computed(() => Math.min(1, this.gridTransparency() / 50));
+  readonly gridStrokeWidth = computed(() => {
+    const val = this.gridTransparency();
+    return val <= 50 ? 1 : 1 + (val - 50) / 50;
+  });
 
   toggleSettings(): void { this.settingsOpen.update(v => !v); }
   closeSettings(): void { this.settingsOpen.set(false); }
@@ -672,6 +691,8 @@ export class OkGraphComponent implements OnInit {
     this.selectedNodeId.set(null);
     this.selectedClusterId.set(null);
     this.expandPopup.set(null);
+    this.selectedYear.set(null);
+    this.selectedGap.set(null);
     const levels = this.levels();
     if (!levels.length || !this.baseNodes().length) {
       this.state.placed.set([]); this.state.links.set([]); return;
@@ -929,12 +950,14 @@ export class OkGraphComponent implements OnInit {
     // moves relative to the fixed rep. Done before blobs/bridges/dividers so they
     // derive from the shifted yearX / lane positions and stay consistent.
     const anchor = isInner ? this.innerViewAnchor() : null;
+    let dx = 0;
+    let dy = 0;
     if (anchor && nodes.length) {
       const a = nodes.find(n => n.id === anchor.id);
       const natX = a ? a.x : nodes.reduce((s, n) => s + n.x, 0) / nodes.length;
       const natY = a ? a.y : nodes.reduce((s, n) => s + n.y, 0) / nodes.length;
-      const dx = anchor.x - natX;
-      const dy = anchor.y - natY;
+      dx = anchor.x - natX;
+      dy = anchor.y - natY;
       if (dx !== 0 || dy !== 0) {
         for (const n of nodes) { n.x += dx; n.y += dy; }
         for (const b of boxes.values()) {
@@ -1145,9 +1168,11 @@ export class OkGraphComponent implements OnInit {
       // node instead of in the shared left-aligned column. Falls back to the
       // aligned x when the cluster has no drawn nodes.
       const clusterBox = boxes.get(id);
-      const cardX = clusterBox
-        ? clusterBox.minX - NODE_RADIUS - 16 - this.cardWidth
-        : this.cardAlignedX;
+      const cardX = this.staggeredCards()
+        ? (clusterBox
+            ? clusterBox.minX - NODE_RADIUS - 16 - this.cardWidth
+            : this.cardAlignedX + dx)
+        : this.cardAlignedX + dx;
 
       return {
         topCluster: id,
@@ -1496,12 +1521,19 @@ export class OkGraphComponent implements OnInit {
     if (t.closest('.graph-svg__node') || t.closest('.graph-svg__blob') ||
         t.closest('.zoom-controls') || t.closest('.expand-popup') ||
         t.closest('.graph-settings') || t.closest('.cluster-popup') ||
-        t.closest('.lane-box')) {
+        t.closest('.lane-box') || t.closest('.graph-svg__axis')) {
       return;
     }
     this.selectedClusterId.set(null);
     this.selectedNodeId.set(null);
     this.expandPopup.set(null);
+  }
+
+  /** Global document click handler to deselect selected timeline year/gaps when clicking outside */
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: MouseEvent): void {
+    this.selectedYear.set(null);
+    this.selectedGap.set(null);
   }
 
   closeClusterPopup(): void {
@@ -1570,6 +1602,243 @@ export class OkGraphComponent implements OnInit {
     this.expandPopup.set(null);
   }
 
+  // --- year-axis selection + expand ------------------------------------------
+
+  /** Toggle the selected year on the axis (single selection). Clears any gap. */
+  selectYear(year: number): void {
+    this.expandPopup.set(null);
+    this.selectedGap.set(null);
+    this.selectedYear.update(cur => (cur === year ? null : year));
+  }
+
+  /** Whether `gap` is the currently selected in-between gap. */
+  isGapSelected(gap: { leftYear: number; rightYear: number }): boolean {
+    const s = this.selectedGap();
+    return !!s && s.leftYear === gap.leftYear && s.rightYear === gap.rightYear;
+  }
+
+  /** Toggle the selected in-between gap on the axis. Clears any selected year. */
+  selectGap(gap: { leftYear: number; rightYear: number }): void {
+    this.expandPopup.set(null);
+    this.selectedYear.set(null);
+    this.selectedGap.update(cur =>
+      cur && cur.leftYear === gap.leftYear && cur.rightYear === gap.rightYear ? null : gap);
+  }
+
+  /** Double click a year: select it and immediately expand if possible. */
+  onYearDblClick(year: number): void {
+    this.expandPopup.set(null);
+    this.selectedGap.set(null);
+    this.selectedYear.set(year);
+    if (this.canExpandYear()) {
+      this.expandYear();
+    }
+  }
+
+  /** Double click a gap: select it and immediately expand if possible. */
+  onGapDblClick(gap: { leftYear: number; rightYear: number }): void {
+    this.expandPopup.set(null);
+    this.selectedYear.set(null);
+    this.selectedGap.set(gap);
+    if (this.canExpandGap()) {
+      this.expandGap();
+    }
+  }
+
+  /** World x of the selected year's column, or null when it isn't a column. */
+  readonly selectedYearX = computed<number | null>(() => {
+    const y = this.selectedYear();
+    if (y === null) return null;
+    const col = this.yearColumns().find(c => c.year === y);
+    return col ? col.x : null;
+  });
+
+  /**
+   * In-between markers: one per adjacent pair of non-consecutive year columns,
+   * positioned at the midpoint between them. Rendered as a clickable `↔` on the
+   * axis (you cannot click between, e.g., 2010 and 2011 — they are consecutive).
+   */
+  readonly yearGaps = computed<{ leftYear: number; rightYear: number; x: number }[]>(() => {
+    const cols = this.yearColumns();
+    const gaps: { leftYear: number; rightYear: number; x: number }[] = [];
+    for (let i = 0; i < cols.length - 1; i++) {
+      if (cols[i + 1].year - cols[i].year > 1) {
+        gaps.push({
+          leftYear: cols[i].year,
+          rightYear: cols[i + 1].year,
+          x: (cols[i].x + cols[i + 1].x) / 2,
+        });
+      }
+    }
+    return gaps;
+  });
+
+  /** World x of the selected gap's marker, or null when none is selected. */
+  readonly selectedGapX = computed<number | null>(() => {
+    const sel = this.selectedGap();
+    if (!sel) return null;
+    const g = this.yearGaps().find(
+      g => g.leftYear === sel.leftYear && g.rightYear === sel.rightYear);
+    return g ? g.x : null;
+  });
+
+  /**
+   * Per-lane-cluster ordered candidate queues for a given year — the nodes an
+   * Expand on that year would drill through. Mirrors laneLayout()'s view
+   * derivation so it matches the clusters currently on screen; built via the
+   * pure yearExpandQueues() helper and mapped onto PlacedNodes.
+   */
+  private buildQueuesForYear(year: number): Map<number, PlacedNode[]> {
+    const levels = this.levels();
+    const base = this.baseNodes();
+    if (!levels.length || !base.length) return new Map();
+
+    const top = levels.length - 1;
+    const innerId = this.innerViewClusterId();
+    const isInner = innerId !== null;
+    const currentTopLevel = isInner ? Math.max(0, top - 1) : top;
+    const currentComm = this.communitiesAtLevel()(currentTopLevel);
+    const topComm = this.communitiesAtLevel()(top);
+
+    const commAtLevel: number[][] = [];
+    for (let L = 0; L <= currentTopLevel; L++) commAtLevel[L] = this.communitiesAtLevel()(L);
+
+    const nodeYear = base.map(n => n.year ?? null);
+    const nodeScore = base.map(n => repScore(n));
+    const inView = base.map((_, i) => !isInner || topComm[i] === innerId);
+
+    const placedIds = new Set(this.state.placed().map(p => p.id));
+    const isPlaced = (i: number) => placedIds.has(base[i].paper_id);
+
+    const raw = yearExpandQueues({
+      commAtLevel, currentTopLevel, nodeYear, nodeScore,
+      laneClusterOf: currentComm, inView, selectedYear: year, isPlaced,
+    });
+
+    const queues = new Map<number, PlacedNode[]>();
+    for (const [cluster, cands] of raw) {
+      queues.set(cluster, cands.map(c => this.buildPlaced(c.level, c.community, c.paperIndex)));
+    }
+    return queues;
+  }
+
+  /** Years that contain at least one unplaced candidate paper in the current view. */
+  readonly expandableYears = computed<Set<number>>(() => {
+    const levels = this.levels();
+    const base = this.baseNodes();
+    if (!levels.length || !base.length) return new Set();
+
+    const top = levels.length - 1;
+    const innerId = this.innerViewClusterId();
+    const isInner = innerId !== null;
+    const topComm = this.communitiesAtLevel()(top);
+
+    const placedIds = new Set(this.state.placed().map(p => p.id));
+    const result = new Set<number>();
+
+    for (let i = 0; i < base.length; i++) {
+      const node = base[i];
+      if (node.year == null) continue;
+      // Is it in view?
+      const inView = !isInner || topComm[i] === innerId;
+      if (!inView) continue;
+      // Is it placed?
+      const isPlaced = placedIds.has(node.paper_id);
+      if (isPlaced) continue;
+
+      result.add(node.year);
+    }
+    return result;
+  });
+
+  /** Whether the given year is expandable in the current view. */
+  isYearExpandable(year: number): boolean {
+    return this.expandableYears().has(year);
+  }
+
+  /** Whether the given gap is expandable in the current view. */
+  isGapExpandable(gap: { leftYear: number; rightYear: number }): boolean {
+    const midYears = middleYears(gap.leftYear, gap.rightYear);
+    return midYears.some(y => this.expandableYears().has(y));
+  }
+
+  /** Candidate queues for the selected year (empty when no year is selected). */
+  private readonly yearCandidateQueues = computed<Map<number, PlacedNode[]>>(() => {
+    const year = this.selectedYear();
+    if (year === null) return new Map();
+    return this.buildQueuesForYear(year);
+  });
+
+  /**
+   * Candidate queues for the selected gap — one queue-map per middle year of the
+   * [leftYear, rightYear] range (one map for an odd range, two for an even one).
+   */
+  private readonly gapCandidateQueues = computed<Map<number, PlacedNode[]>[]>(() => {
+    const gap = this.selectedGap();
+    if (!gap) return [];
+    return middleYears(gap.leftYear, gap.rightYear).map(y => this.buildQueuesForYear(y));
+  });
+
+  /** Whether any shown cluster still has an un-placed node from the selected year. */
+  readonly canExpandYear = computed(() => {
+    for (const q of this.yearCandidateQueues().values()) if (q.length) return true;
+    return false;
+  });
+
+  /** Whether expanding the selected gap would place any node. */
+  readonly canExpandGap = computed(() => {
+    for (const queues of this.gapCandidateQueues())
+      for (const q of queues.values()) if (q.length) return true;
+    return false;
+  });
+
+  /**
+   * Place the next node from each lane cluster's queue. Each new node is linked
+   * to its cluster's coarsest placed node so the graph stays connected. Reads
+   * the live placed set, so sequential calls chain correctly.
+   */
+  private placeQueues(queues: Map<number, PlacedNode[]>): void {
+    if (!queues.size) return;
+
+    // Coarsest placed node per top-level cluster — the parent to link new nodes to.
+    const parentByCluster = new Map<number, PlacedNode>();
+    for (const p of this.state.placed()) {
+      const cur = parentByCluster.get(p.topCluster);
+      if (!cur || p.level > cur.level) parentByCluster.set(p.topCluster, p);
+    }
+
+    const toAdd: PlacedNode[] = [];
+    const newLinks: LayoutEdge[] = [];
+    for (const [cluster, queue] of queues) {
+      const cand = queue[0];
+      if (!cand) continue;
+      toAdd.push(cand);
+      const parent = parentByCluster.get(cand.topCluster) ?? parentByCluster.get(cluster);
+      if (parent && parent.id !== cand.id) newLinks.push({ fromId: parent.id, toId: cand.id });
+    }
+    if (!toAdd.length) return;
+    this.state.placed.update(p => [...p, ...toAdd]);
+    if (newLinks.length) this.state.links.update(l => [...l, ...newLinks]);
+  }
+
+  /**
+   * Expand the selected year: for every shown cluster, place the next node from
+   * its year queue (the highest-level, highest-ok-score not-yet-placed candidate).
+   * Repeated clicks drill further down each queue.
+   */
+  expandYear(): void {
+    this.placeQueues(this.yearCandidateQueues());
+  }
+
+  /**
+   * Expand the selected in-between gap: behaves like pressing Expand on the
+   * year(s) literally in the middle of the [leftYear, rightYear] range. An
+   * even-length range expands both middle years (placed sequentially).
+   */
+  expandGap(): void {
+    for (const queues of this.gapCandidateQueues()) this.placeQueues(queues);
+  }
+
   canExpandPast(node: RenderNode): boolean {
     const p = this.placedById().get(node.id);
     return !!p && this.splitByTime(p, 'past').length > 0;
@@ -1601,6 +1870,8 @@ export class OkGraphComponent implements OnInit {
     this.innerViewClusterId.set(null);
     this.innerViewAnchor.set(null);
     this.expandPopup.set(null);
+    this.selectedYear.set(null);
+    this.selectedGap.set(null);
     this.state.clear();
   }
 
@@ -1672,6 +1943,8 @@ export class OkGraphComponent implements OnInit {
       this.selectedClusterId.set(null);
       this.selectedNodeId.set(null);
       this.expandPopup.set(null);
+      this.selectedYear.set(null);
+      this.selectedGap.set(null);
       this.transitionState.update(s => s && { ...s, stage: 'shift' });
     }), 700);
 
@@ -1691,6 +1964,8 @@ export class OkGraphComponent implements OnInit {
     this.selectedClusterId.set(null);
     this.selectedNodeId.set(null);
     this.expandPopup.set(null);
+    this.selectedYear.set(null);
+    this.selectedGap.set(null);
   }
 
   // --- transition animation helpers -------------------------------------------
@@ -1838,7 +2113,7 @@ export class OkGraphComponent implements OnInit {
     // Let nodes / arrows / controls handle their own clicks.
     if (t.closest('.graph-svg__node') || t.closest('.zoom-controls') ||
         t.closest('.expand-popup') || t.closest('.graph-settings') ||
-        t.closest('.cluster-popup')) {
+        t.closest('.cluster-popup') || t.closest('.graph-svg__axis')) {
       return;
     }
     this.expandPopup.set(null);
