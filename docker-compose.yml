@@ -3,8 +3,8 @@
 services:
   backend:
     build:
-      context: .
-      dockerfile: backend/backend.dockerfile
+      context: ./backend
+      dockerfile: backend.dockerfile
     ports:
       - "8000:8080"
     env_file:
