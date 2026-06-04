@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { environment } from '../../../environments/environment';
 
 export interface ShelfItem {
   id: number;
@@ -14,7 +15,7 @@ export interface ShelfItem {
 @Injectable({ providedIn: 'root' })
 export class ShelfService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = 'http://127.0.0.1:8000/api/shelf';
+  private readonly baseUrl = `${environment.BACKEND_URL}/api/shelf`;
 
   list(): Observable<ShelfItem[]> {
     return this.http.get<ShelfItem[]>(this.baseUrl);

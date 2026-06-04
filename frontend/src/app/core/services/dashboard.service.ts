@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { environment } from '../../../environments/environment';
 
 export interface DashboardTotals {
   projects: number;
@@ -47,7 +48,7 @@ export interface DashboardStats {
 @Injectable({ providedIn: 'root' })
 export class DashboardService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = 'http://127.0.0.1:8000/api/dashboard';
+  private readonly baseUrl = `${environment.BACKEND_URL}/api/dashboard`;
 
   /** Portfolio-level overview across every project (not project-scoped). */
   loadStats(): Observable<DashboardStats> {

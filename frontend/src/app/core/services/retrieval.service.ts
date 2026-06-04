@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { environment } from '../../../environments/environment';
 import { SearchRequest, SearchResponse, StreamEvent, BackgroundProgress, Paper } from '../models/paper.model';
 import { ProjectContextService } from './project-context.service';
 
@@ -8,7 +9,7 @@ import { ProjectContextService } from './project-context.service';
 export class RetrievalService {
   private readonly http = inject(HttpClient);
   private readonly projectContext = inject(ProjectContextService);
-  private readonly baseUrl = 'http://127.0.0.1:8000/api';
+  private readonly baseUrl = `${environment.BACKEND_URL}/api`;
 
   /** Append the active project id to a raw URL (fetch() bypasses the interceptor). */
   private withProject(url: string): string {

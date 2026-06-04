@@ -1,6 +1,7 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, tap } from 'rxjs';
+import { environment } from '../../../environments/environment';
 
 export interface Project {
   id: number;
@@ -20,7 +21,7 @@ export interface ProjectInput {
 @Injectable({ providedIn: 'root' })
 export class ProjectService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = 'http://127.0.0.1:8000/api/projects';
+  private readonly baseUrl = `${environment.BACKEND_URL}/api/projects`;
 
   /** The user's projects, kept in sync after mutations. */
   readonly projects = signal<Project[]>([]);

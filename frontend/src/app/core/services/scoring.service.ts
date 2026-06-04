@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { environment } from '../../../environments/environment';
 import {
   ScoreWeights,
   ScorePapersResponse,
@@ -10,7 +11,7 @@ import {
 @Injectable({ providedIn: 'root' })
 export class ScoringService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = 'http://127.0.0.1:8000/api';
+  private readonly baseUrl = `${environment.BACKEND_URL}/api`;
 
   scorePapers(weights: ScoreWeights, limit?: number): Observable<ScorePapersResponse> {
     const body: Record<string, unknown> = { weights };
