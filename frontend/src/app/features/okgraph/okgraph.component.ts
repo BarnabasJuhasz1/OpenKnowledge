@@ -1225,7 +1225,23 @@ export class OkGraphComponent implements OnInit {
     const baseNodes = this.baseNodes();
     const subComm = this.communitiesAtLevel()(subLevel);
     const idxOf = new Map(baseNodes.map((n, i) => [n.paper_id, i]));
-    const misc = this.miscTopCluster();
+
+    const innerId = this.innerViewClusterId();
+    const isInner = innerId !== null;
+    const parentComm = isInner ? this.communitiesAtLevel()(top + 1) : null;
+
+    const lv = this.state.louvain();
+    let miscAtLevel = null;
+    if (lv && lv.miscCommunity != null) {
+      let c = lv.miscCommunity;
+      for (let l = 1; l <= top; l++) {
+        if (lv.levels[l]) {
+          c = lv.levels[l][c];
+        }
+      }
+      miscAtLevel = c;
+    }
+
     const rawEdges = this.state.rawGraph()?.edges ?? [];
 
     // For each unordered top-cluster pair, track which sub-cluster pair carries
@@ -1235,9 +1251,14 @@ export class OkGraphComponent implements OnInit {
       const u = idxOf.get(e.source);
       const v = idxOf.get(e.target);
       if (u == null || v == null) continue;
+
+      if (isInner && parentComm) {
+        if (parentComm[u] !== innerId || parentComm[v] !== innerId) continue;
+      }
+
       const tu = topComm[u], tv = topComm[v];
       if (tu === tv) continue;                          // same blob already
-      if (tu === misc || tv === misc) continue;         // Miscellaneous never merges
+      if (tu === miscAtLevel || tv === miscAtLevel) continue;         // Miscellaneous never merges
       const su = subComm[u], sv = subComm[v];
       const topKey = tu < tv ? `${tu}|${tv}` : `${tv}|${tu}`;
       const subKey = su < sv ? `${su}|${sv}` : `${sv}|${su}`;
@@ -1298,8 +1319,8 @@ export class OkGraphComponent implements OnInit {
 
       const startNode = a.x <= b.x ? a : b;
       const endNode = a.x <= b.x ? b : a;
-      const startColor = a.x <= b.x ? this.clusterColorFor(topA) : this.clusterColorFor(topB);
-      const endColor = a.x <= b.x ? this.clusterColorFor(topB) : this.clusterColorFor(topA);
+      const startColor = a.x <= b.x ? this.clusterColorFor(topA, isInner) : this.clusterColorFor(topB, isInner);
+      const endColor = a.x <= b.x ? this.clusterColorFor(topB, isInner) : this.clusterColorFor(topA, isInner);
 
       bridges.push({
         key: topKey,
