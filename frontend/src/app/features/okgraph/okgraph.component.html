@@ -644,7 +644,7 @@
                     <span class="cluster-popup__summary cluster-popup__summary--pending">Summarizing…</span>
                   }
                 }
-                @if (!cluster.isMisc && innerViewClusterId() === null) {
+                @if (!cluster.isMisc && currentTopLevel() >= 0) {
                   <button class="cluster-popup__move-btn" (click)="moveInside(cluster.id, $event)">
                     <span class="material-symbols-outlined">zoom_in</span>
                     Move Inside
@@ -833,7 +833,7 @@
                           }
                         </div>
 
-                        @if (!box.isMisc && innerViewClusterId() === null) {
+                        @if (!box.isMisc && currentTopLevel() >= 0) {
                           <button
                             class="lane-box__move-btn"
                             [style.background]="box.color"
@@ -1062,23 +1062,27 @@
             <div class="ok-graph-bottom-bar__tabs">
               <button 
                 class="ok-graph-bottom-bar__tab"
-                [class.ok-graph-bottom-bar__tab--active]="innerViewClusterId() === null"
+                [class.ok-graph-bottom-bar__tab--active]="innerViewPath().length === 0"
                 (click)="resetToMainView()"
               >
                 <span class="material-symbols-outlined">grid_view</span>
                 Main
               </button>
               
-              @if (innerViewClusterId() !== null) {
+              @for (step of innerViewPath(); track $index; let last = $last) {
                 <div class="ok-graph-bottom-bar__separator">
                   <span class="material-symbols-outlined">chevron_right</span>
                 </div>
                 <button 
-                  class="ok-graph-bottom-bar__tab ok-graph-bottom-bar__tab--active ok-graph-bottom-bar__tab--inner"
-                  [style.border-left-color]="innerViewClusterColor()"
+                  class="ok-graph-bottom-bar__tab"
+                  [class.ok-graph-bottom-bar__tab--active]="last"
+                  [class.ok-graph-bottom-bar__tab--inner]="true"
+                  [style.border-left-color]="getBreadcrumbColor(step)"
+                  [disabled]="last"
+                  (click)="navigateToPathIndex($index)"
                 >
-                  <span class="material-symbols-outlined" [style.color]="innerViewClusterColor()">subdirectory_arrow_right</span>
-                  {{ innerViewClusterName() }}
+                  <span class="material-symbols-outlined" [style.color]="getBreadcrumbColor(step)">subdirectory_arrow_right</span>
+                  {{ getBreadcrumbName(step) }}
                 </button>
               }
             </div>
