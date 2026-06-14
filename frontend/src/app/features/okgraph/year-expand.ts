@@ -25,6 +25,34 @@ export function middleYears(leftYear: number, rightYear: number): number[] {
   return sum % 2 === 0 ? [sum / 2] : [(sum - 1) / 2, (sum + 1) / 2];
 }
 
+/**
+ * Nearest year in `expandable` lying strictly beyond an end of the displayed
+ * year range — the target of the OK-Graph axis-end "expand outwards" arrows.
+ *
+ * `dir: 'future'` → the smallest expandable year greater than the latest
+ * displayed column; `dir: 'past'` → the largest expandable year less than the
+ * earliest column. Returns null when no such year exists (nothing left to
+ * expand in that direction).
+ */
+export function nearestOutwardYear(
+  displayedYears: number[],
+  expandable: Iterable<number>,
+  dir: 'past' | 'future',
+): number | null {
+  if (!displayedYears.length) return null;
+  const minYear = Math.min(...displayedYears);
+  const maxYear = Math.max(...displayedYears);
+  let best: number | null = null;
+  for (const y of expandable) {
+    if (dir === 'future') {
+      if (y > maxYear && (best === null || y < best)) best = y;
+    } else {
+      if (y < minYear && (best === null || y > best)) best = y;
+    }
+  }
+  return best;
+}
+
 export interface YearCandidate {
   /** Base-node (Louvain) index of the candidate paper. */
   paperIndex: number;

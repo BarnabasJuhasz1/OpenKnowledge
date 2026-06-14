@@ -8,8 +8,9 @@ import { getCommunitiesAtLevel, louvain } from '../citgraph/louvain';
 import { Paper } from '../../core/models/paper.model';
 import { citNodeToPaper, repScore } from './cit-node';
 import { clusterColor, lighten, withAlpha, blendColors, MISC_COLOR } from './community-colors';
-import { edgePath as buildEdgePath, LayoutEdge, TOP_PADDING, NODE_RADIUS, orderLanesByConnectivity } from './graph-layout';
-import { yearExpandQueues, middleYears } from './year-expand';
+import { edgePath as buildEdgePath, LayoutEdge, TOP_PADDING, orderLanesByConnectivity } from './graph-layout';
+import { yearExpandQueues, middleYears, nearestOutwardYear } from './year-expand';
+import { placedIdsInCluster } from './cluster-ops';
 import { getArchetypeIcon } from '../../shared/utils/archetype-icons';
 import { SearchStateService, paperId } from '../../core/services/search-state.service';
 import { CitGraphService, CitGraphNode, CitGraphEdge } from '../../core/services/citgraph.service';
@@ -387,7 +388,14 @@ export class OkGraphComponent implements OnInit {
 
   readonly TOP_PADDING = TOP_PADDING;
   readonly transitionState = signal<TransitionState | null>(null);
-  readonly innerViewClusterId = signal<number | null>(null);
+  readonly innerViewPath = signal<{ level: number; clusterId: number }[]>([]);
+  readonly currentTopLevel = computed(() => {
+    const levels = this.levels();
+    if (!levels.length) return -1;
+    const top = levels.length - 1;
+    const path = this.innerViewPath();
+    return path.length > 0 ? path[path.length - 1].level - 1 : top;
+  });
   // Pins the cluster's representative paper in place when we drill into it. We
   // capture the rep node's world position in the outer view at the moment of
   // entry; the inner-view layout is then translated so that same node lands
@@ -399,35 +407,49 @@ export class OkGraphComponent implements OnInit {
   // back to mapping the inner layout's centroid to (x, y). Null outside inner view.
   readonly innerViewAnchor = signal<{ id: string; x: number; y: number } | null>(null);
   readonly innerViewClusterColor = computed(() => {
-    const id = this.innerViewClusterId();
-    return id === null ? '' : this.clusterColorFor(id);
+    const path = this.innerViewPath();
+    if (path.length === 0) return '';
+    const last = path[path.length - 1];
+    const top = this.topLevel();
+    return this.clusterColorFor(last.clusterId, last.level < top);
   });
   readonly innerViewClusterName = computed(() => {
-    const id = this.innerViewClusterId();
-    return id === null ? '' : this.clusterName(id);
+    const path = this.innerViewPath();
+    if (path.length === 0) return '';
+    const last = path[path.length - 1];
+    const top = this.topLevel();
+    if (last.level === top) {
+      return this.clusterName(last.clusterId);
+    }
+    return `Subcluster ${last.clusterId}`;
   });
   // Whether the canvas should wear the inner-view tint/frame. Driven off the
   // transition (from the `expand` stage onward) as well as the committed inner
   // view, so the background colour finishes settling BEFORE the layout swaps and
   // the nodes start moving — the background must not change at that moment.
   readonly canvasInnerView = computed(() => {
-    if (this.innerViewClusterId() !== null) return true;
+    if (this.innerViewPath().length > 0) return true;
     const stage = this.transitionState()?.stage;
     return stage === 'expand' || stage === 'shift' || stage === 'reveal';
   });
   readonly canvasInnerViewColor = computed(() => {
-    const id = this.innerViewClusterId();
-    if (id !== null) return this.clusterColorFor(id);
+    const path = this.innerViewPath();
+    if (path.length > 0) {
+      const last = path[path.length - 1];
+      const top = this.topLevel();
+      return this.clusterColorFor(last.clusterId, last.level < top);
+    }
     return this.transitionState()?.color ?? '';
   });
   readonly baseNodesFiltered = computed(() => {
     const base = this.baseNodes();
-    const T = this.innerViewClusterId();
-    if (T === null) return base;
-    const top = this.topLevel();
-    if (top < 0) return base;
-    const topComm = this.communitiesAtLevel()(top);
-    return base.filter((_, idx) => topComm[idx] === T);
+    const path = this.innerViewPath();
+    if (path.length === 0) return base;
+    const last = path[path.length - 1];
+    const parentLvl = last.level;
+    const targetId = last.clusterId;
+    const comm = this.communitiesAtLevel()(parentLvl);
+    return base.filter((_, idx) => comm[idx] === targetId);
   });
 
   readonly selectedNodeId = signal<string | null>(null);
@@ -485,6 +507,10 @@ export class OkGraphComponent implements OnInit {
   readonly cardWidth = 300;
   // Default left x for cards when left-aligned (not staggered).
   readonly cardAlignedX = 20;
+  // Horizontal gap (px) between a staggered card's right edge and its cluster's
+  // left-most node center. Wide enough that the node's centered title label
+  // (which extends left of the node) never overlaps the card.
+  readonly staggerCardGap = 115;
   // Left edge where the first year column / left-most node sits. With in-graph
   // cards the card occupies x=20..320, so this also sets the gap to the nodes.
   readonly leftPadding = computed(() => this.useInGraphCards() ? 420 : 80);
@@ -501,6 +527,23 @@ export class OkGraphComponent implements OnInit {
 
   toggleSettings(): void { this.settingsOpen.update(v => !v); }
   closeSettings(): void { this.settingsOpen.set(false); }
+
+  // Pending cluster/subcluster the user asked to remove via a card's trashcan,
+  // awaiting confirmation. Holds the cluster id (at the current view level) and
+  // its display name for the confirmation prompt.
+  readonly clusterRemovalTarget = signal<{ topCluster: number; name: string } | null>(null);
+
+  /** Open the "remove this cluster?" confirmation for a card's trashcan. */
+  requestRemoveCluster(topCluster: number, name: string, event: Event): void {
+    event.stopPropagation();
+    this.clusterRemovalTarget.set({ topCluster, name });
+  }
+  cancelRemoveCluster(): void { this.clusterRemovalTarget.set(null); }
+  confirmRemoveCluster(): void {
+    const target = this.clusterRemovalTarget();
+    if (target) this.removeCluster(target.topCluster);
+    this.clusterRemovalTarget.set(null);
+  }
 
   requestClearGraph(): void { this.clearConfirmOpen.set(true); }
   cancelClearGraph(): void { this.clearConfirmOpen.set(false); }
@@ -797,23 +840,36 @@ export class OkGraphComponent implements OnInit {
     if (!levels.length || placed.length === 0) return empty;
 
     const top = levels.length - 1;
-    const topComm = this.communitiesAtLevel()(top);
     const misc = this.miscTopCluster();
 
-    const innerId = this.innerViewClusterId();
-    const isInner = innerId !== null;
-    const currentTopLevel = isInner ? Math.max(0, top - 1) : top;
+    const path = this.innerViewPath();
+    const isInner = path.length > 0;
+    const currentTopLevel = this.currentTopLevel();
     const currentComm = this.communitiesAtLevel()(currentTopLevel);
 
-    const placedFiltered = placed
-      .filter(p => !isInner || p.topCluster === innerId);
+    const passPathFilter = (idx: number): boolean => {
+      if (!isInner) return true;
+      const last = path[path.length - 1];
+      return this.communitiesAtLevel()(last.level)[idx] === last.clusterId;
+    };
+
+    const placedFiltered = placed.filter(p => passPathFilter(p.repIndex));
 
     if (placedFiltered.length === 0) return empty;
 
     // Cluster size (membership over all base nodes) per highest-level cluster.
     const sizeOf = new Map<number, number>();
     if (!isInner) {
-      for (const c of currentComm) sizeOf.set(c, (sizeOf.get(c) ?? 0) + 1);
+      // Only give a lane (and therefore a card) to clusters that currently have a
+      // node drawn on the canvas. A cluster emptied by removal — e.g. via the card
+      // trashcan — drops out entirely so its lane and card disappear too. The size
+      // value still counts full membership for connectivity-aware lane ordering.
+      const visible = new Set<number>();
+      for (const p of placedFiltered) visible.add(currentComm[p.repIndex]);
+      for (const c of currentComm) {
+        if (!visible.has(c)) continue;
+        sizeOf.set(c, (sizeOf.get(c) ?? 0) + 1);
+      }
     } else {
       // Inside a cluster, only give a lane (and therefore a card) to subclusters
       // that actually have a node drawn in the graph — i.e. their representative
@@ -821,8 +877,13 @@ export class OkGraphComponent implements OnInit {
       // we don't show empty cards for them.
       const visibleSub = new Set<number>();
       for (const p of placedFiltered) visibleSub.add(currentComm[p.repIndex]);
+      
+      const last = path[path.length - 1];
+      const parentComm = this.communitiesAtLevel()(last.level);
+      const parentTargetId = last.clusterId;
+      
       for (let i = 0; i < currentComm.length; i++) {
-        if (topComm[i] === innerId) {
+        if (parentComm[i] === parentTargetId) {
           const c = currentComm[i];
           if (!visibleSub.has(c)) continue;
           sizeOf.set(c, (sizeOf.get(c) ?? 0) + 1);
@@ -834,6 +895,17 @@ export class OkGraphComponent implements OnInit {
     // clusters. Drives the connectivity-aware lane ordering below.
     const idxOf = new Map(this.baseNodes().map((n, i) => [n.paper_id, i]));
     const pairWeight = new Map<string, number>();
+
+    let miscAtLevel = null;
+    const lv = this.state.louvain();
+    if (lv && lv.miscCommunity != null) {
+      let c = lv.miscCommunity;
+      for (let l = 1; l <= currentTopLevel; l++) {
+        if (lv.levels[l]) c = lv.levels[l][c];
+      }
+      miscAtLevel = c;
+    }
+
     for (const e of (this.state.rawGraph()?.edges ?? [])) {
       const u = idxOf.get(e.source);
       const v = idxOf.get(e.target);
@@ -845,10 +917,11 @@ export class OkGraphComponent implements OnInit {
         const key = tu < tv ? `${tu}|${tv}` : `${tv}|${tu}`;
         pairWeight.set(key, (pairWeight.get(key) ?? 0) + 1);
       } else {
-        if (topComm[u] === innerId && topComm[v] === innerId) {
-          const isMiscU = currentTopLevel === 0 && tu === misc;
-          const isMiscV = currentTopLevel === 0 && tv === misc;
-          if (isMiscU || isMiscV) continue;
+        const last = path[path.length - 1];
+        const parentComm = this.communitiesAtLevel()(last.level);
+        const parentTargetId = last.clusterId;
+        if (parentComm[u] === parentTargetId && parentComm[v] === parentTargetId) {
+          if (miscAtLevel !== null && (tu === miscAtLevel || tv === miscAtLevel)) continue;
           const key = tu < tv ? `${tu}|${tv}` : `${tv}|${tu}`;
           pairWeight.set(key, (pairWeight.get(key) ?? 0) + 1);
         }
@@ -873,7 +946,7 @@ export class OkGraphComponent implements OnInit {
     const cells = new Map<string, PlacedNode[]>();
     let maxCell = 1;
     for (const p of placedFiltered) {
-      const nodeClusterId = !isInner ? p.topCluster : currentComm[p.repIndex];
+      const nodeClusterId = currentComm[p.repIndex];
       const lane = laneIndex.get(nodeClusterId) ?? 0;
       const key = `${lane}|${p.paper.year}`;
       let arr = cells.get(key);
@@ -924,7 +997,7 @@ export class OkGraphComponent implements OnInit {
       members.forEach((p, j) => {
         const x = yearX.get(p.paper.year!)!;
         const y = laneCenter + (j - (k - 1) / 2) * LANE_NODE_VGAP;
-        const nodeClusterId = !isInner ? p.topCluster : currentComm[p.repIndex];
+        const nodeClusterId = currentComm[p.repIndex];
         const color = this.clusterColorFor(nodeClusterId, isInner);
         nodes.push({
           id: p.id, paper: p.paper, x, y,
@@ -976,7 +1049,7 @@ export class OkGraphComponent implements OnInit {
     // Group placed nodes by active clusterId to easily find their years.
     const clusterNodesMap = new Map<number, PlacedNode[]>();
     for (const p of placedFiltered) {
-      const nodeClusterId = !isInner ? p.topCluster : currentComm[p.repIndex];
+      const nodeClusterId = currentComm[p.repIndex];
       let arr = clusterNodesMap.get(nodeClusterId);
       if (!arr) {
         arr = [];
@@ -1092,68 +1165,60 @@ export class OkGraphComponent implements OnInit {
 
     const laneBoxes = laneClusters.map((id, i) => {
       const isMisc = !isInner && id === misc;
-      const name = isMisc ? 'Miscellaneous' : (isInner ? `Subcluster ${id}` : `Cluster ${id}`);
-      const color = this.clusterColorFor(id, isInner);
-      
-      const repIndex = currentTopLevel >= 0 ? this.repIndexOfCluster(currentTopLevel, id) : -1;
+      const repIndex = currentTopLevel >= 0 ? this.repIndexOfCluster(currentTopLevel, id) : id;
       const repTitle = repIndex >= 0 ? (this.baseNodes()[repIndex]?.title ?? '') : '';
-      const size = currentTopLevel >= 0 ? this.clusterSize(currentTopLevel, id) : 0;
+      let name = '';
+      if (currentTopLevel === -1) {
+        name = repTitle ? (repTitle.length > 30 ? repTitle.substring(0, 30) + '...' : repTitle) : `Paper ${id}`;
+      } else {
+        name = isMisc ? 'Miscellaneous' : (isInner ? `Subcluster ${id}` : `Cluster ${id}`);
+      }
+      const color = this.clusterColorFor(id, isInner);
+      const size = currentTopLevel >= 0 ? this.clusterSize(currentTopLevel, id) : 1;
 
       const visiblePapers = placedFiltered.filter(p => {
-        const nodeClusterId = !isInner ? p.topCluster : currentComm[p.repIndex];
+        const nodeClusterId = currentComm[p.repIndex];
         return nodeClusterId === id;
       }).length;
       
       const totalPapers = this.baseNodes().filter((n, idx) => {
-        if (isInner) {
-          return topComm[idx] === innerId && currentComm[idx] === id;
-        }
-        return currentComm[idx] === id;
+        return passPathFilter(idx) && currentComm[idx] === id;
       }).length;
 
       const visibleSeeds = placedFiltered.filter(p => {
-        const nodeClusterId = !isInner ? p.topCluster : currentComm[p.repIndex];
+        const nodeClusterId = currentComm[p.repIndex];
         return nodeClusterId === id && this.state.initialSeedIds().has(paperId(p.paper));
       }).length;
       
       const totalSeeds = this.baseNodes().filter((n, idx) => {
-        if (isInner) {
-          return topComm[idx] === innerId && currentComm[idx] === id && this.state.initialSeedIds().has(n.paper_id);
-        }
-        return currentComm[idx] === id && this.state.initialSeedIds().has(n.paper_id);
+        return passPathFilter(idx) && currentComm[idx] === id && this.state.initialSeedIds().has(n.paper_id);
       }).length;
 
       const visibleGold = placedFiltered.filter(p => {
-        const nodeClusterId = !isInner ? p.topCluster : currentComm[p.repIndex];
+        const nodeClusterId = currentComm[p.repIndex];
         return nodeClusterId === id && this.starFor(p.paper.ok_score ?? 0) === 'gold';
       }).length;
       
       const totalGold = this.baseNodes().filter((n, idx) => {
-        if (isInner) {
-          return topComm[idx] === innerId && currentComm[idx] === id && this.starFor(repScore(n)) === 'gold';
-        }
-        return currentComm[idx] === id && this.starFor(repScore(n)) === 'gold';
+        return passPathFilter(idx) && currentComm[idx] === id && this.starFor(repScore(n)) === 'gold';
       }).length;
 
       const visibleSilver = placedFiltered.filter(p => {
-        const nodeClusterId = !isInner ? p.topCluster : currentComm[p.repIndex];
+        const nodeClusterId = currentComm[p.repIndex];
         return nodeClusterId === id && this.starFor(p.paper.ok_score ?? 0) === 'silver';
       }).length;
       
       const totalSilver = this.baseNodes().filter((n, idx) => {
-        if (isInner) {
-          return topComm[idx] === innerId && currentComm[idx] === id && this.starFor(repScore(n)) === 'silver';
-        }
-        return currentComm[idx] === id && this.starFor(repScore(n)) === 'silver';
+        return passPathFilter(idx) && currentComm[idx] === id && this.starFor(repScore(n)) === 'silver';
       }).length;
 
       let summary: ClusterSummary | undefined = undefined;
-      if (!isMisc && repIndex >= 0) {
+      if (!isMisc && repIndex >= 0 && currentTopLevel >= 0) {
         const repNode = this.baseNodes()[repIndex];
         if (repNode) {
           const rawTop = this.summaries.getTopLevel();
           if (rawTop >= 0) {
-            const targetRawLvl = !isInner ? rawTop : rawTop - 1;
+            const targetRawLvl = currentTopLevel;
             if (targetRawLvl >= 0) {
               const rawComm = this.communitiesAtLevel()(targetRawLvl)[repIndex];
               if (rawComm !== undefined) {
@@ -1170,7 +1235,7 @@ export class OkGraphComponent implements OnInit {
       const clusterBox = boxes.get(id);
       const cardX = this.staggeredCards()
         ? (clusterBox
-            ? clusterBox.minX - NODE_RADIUS - 16 - this.cardWidth
+            ? clusterBox.minX - this.staggerCardGap - this.cardWidth
             : this.cardAlignedX + dx)
         : this.cardAlignedX + dx;
 
@@ -1179,24 +1244,29 @@ export class OkGraphComponent implements OnInit {
         laneIndex: i,
         name,
         color,
+        yStart: laneYStart[laneIndex.get(id) ?? 0],
+        height: laneHeights[laneIndex.get(id) ?? 0],
+        cardX,
+        summary,
         isMisc,
         size,
-        repTitle,
         totalPapers: `${visiblePapers} / ${totalPapers}`,
         totalSeeds: `${visibleSeeds} / ${totalSeeds}`,
         totalGoldStars: `${visibleGold} / ${totalGold}`,
         totalSilverStars: `${visibleSilver} / ${totalSilver}`,
-        yStart: laneYStart[i],
-        height: laneHeights[i],
-        cardX,
-        summary
       };
     });
 
     return {
-      nodes, edges,
+      nodes,
+      edges,
       yearColumns: years.map(y => ({ year: y, x: yearX.get(y)! })),
-      dividers, laneLines, blobs, bridges, width, height,
+      dividers,
+      laneLines,
+      blobs,
+      bridges,
+      width,
+      height,
       laneBoxes,
     };
   });
@@ -1225,7 +1295,24 @@ export class OkGraphComponent implements OnInit {
     const baseNodes = this.baseNodes();
     const subComm = this.communitiesAtLevel()(subLevel);
     const idxOf = new Map(baseNodes.map((n, i) => [n.paper_id, i]));
-    const misc = this.miscTopCluster();
+
+    const path = this.innerViewPath();
+    const isInner = path.length > 0;
+    const innerId = isInner ? path[path.length - 1].clusterId : null;
+    const parentComm = isInner ? this.communitiesAtLevel()(top + 1) : null;
+
+    const lv = this.state.louvain();
+    let miscAtLevel = null;
+    if (lv && lv.miscCommunity != null) {
+      let c = lv.miscCommunity;
+      for (let l = 1; l <= top; l++) {
+        if (lv.levels[l]) {
+          c = lv.levels[l][c];
+        }
+      }
+      miscAtLevel = c;
+    }
+
     const rawEdges = this.state.rawGraph()?.edges ?? [];
 
     // For each unordered top-cluster pair, track which sub-cluster pair carries
@@ -1235,9 +1322,14 @@ export class OkGraphComponent implements OnInit {
       const u = idxOf.get(e.source);
       const v = idxOf.get(e.target);
       if (u == null || v == null) continue;
+
+      if (isInner && parentComm) {
+        if (parentComm[u] !== innerId || parentComm[v] !== innerId) continue;
+      }
+
       const tu = topComm[u], tv = topComm[v];
       if (tu === tv) continue;                          // same blob already
-      if (tu === misc || tv === misc) continue;         // Miscellaneous never merges
+      if (tu === miscAtLevel || tv === miscAtLevel) continue;         // Miscellaneous never merges
       const su = subComm[u], sv = subComm[v];
       const topKey = tu < tv ? `${tu}|${tv}` : `${tv}|${tu}`;
       const subKey = su < sv ? `${su}|${sv}` : `${sv}|${su}`;
@@ -1292,14 +1384,18 @@ export class OkGraphComponent implements OnInit {
       if (repA < 0 || repB < 0) continue;
       const topA = topComm[repA];
       const topB = topComm[repB];
+      // A bridge merges two blobs; `boxes` is keyed by the clusters that have a
+      // placed node (hence a blob). Skip pairs whose endpoint cluster has been
+      // emptied (e.g. removed via the card trashcan) so no dangling ribbon stays.
+      if (!boxes.has(topA) || !boxes.has(topB)) continue;
       const a = anchorFor(sa);
       const b = anchorFor(sb);
       if (!a || !b) continue;
 
       const startNode = a.x <= b.x ? a : b;
       const endNode = a.x <= b.x ? b : a;
-      const startColor = a.x <= b.x ? this.clusterColorFor(topA) : this.clusterColorFor(topB);
-      const endColor = a.x <= b.x ? this.clusterColorFor(topB) : this.clusterColorFor(topA);
+      const startColor = a.x <= b.x ? this.clusterColorFor(topA, isInner) : this.clusterColorFor(topB, isInner);
+      const endColor = a.x <= b.x ? this.clusterColorFor(topB, isInner) : this.clusterColorFor(topA, isInner);
 
       bridges.push({
         key: topKey,
@@ -1410,36 +1506,43 @@ export class OkGraphComponent implements OnInit {
     if (id === null) return null;
     const blob = this.blobs().find(b => b.topCluster === id);
     if (!blob) return null;
-    const innerId = this.innerViewClusterId();
-    const isInner = innerId !== null;
-    const top = isInner ? Math.max(0, this.topLevel() - 1) : this.topLevel();
-    const repIndex = top >= 0 ? this.repIndexOfCluster(top, id) : -1;
+    const path = this.innerViewPath();
+    const isInner = path.length > 0;
+    const currentTopLevel = this.currentTopLevel();
+    const repIndex = currentTopLevel >= 0 ? this.repIndexOfCluster(currentTopLevel, id) : id;
     const repTitle = repIndex >= 0 ? (this.baseNodes()[repIndex]?.title ?? '') : '';
-    const size = top >= 0 ? this.clusterSize(top, id) : 0;
+    const size = currentTopLevel >= 0 ? this.clusterSize(currentTopLevel, id) : 1;
 
     const base = this.baseNodes();
-    const topComm = this.communitiesAtLevel()(this.topLevel());
-    const currentComm = this.communitiesAtLevel()(top);
+    const currentComm = this.communitiesAtLevel()(currentTopLevel);
     const paperClusterMap = new Map<string, number>();
     for (let i = 0; i < base.length; i++) {
       paperClusterMap.set(base[i].paper_id, currentComm[i]);
     }
 
+    const passPathFilter = (idx: number): boolean => {
+      if (!isInner) return true;
+      const last = path[path.length - 1];
+      return this.communitiesAtLevel()(last.level)[idx] === last.clusterId;
+    };
+
     const visiblePapers = this.nodes().filter(n => paperClusterMap.get(n.id) === id).length;
-    const totalPapers = base.filter((n, i) => (!isInner || topComm[i] === innerId) && currentComm[i] === id).length;
+    const totalPapers = base.filter((n, i) => passPathFilter(i) && currentComm[i] === id).length;
 
     const visibleSeeds = this.nodes().filter(n => this.isSeedNode(n) && paperClusterMap.get(n.id) === id).length;
-    const totalSeeds = base.filter((n, i) => (!isInner || topComm[i] === innerId) && currentComm[i] === id && this.state.initialSeedIds().has(n.paper_id)).length;
+    const totalSeeds = base.filter((n, i) => passPathFilter(i) && currentComm[i] === id && this.state.initialSeedIds().has(n.paper_id)).length;
 
     const visibleGold = this.nodes().filter(n => n.star === 'gold' && paperClusterMap.get(n.id) === id).length;
-    const totalGold = base.filter((n, i) => (!isInner || topComm[i] === innerId) && currentComm[i] === id && this.starFor(repScore(n)) === 'gold').length;
+    const totalGold = base.filter((n, i) => passPathFilter(i) && currentComm[i] === id && this.starFor(repScore(n)) === 'gold').length;
 
     const visibleSilver = this.nodes().filter(n => n.star === 'silver' && paperClusterMap.get(n.id) === id).length;
-    const totalSilver = base.filter((n, i) => (!isInner || topComm[i] === innerId) && currentComm[i] === id && this.starFor(repScore(n)) === 'silver').length;
+    const totalSilver = base.filter((n, i) => passPathFilter(i) && currentComm[i] === id && this.starFor(repScore(n)) === 'silver').length;
 
     return {
       id,
-      name: isInner ? `Subcluster ${id}` : this.clusterName(id),
+      name: currentTopLevel === -1
+        ? (repTitle ? (repTitle.length > 30 ? repTitle.substring(0, 30) + '...' : repTitle) : `Paper ${id}`)
+        : (isInner ? `Subcluster ${id}` : this.clusterName(id)),
       color: blob.color,
       repTitle,
       size,
@@ -1458,15 +1561,15 @@ export class OkGraphComponent implements OnInit {
   readonly selectedClusterSummary = computed<ClusterSummary | undefined>(() => {
     const id = this.selectedClusterId();
     if (id === null) return undefined;
-    const isInner = this.innerViewClusterId() !== null;
-    const top = isInner ? Math.max(0, this.topLevel() - 1) : this.topLevel();
-    const repIndex = top >= 0 ? this.repIndexOfCluster(top, id) : -1;
+    const currentTopLevel = this.currentTopLevel();
+    if (currentTopLevel < 0) return undefined;
+    const repIndex = this.repIndexOfCluster(currentTopLevel, id);
     const repNode = repIndex >= 0 ? this.baseNodes()[repIndex] : undefined;
     if (!repNode) return undefined;
 
     const rawTop = this.summaries.getTopLevel();
     if (rawTop < 0) return undefined;
-    const targetRawLvl = isInner ? rawTop - 1 : rawTop;
+    const targetRawLvl = currentTopLevel;
     if (targetRawLvl < 0) return undefined;
 
     const rawComm = this.communitiesAtLevel()(targetRawLvl)[repIndex];
@@ -1693,19 +1796,21 @@ export class OkGraphComponent implements OnInit {
     const base = this.baseNodes();
     if (!levels.length || !base.length) return new Map();
 
-    const top = levels.length - 1;
-    const innerId = this.innerViewClusterId();
-    const isInner = innerId !== null;
-    const currentTopLevel = isInner ? Math.max(0, top - 1) : top;
+    const path = this.innerViewPath();
+    const isInner = path.length > 0;
+    const currentTopLevel = this.currentTopLevel();
     const currentComm = this.communitiesAtLevel()(currentTopLevel);
-    const topComm = this.communitiesAtLevel()(top);
 
     const commAtLevel: number[][] = [];
     for (let L = 0; L <= currentTopLevel; L++) commAtLevel[L] = this.communitiesAtLevel()(L);
 
     const nodeYear = base.map(n => n.year ?? null);
     const nodeScore = base.map(n => repScore(n));
-    const inView = base.map((_, i) => !isInner || topComm[i] === innerId);
+    const inView = base.map((_, i) => {
+      if (!isInner) return true;
+      const last = path[path.length - 1];
+      return this.communitiesAtLevel()(last.level)[i] === last.clusterId;
+    });
 
     const placedIds = new Set(this.state.placed().map(p => p.id));
     const isPlaced = (i: number) => placedIds.has(base[i].paper_id);
@@ -1728,10 +1833,11 @@ export class OkGraphComponent implements OnInit {
     const base = this.baseNodes();
     if (!levels.length || !base.length) return new Set();
 
-    const top = levels.length - 1;
-    const innerId = this.innerViewClusterId();
-    const isInner = innerId !== null;
-    const topComm = this.communitiesAtLevel()(top);
+    const path = this.innerViewPath();
+    const isInner = path.length > 0;
+    const last = isInner ? path[path.length - 1] : null;
+    const parentComm = last ? this.communitiesAtLevel()(last.level) : null;
+    const parentTargetId = last ? last.clusterId : null;
 
     const placedIds = new Set(this.state.placed().map(p => p.id));
     const result = new Set<number>();
@@ -1740,7 +1846,7 @@ export class OkGraphComponent implements OnInit {
       const node = base[i];
       if (node.year == null) continue;
       // Is it in view?
-      const inView = !isInner || topComm[i] === innerId;
+      const inView = !isInner || (parentComm != null && parentComm[i] === parentTargetId);
       if (!inView) continue;
       // Is it placed?
       const isPlaced = placedIds.has(node.paper_id);
@@ -1760,6 +1866,51 @@ export class OkGraphComponent implements OnInit {
   isGapExpandable(gap: { leftYear: number; rightYear: number }): boolean {
     const midYears = middleYears(gap.leftYear, gap.rightYear);
     return midYears.some(y => this.expandableYears().has(y));
+  }
+
+  /**
+   * Nearest expandable year strictly later than the latest displayed column
+   * (target of the right-pointing axis-end arrow), or null when none exists.
+   * The axis only shows years that already have placed nodes, so this surfaces
+   * the closest future year that still holds an unplaced candidate in view.
+   */
+  readonly futureExpandYear = computed<number | null>(() =>
+    nearestOutwardYear(this.yearColumns().map(c => c.year), this.expandableYears(), 'future'),
+  );
+
+  /**
+   * Nearest expandable year strictly earlier than the earliest displayed column
+   * (target of the left-pointing axis-end arrow), or null when none exists.
+   */
+  readonly pastExpandYear = computed<number | null>(() =>
+    nearestOutwardYear(this.yearColumns().map(c => c.year), this.expandableYears(), 'past'),
+  );
+
+  /** World x of the earliest year column (left arrow anchor), or null. */
+  readonly firstColumnX = computed<number | null>(() => {
+    const cols = this.yearColumns();
+    return cols.length ? cols[0].x : null;
+  });
+
+  /** World x of the latest year column (right arrow anchor), or null. */
+  readonly lastColumnX = computed<number | null>(() => {
+    const cols = this.yearColumns();
+    return cols.length ? cols[cols.length - 1].x : null;
+  });
+
+  /**
+   * Expand outwards from an end of the axis: select the nearest expandable year
+   * beyond that end and run the regular per-year expansion on it. After placing,
+   * the target year becomes a column, so repeated clicks walk further out.
+   */
+  expandOutward(dir: 'past' | 'future', event: Event): void {
+    event.stopPropagation();
+    const year = dir === 'future' ? this.futureExpandYear() : this.pastExpandYear();
+    if (year === null) return;
+    this.expandPopup.set(null);
+    this.selectedGap.set(null);
+    this.selectedYear.set(year);
+    this.expandYear();
   }
 
   /** Candidate queues for the selected year (empty when no year is selected). */
@@ -1864,31 +2015,58 @@ export class OkGraphComponent implements OnInit {
     this.selectedNodeId.set(null);
   }
 
+  /** Base-node ids of every placed node belonging to `topCluster` at the current
+   *  view level. Community ids are globally unique per level, so this isolates a
+   *  single cluster (main view) or subcluster (inner view). Pure given inputs. */
+  private placedIdsInCluster(topCluster: number): string[] {
+    const currentComm = this.communitiesAtLevel()(this.currentTopLevel());
+    return placedIdsInCluster(this.state.placed(), currentComm, topCluster);
+  }
+
+  /**
+   * Remove an entire cluster (or subcluster) from the graph — exactly as if every
+   * node belonging to it were removed individually: drop its placed nodes and any
+   * link touching them. Mutates the persistent state service, so the removal
+   * survives leaving and re-entering the OK-Graph tab.
+   */
+  removeCluster(topCluster: number): void {
+    const ids = new Set(this.placedIdsInCluster(topCluster));
+    if (!ids.size) return;
+    this.state.placed.update(p => p.filter(n => !ids.has(n.id)));
+    this.state.links.update(l => l.filter(e => !ids.has(e.fromId) && !ids.has(e.toId)));
+    const sel = this.selectedNodeId();
+    if (sel && ids.has(sel)) this.selectedNodeId.set(null);
+    if (this.selectedClusterId() === topCluster) this.selectedClusterId.set(null);
+  }
+
   clearGraph(): void {
     this.selectedNodeId.set(null);
     this.selectedClusterId.set(null);
-    this.innerViewClusterId.set(null);
+    this.innerViewPath.set([]);
     this.innerViewAnchor.set(null);
     this.expandPopup.set(null);
     this.selectedYear.set(null);
     this.selectedGap.set(null);
+    this.clusterRemovalTarget.set(null);
     this.state.clear();
   }
-
+ 
   moveInside(clusterId: number, event?: MouseEvent): void {
     event?.stopPropagation();
-    
+    const currentLvl = this.currentTopLevel();
+    if (currentLvl < 0) return;
+ 
     // Find the blob in the current layout
     const blob = this.blobs().find(b => b.topCluster === clusterId);
     if (!blob) {
       this.innerViewAnchor.set(null);
-      this.innerViewClusterId.set(clusterId);
+      this.innerViewPath.update(p => [...p, { level: currentLvl, clusterId }]);
       this.selectedClusterId.set(null);
       this.selectedNodeId.set(null);
       this.expandPopup.set(null);
       return;
     }
-
+ 
     // Capture geometry
     const initialRect = {
       x: blob.rectX,
@@ -1896,12 +2074,9 @@ export class OkGraphComponent implements OnInit {
       w: blob.rectW,
       h: blob.rectH
     };
-
-    // Pin the cluster's representative paper: capture its current world position
-    // so the inner-view layout can be translated to keep it exactly here. If the
-    // rep node isn't on screen (filtered out), fall back to the blob centre, which
-    // maps the inner layout's centroid here instead.
-    const repIdx = this.repIndexOfCluster(this.topLevel(), clusterId);
+ 
+    // Pin the cluster's representative paper
+    const repIdx = this.repIndexOfCluster(currentLvl, clusterId);
     const repId = repIdx >= 0 ? this.baseNodes()[repIdx]?.paper_id : undefined;
     const repNode = repId != null ? this.nodes().find(n => n.id === repId) : undefined;
     this.innerViewAnchor.set(
@@ -1909,37 +2084,26 @@ export class OkGraphComponent implements OnInit {
         ? { id: repNode.id, x: repNode.x, y: repNode.y }
         : { id: '', x: blob.rectX + blob.rectW / 2, y: blob.rectY + blob.rectH / 2 },
     );
-    
-    // The stages overlap rather than each waiting for the previous to finish:
-    //   t=0    fade-out: siblings of the target start fading; overlay sits on the
-    //          target's lane rect.
-    //   t=160  expand:   overlay grows to fill the canvas (0.6s, full ~t=760),
-    //          overlapping the tail of the sibling fade so they read as one motion.
-    //   t=700  shift:    swap in the inner-view layout behind the (now full)
-    //          overlay; target content stays put — it never fades, and the new
-    //          inner content fades in via CSS @starting-style instead of popping.
-    //   t=860  reveal:   fade the full-panel overlay out (0.4s) to uncover the
-    //          settled inner view — never removed instantly (that read as a flash).
-    //   t=1240 end:      drop the overlay element once it is fully transparent.
+ 
     const guard = (fn: () => void) => () => {
       const state = this.transitionState();
       if (!state || state.targetClusterId !== clusterId) return;
       fn();
     };
-
+ 
     this.transitionState.set({
       stage: 'fade-out',
       targetClusterId: clusterId,
       rect: initialRect,
       color: blob.color
     });
-
+ 
     setTimeout(guard(() => {
       this.transitionState.update(s => s && { ...s, stage: 'expand' });
     }), 160);
-
+ 
     setTimeout(guard(() => {
-      this.innerViewClusterId.set(clusterId);
+      this.innerViewPath.update(p => [...p, { level: currentLvl, clusterId }]);
       this.selectedClusterId.set(null);
       this.selectedNodeId.set(null);
       this.expandPopup.set(null);
@@ -1947,25 +2111,56 @@ export class OkGraphComponent implements OnInit {
       this.selectedGap.set(null);
       this.transitionState.update(s => s && { ...s, stage: 'shift' });
     }), 700);
-
+ 
     setTimeout(guard(() => {
       this.transitionState.update(s => s && { ...s, stage: 'reveal' });
     }), 860);
-
+ 
     setTimeout(guard(() => {
       this.transitionState.set(null);
     }), 1240);
   }
-
+ 
   resetToMainView(): void {
     this.transitionState.set(null);
-    this.innerViewClusterId.set(null);
+    this.innerViewPath.set([]);
     this.innerViewAnchor.set(null);
     this.selectedClusterId.set(null);
     this.selectedNodeId.set(null);
     this.expandPopup.set(null);
     this.selectedYear.set(null);
     this.selectedGap.set(null);
+  }
+ 
+  navigateToPathIndex(index: number): void {
+    const path = this.innerViewPath();
+    if (index < 0 || index >= path.length) return;
+    this.transitionState.set(null);
+    this.innerViewPath.set(path.slice(0, index + 1));
+    this.selectedClusterId.set(null);
+    this.selectedNodeId.set(null);
+    this.expandPopup.set(null);
+    this.selectedYear.set(null);
+    this.selectedGap.set(null);
+  }
+ 
+  getBreadcrumbColor(step: { level: number; clusterId: number }): string {
+    const top = this.topLevel();
+    const isSub = step.level < top;
+    return this.clusterColorFor(step.clusterId, isSub);
+  }
+ 
+  getBreadcrumbName(step: { level: number; clusterId: number }): string {
+    const top = this.topLevel();
+    if (step.level === top) {
+      return step.clusterId === this.miscTopCluster() ? 'Miscellaneous' : `Cluster ${step.clusterId}`;
+    }
+    if (step.level === 0) {
+      const repIndex = this.repIndexOfCluster(0, step.clusterId);
+      const repTitle = repIndex >= 0 ? (this.baseNodes()[repIndex]?.title ?? '') : '';
+      return repTitle ? `Subcluster ${step.clusterId} (${repTitle.substring(0, 15)}...)` : `Subcluster ${step.clusterId}`;
+    }
+    return `Subcluster ${step.clusterId}`;
   }
 
   // --- transition animation helpers -------------------------------------------

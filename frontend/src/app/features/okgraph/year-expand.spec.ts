@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { yearExpandQueues, YearExpandOptions, middleYears } from './year-expand';
+import { yearExpandQueues, YearExpandOptions, middleYears, nearestOutwardYear } from './year-expand';
 
 /**
  * Synthetic 6-node hierarchy, two top-level clusters.
@@ -105,6 +105,41 @@ describe('middleYears', () => {
   it('is order-independent in the two arguments', () => {
     expect(middleYears(2014, 2010)).toEqual([2012]);
     expect(middleYears(2019, 2010)).toEqual([2014, 2015]);
+  });
+});
+
+describe('nearestOutwardYear', () => {
+  const displayed = [2010, 2012, 2015]; // min 2010, max 2015
+
+  it('picks the closest expandable year just past the latest column', () => {
+    // Latest displayed is 2015; works in 2016 and 2017 → nearest is 2016.
+    expect(nearestOutwardYear(displayed, new Set([2016, 2017]), 'future')).toBe(2016);
+  });
+
+  it('falls back to a farther future year when nothing nearer is expandable', () => {
+    // Only 2017 has unplaced works → expand 2017.
+    expect(nearestOutwardYear(displayed, new Set([2017]), 'future')).toBe(2017);
+  });
+
+  it('picks the closest expandable year just before the earliest column', () => {
+    // Earliest displayed is 2010; works in 2008 and 2009 → nearest is 2009.
+    expect(nearestOutwardYear(displayed, new Set([2008, 2009]), 'past')).toBe(2009);
+  });
+
+  it('ignores expandable years inside the displayed range', () => {
+    // 2011, 2013, 2014 sit within [2010, 2015] → not outward targets.
+    expect(nearestOutwardYear(displayed, new Set([2011, 2013, 2014]), 'future')).toBeNull();
+    expect(nearestOutwardYear(displayed, new Set([2011, 2013, 2014]), 'past')).toBeNull();
+  });
+
+  it('returns null when no displayed years or no expandable years', () => {
+    expect(nearestOutwardYear([], new Set([2020]), 'future')).toBeNull();
+    expect(nearestOutwardYear(displayed, new Set(), 'past')).toBeNull();
+  });
+
+  it('treats the boundary years as inside the range (strictly beyond only)', () => {
+    expect(nearestOutwardYear(displayed, new Set([2015]), 'future')).toBeNull();
+    expect(nearestOutwardYear(displayed, new Set([2010]), 'past')).toBeNull();
   });
 });
 

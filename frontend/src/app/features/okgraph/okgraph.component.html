@@ -644,7 +644,7 @@
                     <span class="cluster-popup__summary cluster-popup__summary--pending">Summarizing…</span>
                   }
                 }
-                @if (!cluster.isMisc && innerViewClusterId() === null) {
+                @if (!cluster.isMisc && currentTopLevel() >= 0) {
                   <button class="cluster-popup__move-btn" (click)="moveInside(cluster.id, $event)">
                     <span class="material-symbols-outlined">zoom_in</span>
                     Move Inside
@@ -815,6 +815,13 @@
                             <div class="lane-box__title-group">
                               <span class="lane-box__name">{{ box.name }}</span>
                             </div>
+                            <button
+                              class="lane-box__delete-btn"
+                              (click)="requestRemoveCluster(box.topCluster, box.name, $event)"
+                              title="Remove this cluster from the graph"
+                            >
+                              <span class="material-symbols-outlined">delete</span>
+                            </button>
                           </div>
 
                           @if (!box.isMisc) {
@@ -833,7 +840,7 @@
                           }
                         </div>
 
-                        @if (!box.isMisc && innerViewClusterId() === null) {
+                        @if (!box.isMisc && currentTopLevel() >= 0) {
                           <button
                             class="lane-box__move-btn"
                             [style.background]="box.color"
@@ -1052,6 +1059,32 @@
                     </foreignObject>
                   }
                 }
+
+                <!-- Outward end-arrows: expand into the nearest year beyond the
+                     displayed range that still holds an unplaced candidate. -->
+                @if (pastExpandYear() !== null && firstColumnX() !== null) {
+                  <g
+                    class="graph-svg__axis-arrow"
+                    [attr.transform]="'translate(' + (axisX(firstColumnX()!) - 38) + ',' + (AXIS_HEIGHT - 20) + ')'"
+                    (click)="expandOutward('past', $event)"
+                  >
+                    <title>Expand earlier — {{ pastExpandYear() }}</title>
+                    <circle cx="0" cy="0" r="11" class="graph-svg__axis-arrow-bg" />
+                    <path d="M 3 0 l -6 0 m 3 -3 l -3 3 l 3 3" class="graph-svg__axis-arrow-icon" />
+                  </g>
+                }
+
+                @if (futureExpandYear() !== null && lastColumnX() !== null) {
+                  <g
+                    class="graph-svg__axis-arrow"
+                    [attr.transform]="'translate(' + (axisX(lastColumnX()!) + 38) + ',' + (AXIS_HEIGHT - 20) + ')'"
+                    (click)="expandOutward('future', $event)"
+                  >
+                    <title>Expand later — {{ futureExpandYear() }}</title>
+                    <circle cx="0" cy="0" r="11" class="graph-svg__axis-arrow-bg" />
+                    <path d="M -3 0 l 6 0 m -3 -3 l 3 3 l -3 3" class="graph-svg__axis-arrow-icon" />
+                  </g>
+                }
               </g>
             </svg>
           }
@@ -1062,23 +1095,27 @@
             <div class="ok-graph-bottom-bar__tabs">
               <button 
                 class="ok-graph-bottom-bar__tab"
-                [class.ok-graph-bottom-bar__tab--active]="innerViewClusterId() === null"
+                [class.ok-graph-bottom-bar__tab--active]="innerViewPath().length === 0"
                 (click)="resetToMainView()"
               >
                 <span class="material-symbols-outlined">grid_view</span>
                 Main
               </button>
               
-              @if (innerViewClusterId() !== null) {
+              @for (step of innerViewPath(); track $index; let last = $last) {
                 <div class="ok-graph-bottom-bar__separator">
                   <span class="material-symbols-outlined">chevron_right</span>
                 </div>
                 <button 
-                  class="ok-graph-bottom-bar__tab ok-graph-bottom-bar__tab--active ok-graph-bottom-bar__tab--inner"
-                  [style.border-left-color]="innerViewClusterColor()"
+                  class="ok-graph-bottom-bar__tab"
+                  [class.ok-graph-bottom-bar__tab--active]="last"
+                  [class.ok-graph-bottom-bar__tab--inner]="true"
+                  [style.border-left-color]="getBreadcrumbColor(step)"
+                  [disabled]="last"
+                  (click)="navigateToPathIndex($index)"
                 >
-                  <span class="material-symbols-outlined" [style.color]="innerViewClusterColor()">subdirectory_arrow_right</span>
-                  {{ innerViewClusterName() }}
+                  <span class="material-symbols-outlined" [style.color]="getBreadcrumbColor(step)">subdirectory_arrow_right</span>
+                  {{ getBreadcrumbName(step) }}
                 </button>
               }
             </div>
@@ -1253,6 +1290,23 @@
       <div class="graph-modal__actions">
         <button class="graph-modal__btn" (click)="cancelClearGraph()">Cancel</button>
         <button class="graph-modal__btn graph-modal__btn--danger" (click)="confirmClearGraph()">Clear Graph</button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- Remove Cluster Confirmation Modal -->
+@if (clusterRemovalTarget(); as target) {
+  <div class="graph-modal-overlay" (click)="cancelRemoveCluster()">
+    <div class="graph-modal" (click)="$event.stopPropagation()">
+      <h3 class="graph-modal__title">Remove cluster?</h3>
+      <p class="graph-modal__text">
+        Are you sure you want to remove <strong>{{ target.name }}</strong> from the graph?
+        This removes every paper belonging to this cluster, along with their links.
+      </p>
+      <div class="graph-modal__actions">
+        <button class="graph-modal__btn" (click)="cancelRemoveCluster()">Cancel</button>
+        <button class="graph-modal__btn graph-modal__btn--danger" (click)="confirmRemoveCluster()">Remove Cluster</button>
       </div>
     </div>
   </div>
