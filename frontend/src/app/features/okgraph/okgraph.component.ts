@@ -8,8 +8,9 @@ import { getCommunitiesAtLevel, louvain } from '../citgraph/louvain';
 import { Paper } from '../../core/models/paper.model';
 import { citNodeToPaper, repScore } from './cit-node';
 import { clusterColor, lighten, withAlpha, blendColors, MISC_COLOR } from './community-colors';
-import { edgePath as buildEdgePath, LayoutEdge, TOP_PADDING, NODE_RADIUS, orderLanesByConnectivity } from './graph-layout';
-import { yearExpandQueues, middleYears } from './year-expand';
+import { edgePath as buildEdgePath, LayoutEdge, TOP_PADDING, orderLanesByConnectivity } from './graph-layout';
+import { yearExpandQueues, middleYears, nearestOutwardYear } from './year-expand';
+import { placedIdsInCluster } from './cluster-ops';
 import { getArchetypeIcon } from '../../shared/utils/archetype-icons';
 import { SearchStateService, paperId } from '../../core/services/search-state.service';
 import { CitGraphService, CitGraphNode, CitGraphEdge } from '../../core/services/citgraph.service';
@@ -506,6 +507,10 @@ export class OkGraphComponent implements OnInit {
   readonly cardWidth = 300;
   // Default left x for cards when left-aligned (not staggered).
   readonly cardAlignedX = 20;
+  // Horizontal gap (px) between a staggered card's right edge and its cluster's
+  // left-most node center. Wide enough that the node's centered title label
+  // (which extends left of the node) never overlaps the card.
+  readonly staggerCardGap = 115;
   // Left edge where the first year column / left-most node sits. With in-graph
   // cards the card occupies x=20..320, so this also sets the gap to the nodes.
   readonly leftPadding = computed(() => this.useInGraphCards() ? 420 : 80);
@@ -522,6 +527,23 @@ export class OkGraphComponent implements OnInit {
 
   toggleSettings(): void { this.settingsOpen.update(v => !v); }
   closeSettings(): void { this.settingsOpen.set(false); }
+
+  // Pending cluster/subcluster the user asked to remove via a card's trashcan,
+  // awaiting confirmation. Holds the cluster id (at the current view level) and
+  // its display name for the confirmation prompt.
+  readonly clusterRemovalTarget = signal<{ topCluster: number; name: string } | null>(null);
+
+  /** Open the "remove this cluster?" confirmation for a card's trashcan. */
+  requestRemoveCluster(topCluster: number, name: string, event: Event): void {
+    event.stopPropagation();
+    this.clusterRemovalTarget.set({ topCluster, name });
+  }
+  cancelRemoveCluster(): void { this.clusterRemovalTarget.set(null); }
+  confirmRemoveCluster(): void {
+    const target = this.clusterRemovalTarget();
+    if (target) this.removeCluster(target.topCluster);
+    this.clusterRemovalTarget.set(null);
+  }
 
   requestClearGraph(): void { this.clearConfirmOpen.set(true); }
   cancelClearGraph(): void { this.clearConfirmOpen.set(false); }
@@ -838,7 +860,16 @@ export class OkGraphComponent implements OnInit {
     // Cluster size (membership over all base nodes) per highest-level cluster.
     const sizeOf = new Map<number, number>();
     if (!isInner) {
-      for (const c of currentComm) sizeOf.set(c, (sizeOf.get(c) ?? 0) + 1);
+      // Only give a lane (and therefore a card) to clusters that currently have a
+      // node drawn on the canvas. A cluster emptied by removal — e.g. via the card
+      // trashcan — drops out entirely so its lane and card disappear too. The size
+      // value still counts full membership for connectivity-aware lane ordering.
+      const visible = new Set<number>();
+      for (const p of placedFiltered) visible.add(currentComm[p.repIndex]);
+      for (const c of currentComm) {
+        if (!visible.has(c)) continue;
+        sizeOf.set(c, (sizeOf.get(c) ?? 0) + 1);
+      }
     } else {
       // Inside a cluster, only give a lane (and therefore a card) to subclusters
       // that actually have a node drawn in the graph — i.e. their representative
@@ -1204,7 +1235,7 @@ export class OkGraphComponent implements OnInit {
       const clusterBox = boxes.get(id);
       const cardX = this.staggeredCards()
         ? (clusterBox
-            ? clusterBox.minX - NODE_RADIUS - 16 - this.cardWidth
+            ? clusterBox.minX - this.staggerCardGap - this.cardWidth
             : this.cardAlignedX + dx)
         : this.cardAlignedX + dx;
 
@@ -1353,6 +1384,10 @@ export class OkGraphComponent implements OnInit {
       if (repA < 0 || repB < 0) continue;
       const topA = topComm[repA];
       const topB = topComm[repB];
+      // A bridge merges two blobs; `boxes` is keyed by the clusters that have a
+      // placed node (hence a blob). Skip pairs whose endpoint cluster has been
+      // emptied (e.g. removed via the card trashcan) so no dangling ribbon stays.
+      if (!boxes.has(topA) || !boxes.has(topB)) continue;
       const a = anchorFor(sa);
       const b = anchorFor(sb);
       if (!a || !b) continue;
@@ -1833,6 +1868,51 @@ export class OkGraphComponent implements OnInit {
     return midYears.some(y => this.expandableYears().has(y));
   }
 
+  /**
+   * Nearest expandable year strictly later than the latest displayed column
+   * (target of the right-pointing axis-end arrow), or null when none exists.
+   * The axis only shows years that already have placed nodes, so this surfaces
+   * the closest future year that still holds an unplaced candidate in view.
+   */
+  readonly futureExpandYear = computed<number | null>(() =>
+    nearestOutwardYear(this.yearColumns().map(c => c.year), this.expandableYears(), 'future'),
+  );
+
+  /**
+   * Nearest expandable year strictly earlier than the earliest displayed column
+   * (target of the left-pointing axis-end arrow), or null when none exists.
+   */
+  readonly pastExpandYear = computed<number | null>(() =>
+    nearestOutwardYear(this.yearColumns().map(c => c.year), this.expandableYears(), 'past'),
+  );
+
+  /** World x of the earliest year column (left arrow anchor), or null. */
+  readonly firstColumnX = computed<number | null>(() => {
+    const cols = this.yearColumns();
+    return cols.length ? cols[0].x : null;
+  });
+
+  /** World x of the latest year column (right arrow anchor), or null. */
+  readonly lastColumnX = computed<number | null>(() => {
+    const cols = this.yearColumns();
+    return cols.length ? cols[cols.length - 1].x : null;
+  });
+
+  /**
+   * Expand outwards from an end of the axis: select the nearest expandable year
+   * beyond that end and run the regular per-year expansion on it. After placing,
+   * the target year becomes a column, so repeated clicks walk further out.
+   */
+  expandOutward(dir: 'past' | 'future', event: Event): void {
+    event.stopPropagation();
+    const year = dir === 'future' ? this.futureExpandYear() : this.pastExpandYear();
+    if (year === null) return;
+    this.expandPopup.set(null);
+    this.selectedGap.set(null);
+    this.selectedYear.set(year);
+    this.expandYear();
+  }
+
   /** Candidate queues for the selected year (empty when no year is selected). */
   private readonly yearCandidateQueues = computed<Map<number, PlacedNode[]>>(() => {
     const year = this.selectedYear();
@@ -1935,6 +2015,30 @@ export class OkGraphComponent implements OnInit {
     this.selectedNodeId.set(null);
   }
 
+  /** Base-node ids of every placed node belonging to `topCluster` at the current
+   *  view level. Community ids are globally unique per level, so this isolates a
+   *  single cluster (main view) or subcluster (inner view). Pure given inputs. */
+  private placedIdsInCluster(topCluster: number): string[] {
+    const currentComm = this.communitiesAtLevel()(this.currentTopLevel());
+    return placedIdsInCluster(this.state.placed(), currentComm, topCluster);
+  }
+
+  /**
+   * Remove an entire cluster (or subcluster) from the graph — exactly as if every
+   * node belonging to it were removed individually: drop its placed nodes and any
+   * link touching them. Mutates the persistent state service, so the removal
+   * survives leaving and re-entering the OK-Graph tab.
+   */
+  removeCluster(topCluster: number): void {
+    const ids = new Set(this.placedIdsInCluster(topCluster));
+    if (!ids.size) return;
+    this.state.placed.update(p => p.filter(n => !ids.has(n.id)));
+    this.state.links.update(l => l.filter(e => !ids.has(e.fromId) && !ids.has(e.toId)));
+    const sel = this.selectedNodeId();
+    if (sel && ids.has(sel)) this.selectedNodeId.set(null);
+    if (this.selectedClusterId() === topCluster) this.selectedClusterId.set(null);
+  }
+
   clearGraph(): void {
     this.selectedNodeId.set(null);
     this.selectedClusterId.set(null);
@@ -1943,6 +2047,7 @@ export class OkGraphComponent implements OnInit {
     this.expandPopup.set(null);
     this.selectedYear.set(null);
     this.selectedGap.set(null);
+    this.clusterRemovalTarget.set(null);
     this.state.clear();
   }
  
