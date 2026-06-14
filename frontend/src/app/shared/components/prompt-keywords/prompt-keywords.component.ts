@@ -87,8 +87,8 @@ export class PromptKeywordsComponent {
           method: result.method,
         });
         const via =
-          result.method === 'gemma'
-            ? `AI (${result.model ?? 'Gemma'})`
+          result.method !== 'heuristic'
+            ? `AI (${result.model ?? 'model'})`
             : 'local fallback';
         this.notifications.show(
           `Added ${result.keywords.length} keywords via ${via} — review and search.`

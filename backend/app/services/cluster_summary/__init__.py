@@ -1,22 +1,24 @@
-"""Cluster summarization: Gemma when configured, deterministic fallback otherwise.
+"""Cluster summarization: streaming vLLM when configured, deterministic fallback.
 
 Stateless, per-cluster. The frontend drives the bottom-up order (finest clusters
 first, then higher levels fed the previous layer's summaries) and the progress
-indicator; this module just turns one cluster's inputs into a {title, summary}.
+indicator; this module turns one cluster's inputs into a stream of {title,
+summary} deltas, emitted as a sequence of events the API forwards over SSE.
 """
 from __future__ import annotations
 
-import os
+from collections.abc import AsyncIterator
 
 from .base import PaperInput, ChildInput, ClusterSummaryResult
 from .config import finest_prompt, high_level_prompt
-from .gemma import GemmaClusterSummarizer, GemmaError
+from .vllm import VLLMClusterSummarizer, parse_title_summary
+from ..llm_client import LLMError, vllm_enabled, vllm_model
 
 __all__ = [
     "PaperInput",
     "ChildInput",
     "ClusterSummaryResult",
-    "summarize_cluster",
+    "stream_cluster_summary",
 ]
 
 
@@ -78,13 +80,31 @@ def _fallback(
     return ClusterSummaryResult(title=title, summary=summary, method="fallback")
 
 
-async def summarize_cluster(
+def _done_event(result: ClusterSummaryResult) -> dict:
+    return {
+        "done": True,
+        "title": result.title,
+        "summary": result.summary,
+        "method": result.method,
+        "model": result.model,
+    }
+
+
+async def stream_cluster_summary(
     kind: str,
     *,
     papers: list[PaperInput] | None = None,
     children: list[ChildInput] | None = None,
     name: str = "",
-) -> ClusterSummaryResult:
+) -> AsyncIterator[dict]:
+    """Stream one cluster's summary as a sequence of events.
+
+    Yields ``{"delta": str}`` for each text chunk, then a terminal
+    ``{"done": True, "title", "summary", "method", "model"}`` carrying the
+    authoritative parse. Always finishes with a coherent summary: if vLLM is
+    unconfigured, unreachable, or returns nothing usable, it falls back to a
+    deterministic summary so the feature degrades gracefully.
+    """
     papers = papers or []
     children = children or []
 
@@ -93,14 +113,36 @@ async def summarize_cluster(
     else:
         system, user = high_level_prompt(), _higher_user(children, name)
 
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if api_key:
-        try:
-            result = await GemmaClusterSummarizer(api_key).summarize(system, user)
-            if not result.title:
-                result.title = _fallback(kind, papers, children, name).title
-            return result
-        except GemmaError:
-            pass  # fall through to the deterministic fallback
+    fallback = _fallback(kind, papers, children, name)
 
-    return _fallback(kind, papers, children, name)
+    if not vllm_enabled():
+        yield {"delta": fallback.summary}
+        yield _done_event(fallback)
+        return
+
+    buf: list[str] = []
+    try:
+        async for delta in VLLMClusterSummarizer().stream(system, user):
+            buf.append(delta)
+            yield {"delta": delta}
+    except LLMError:
+        if not buf:
+            # Nothing streamed — emit the fallback so the client shows something.
+            yield {"delta": fallback.summary}
+            yield _done_event(fallback)
+            return
+        # Partial output already streamed; finalize whatever we got below.
+
+    title, summary = parse_title_summary("".join(buf))
+    if not summary:
+        yield _done_event(fallback)
+        return
+
+    yield _done_event(
+        ClusterSummaryResult(
+            title=title or fallback.title,
+            summary=summary,
+            method="vllm",
+            model=vllm_model(),
+        )
+    )

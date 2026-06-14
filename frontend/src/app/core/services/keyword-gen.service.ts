@@ -6,7 +6,7 @@ import { environment } from '../../../environments/environment';
 export interface KeywordGenResult {
   keywords: string[];
   query: string;
-  method: string; // 'gemma' | 'heuristic'
+  method: string; // 'vllm' | 'heuristic'
   model: string | null;
 }
 
