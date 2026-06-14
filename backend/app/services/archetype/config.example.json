@@ -3,17 +3,17 @@
   "enabled": true,
   "preload_on_startup": true,
 
-  "_python_executable": "Interpreter of the dedicated conda env that has torch+transformers+safetensors.",
+  "_python_executable": "Interpreter of the dedicated conda env that has torch+transformers+safetensors. Falls back to sys.executable in environments where dependencies are installed (like Docker).",
   "python_executable": "/home/<you>/miniforge3/envs/okarchetype/bin/python",
 
-  "_script_path": "Absolute path to classify_retrieved_papers.py.",
-  "script_path": "/abs/path/to/archetype_classifier/classifier/classify_retrieved_papers.py",
+  "_script_path": "Path to classify_retrieved_papers.py. Relative paths resolve relative to the workspace/project root.",
+  "script_path": "archetype_classifier/scripts/classify_retrieved_papers.py",
 
-  "_checkpoint_dir": "Fine-tuned checkpoint dir containing model.safetensors + tokenizer files.",
-  "checkpoint_dir": "/abs/path/to/archetype_classifier/models/fast_archetype_model/checkpoint-6402",
+  "_checkpoint_dir": "Fine-tuned checkpoint dir. Relative paths resolve relative to the workspace/project root.",
+  "checkpoint_dir": "archetype_classifier/models/fast_archetype_model/checkpoint-6402",
 
-  "_label_mapping_path": "label_mapping.json with primary/secondary id->label dicts.",
-  "label_mapping_path": "/abs/path/to/archetype_classifier/models/fast_archetype_model/label_mapping.json",
+  "_label_mapping_path": "label_mapping.json path. Relative paths resolve relative to the workspace/project root.",
+  "label_mapping_path": "archetype_classifier/models/fast_archetype_model/label_mapping.json",
 
   "_encoder_config": "Static BERT/SciBERT architecture used to rebuild the encoder offline (weights come from the checkpoint).",
   "encoder_config": {

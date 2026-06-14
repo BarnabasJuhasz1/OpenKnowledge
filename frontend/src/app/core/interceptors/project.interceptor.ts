@@ -1,6 +1,7 @@
 import { HttpInterceptorFn } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { ProjectContextService } from '../services/project-context.service';
+import { environment } from '../../../environments/environment';
 
 /**
  * Attaches the active `project_id` query param to project-scoped backend calls
@@ -9,7 +10,7 @@ import { ProjectContextService } from '../services/project-context.service';
  * entity itself).
  */
 export const projectInterceptor: HttpInterceptorFn = (req, next) => {
-  const isApi = req.url.includes('127.0.0.1:8000/api');
+  const isApi = req.url.includes(environment.BACKEND_URL + '/api');
   const isExempt =
     req.url.includes('/api/projects') || req.url.includes('/api/citgraph');
 

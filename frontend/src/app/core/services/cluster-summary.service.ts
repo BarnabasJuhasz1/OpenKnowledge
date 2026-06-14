@@ -1,4 +1,7 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
+import { environment } from '../../../environments/environment';
 import { OkGraphStateService } from './okgraph-state.service';
 import { CitGraphNode, CitGraphEdge } from './citgraph.service';
 import { louvain, getCommunitiesAtLevel, LouvainResult } from '../../features/citgraph/louvain';
@@ -40,7 +43,7 @@ const CONCURRENCY = 4;
 @Injectable({ providedIn: 'root' })
 export class ClusterSummaryService {
   private readonly okGraphState = inject(OkGraphStateService);
-  private readonly baseUrl = 'http://127.0.0.1:8000/api';
+  private readonly baseUrl = `${environment.BACKEND_URL}/api`;
 
   private store = new Map<string, ClusterSummary>();
   private rawCommunityMap = new Map<string, number>();

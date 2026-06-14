@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { environment } from '../../../environments/environment';
 import { Paper } from '../models/paper.model';
 
 export interface BookshelfItem {
@@ -23,7 +24,7 @@ export interface BookshelfCheck {
 @Injectable({ providedIn: 'root' })
 export class BookshelfService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = 'http://127.0.0.1:8000/api/bookshelf';
+  private readonly baseUrl = `${environment.BACKEND_URL}/api/bookshelf`;
 
   list(): Observable<BookshelfItem[]> {
     return this.http.get<BookshelfItem[]>(this.baseUrl);

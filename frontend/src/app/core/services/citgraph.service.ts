@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { environment } from '../../../environments/environment';
 
 export interface CitGraphNode {
   paper_id: string;
@@ -35,7 +36,7 @@ export interface CitGraphResponse {
 @Injectable({ providedIn: 'root' })
 export class CitGraphService {
   private readonly http = inject(HttpClient);
-  private readonly baseUrl = 'http://127.0.0.1:8000/api/citgraph';
+  private readonly baseUrl = `${environment.BACKEND_URL}/api/citgraph`;
 
   build(paperId: string, k: number, maxPerHop?: number): Observable<CitGraphResponse> {
     return this.http.post<CitGraphResponse>(`${this.baseUrl}/build`, {
