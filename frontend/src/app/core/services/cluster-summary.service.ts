@@ -175,7 +175,7 @@ export class ClusterSummaryService {
           if (L === 0) {
             res = await this.summarizeFinest(nodes, members, repTitle, key, myRun);
           } else {
-            res = await this.summarizeHigher(L, community, commAt[L - 1], members, repTitle, key, myRun);
+            res = await this.summarizeHigher(L, commAt[L - 1], members, repTitle, key, myRun);
           }
         } catch {
           res = { title: repTitle, summary: this.localFallback(members.length, repTitle), status: 'error' };
@@ -250,7 +250,6 @@ export class ClusterSummaryService {
 
   private async summarizeHigher(
     level: number,
-    community: number,
     childComm: number[],
     members: number[],
     repTitle: string,
