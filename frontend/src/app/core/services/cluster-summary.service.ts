@@ -1,6 +1,4 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { OkGraphStateService } from './okgraph-state.service';
 import { CitGraphNode, CitGraphEdge } from './citgraph.service';
