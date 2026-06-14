@@ -58,16 +58,11 @@ def high_level_prompt() -> str:
 
 
 def temperature() -> float:
-    try:
-        return float(os.getenv("GEMMA_TEMPERATURE", "0.3"))
-    except ValueError:
-        return 0.3
+    from ..llm_client import llm_temperature
+    return llm_temperature(0.3)
 
 
 def max_output_tokens() -> int:
-    # Reasoning-style Gemma models narrate before answering, so give enough
-    # headroom that the final JSON / "Summary:" line is not truncated away.
-    try:
-        return int(os.getenv("CLUSTER_SUMMARY_MAX_TOKENS", "2048"))
-    except ValueError:
-        return 2048
+    # Plain-text title+summary, no reasoning preamble, so ~1k tokens is plenty.
+    from ..llm_client import llm_max_tokens
+    return llm_max_tokens("CLUSTER_SUMMARY_MAX_TOKENS", 1024)

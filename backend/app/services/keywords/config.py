@@ -40,14 +40,10 @@ def system_prompt() -> str:
 
 
 def temperature() -> float:
-    try:
-        return float(os.getenv("GEMMA_TEMPERATURE", "0.2"))
-    except ValueError:
-        return 0.2
+    from ..llm_client import llm_temperature
+    return llm_temperature(0.2)
 
 
 def max_output_tokens() -> int:
-    try:
-        return int(os.getenv("GEMMA_MAX_TOKENS", "512"))
-    except ValueError:
-        return 512
+    from ..llm_client import llm_max_tokens
+    return llm_max_tokens("GEMMA_MAX_TOKENS", 512)

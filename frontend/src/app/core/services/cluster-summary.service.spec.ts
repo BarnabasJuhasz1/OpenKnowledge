@@ -1,7 +1,6 @@
+import { describe, beforeEach, afterEach, it, expect, vi } from 'vitest';
 import { ApplicationRef, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { provideHttpClient } from '@angular/common/http';
-import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ClusterSummaryService } from './cluster-summary.service';
 import { OkGraphStateService } from './okgraph-state.service';
 import { CitGraphNode, CitGraphEdge } from './citgraph.service';
@@ -47,44 +46,59 @@ function expectedHierarchy() {
   };
 }
 
+/** A Response wrapping an SSE ReadableStream: one delta then a `done` event. */
+function sseResponse(): Response {
+  const enc = new TextEncoder();
+  const frames = [
+    `data: ${JSON.stringify({ delta: 'S' })}\n\n`,
+    `data: ${JSON.stringify({ done: true, title: 'T', summary: 'S', method: 'fallback', model: null })}\n\n`,
+  ].map(f => enc.encode(f));
+  let i = 0;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (i < frames.length) controller.enqueue(frames[i++]);
+      else controller.close();
+    },
+  });
+  return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+}
+
 describe('ClusterSummaryService', () => {
   let svc: ClusterSummaryService;
-  let httpMock: HttpTestingController;
   let appRef: ApplicationRef;
+  let bodies: any[];
   const rawGraph = signal<any>({
     nodes: NODES, edges: EDGES, seedId: '', resolution: 1, maxLevels: 10,
   });
 
   beforeEach(() => {
+    bodies = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(init.body as string));
+      return sseResponse();
+    }));
     TestBed.configureTestingModule({
       providers: [
-        provideHttpClient(),
-        provideHttpClientTesting(),
         { provide: OkGraphStateService, useValue: { rawGraph } },
       ],
     });
     svc = TestBed.inject(ClusterSummaryService);
-    httpMock = TestBed.inject(HttpTestingController);
     appRef = TestBed.inject(ApplicationRef);
   });
 
-  async function drain(bodies: any[]): Promise<void> {
-    for (let i = 0; i < 120; i++) {
+  afterEach(() => vi.unstubAllGlobals());
+
+  async function drain(): Promise<void> {
+    for (let i = 0; i < 200; i++) {
       appRef.tick(); // flush the constructor effect / scheduled effects
       await new Promise(r => setTimeout(r, 0));
-      const reqs = httpMock.match(req => req.url.endsWith('/clusters/summarize'));
-      for (const req of reqs) {
-        bodies.push(req.request.body);
-        req.flush({ title: 'T', summary: 'S', method: 'fallback', model: null });
-      }
-      if (bodies.length > 0 && reqs.length === 0 && !svc.running()) break;
+      if (bodies.length > 0 && !svc.running()) break;
     }
   }
 
   it('summarizes every cluster across all levels and tracks progress to completion', async () => {
     const exp = expectedHierarchy();
-    const bodies: any[] = [];
-    await drain(bodies);
+    await drain();
 
     expect(svc.progress().total).toBe(exp.total);
     expect(svc.progress().done).toBe(exp.total);
@@ -105,6 +119,4 @@ describe('ClusterSummaryService', () => {
       for (const h of higher) expect(h.children.length).toBeGreaterThan(0);
     }
   });
-
-  afterEach(() => httpMock.verify());
 });

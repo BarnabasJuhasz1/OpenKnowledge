@@ -1,19 +1,24 @@
 """End-to-end tests for the /api/keywords endpoints.
 
-No GOOGLE_API_KEY is set in the test env, so generation uses the local
+No VLLM_BASE_URL is set in the test env, so generation uses the local
 heuristic fallback.
 """
 from __future__ import annotations
 
+import json
+from types import SimpleNamespace
+
 import pytest
 import httpx
 from app.main import app
+from app.services import llm_client
 
 
 @pytest.fixture(autouse=True)
-def _no_llm_key(monkeypatch):
-    """Force the offline heuristic path so these tests never hit the live API,
-    even when a GOOGLE_API_KEY is present in the backend .env."""
+def _no_llm(monkeypatch):
+    """Force the offline heuristic path so these tests never hit the live model,
+    even when a VLLM_BASE_URL is present in the backend .env."""
+    monkeypatch.delenv("VLLM_BASE_URL", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
 
 
@@ -58,3 +63,31 @@ async def test_blank_input_rejected():
     async with _client() as client:
         resp = await client.post("/api/keywords/generate", json={"prompt": "   "})
         assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_generate_via_vllm(monkeypatch):
+    """The vLLM path: a stubbed OpenAI completion returning a JSON array."""
+    monkeypatch.setenv("VLLM_BASE_URL", "http://model:8000/v1")
+    monkeypatch.setenv("VLLM_MODEL_NAME", "test-model")
+    content = json.dumps(['("LLM" OR "large language model")', '("pruning" OR "compression")'])
+
+    async def create(**kwargs):
+        assert kwargs["stream"] is False
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
+        )
+
+    fake = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    monkeypatch.setattr(llm_client, "vllm_client", lambda: fake)
+
+    async with _client() as client:
+        resp = await client.post(
+            "/api/keywords/generate",
+            json={"prompt": "pruning large language models"},
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["method"] == "vllm"
+    assert data["model"] == "test-model"
+    assert len(data["keywords"]) == 2

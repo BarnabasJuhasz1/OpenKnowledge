@@ -1,6 +1,4 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
 import { OkGraphStateService } from './okgraph-state.service';
 import { CitGraphNode, CitGraphEdge } from './citgraph.service';
 import { louvain, getCommunitiesAtLevel, LouvainResult } from '../../features/citgraph/louvain';
@@ -14,9 +12,17 @@ export interface ClusterSummary {
 
 interface PaperPayload { title: string; abstract: string; archetypes: string[]; }
 interface ChildPayload { title: string; summary: string; }
-interface SummarizeResponse { title: string; summary: string; method: string; model: string | null; }
+/** One Server-Sent event from /clusters/summarize. */
+interface SummaryEvent {
+  delta?: string;
+  done?: boolean;
+  title?: string;
+  summary?: string;
+  method?: string;
+  model?: string | null;
+}
 
-/** How many gemma calls run concurrently within one hierarchy level. */
+/** How many summary streams run concurrently within one hierarchy level. */
 const CONCURRENCY = 4;
 
 /**
@@ -33,7 +39,6 @@ const CONCURRENCY = 4;
  */
 @Injectable({ providedIn: 'root' })
 export class ClusterSummaryService {
-  private readonly http = inject(HttpClient);
   private readonly okGraphState = inject(OkGraphStateService);
   private readonly baseUrl = 'http://127.0.0.1:8000/api';
 
@@ -167,9 +172,9 @@ export class ClusterSummaryService {
         let res: ClusterSummary;
         try {
           if (L === 0) {
-            res = await this.summarizeFinest(nodes, members, repTitle);
+            res = await this.summarizeFinest(nodes, members, repTitle, key, myRun);
           } else {
-            res = await this.summarizeHigher(L, community, commAt[L - 1], members, repTitle);
+            res = await this.summarizeHigher(L, community, commAt[L - 1], members, repTitle, key, myRun);
           }
         } catch {
           res = { title: repTitle, summary: this.localFallback(members.length, repTitle), status: 'error' };
@@ -230,6 +235,8 @@ export class ClusterSummaryService {
     nodes: CitGraphNode[],
     members: number[],
     repTitle: string,
+    key: string,
+    myRun: number,
   ): Promise<ClusterSummary> {
     const papers: PaperPayload[] = members.map(i => {
       const node = nodes[i];
@@ -237,13 +244,7 @@ export class ClusterSummaryService {
         .filter((a): a is string => !!a && a !== 'None');
       return { title: node.title, abstract: node.abstract ?? '', archetypes };
     });
-    const res = await firstValueFrom(
-      this.http.post<SummarizeResponse>(`${this.baseUrl}/clusters/summarize`, {
-        kind: 'finest',
-        papers,
-      }),
-    );
-    return { title: res.title || repTitle, summary: res.summary, status: 'done' };
+    return this.streamSummarize({ kind: 'finest', papers }, key, repTitle, myRun);
   }
 
   private async summarizeHigher(
@@ -252,6 +253,8 @@ export class ClusterSummaryService {
     childComm: number[],
     members: number[],
     repTitle: string,
+    key: string,
+    myRun: number,
   ): Promise<ClusterSummary> {
     // Child community ids (at index level-1) whose nodes compose into this cluster.
     const childIds = new Set<number>();
@@ -267,12 +270,78 @@ export class ClusterSummaryService {
     if (!children.length) {
       return { title: repTitle, summary: this.localFallback(members.length, repTitle), status: 'done' };
     }
-    const res = await firstValueFrom(
-      this.http.post<SummarizeResponse>(`${this.baseUrl}/clusters/summarize`, {
-        kind: 'higher',
-        children,
-      }),
-    );
-    return { title: res.title || repTitle, summary: res.summary, status: 'done' };
+    return this.streamSummarize({ kind: 'higher', children }, key, repTitle, myRun);
+  }
+
+  /**
+   * POST the cluster to the streaming summarize endpoint and consume its
+   * Server-Sent Events, rendering the summary live: each `delta` grows a text
+   * buffer (first non-empty line = title, the rest = summary) and updates the
+   * store with `status: 'running'`; the terminal `done` event carries the
+   * authoritative title/summary. Throws on a network / non-2xx response so the
+   * caller writes the local fallback.
+   */
+  private async streamSummarize(
+    body: unknown,
+    key: string,
+    repTitle: string,
+    myRun: number,
+  ): Promise<ClusterSummary> {
+    const resp = await fetch(`${this.baseUrl}/clusters/summarize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok || !resp.body) throw new Error(`summarize failed: ${resp.status}`);
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let sseBuf = '';
+    let text = '';
+    let final: ClusterSummary | null = null;
+
+    const handle = (evt: SummaryEvent): void => {
+      if (evt.done) {
+        final = {
+          title: evt.title || repTitle,
+          summary: evt.summary ?? text,
+          status: 'done',
+        };
+        return;
+      }
+      if (evt.delta) {
+        text += evt.delta;
+        if (myRun === this.runId) this.set(key, { ...this.splitTitleSummary(text), status: 'running' });
+      }
+    };
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (value) sseBuf += decoder.decode(value, { stream: true });
+      // SSE messages are separated by a blank line.
+      let sep: number;
+      while ((sep = sseBuf.indexOf('\n\n')) !== -1) {
+        const raw = sseBuf.slice(0, sep);
+        sseBuf = sseBuf.slice(sep + 2);
+        const data = raw.split('\n')
+          .filter(l => l.startsWith('data:'))
+          .map(l => l.slice(5).trim())
+          .join('');
+        if (data) {
+          try { handle(JSON.parse(data) as SummaryEvent); } catch { /* skip malformed frame */ }
+        }
+      }
+      if (done) break;
+    }
+
+    return final ?? { title: repTitle, summary: text || this.localFallback(0, repTitle), status: 'done' };
+  }
+
+  /** Live cosmetic parse: first non-empty line is the title, the rest the summary. */
+  private splitTitleSummary(text: string): { title: string; summary: string } {
+    const lines = text.split('\n');
+    const i = lines.findIndex(l => l.trim());
+    if (i === -1) return { title: '', summary: '' };
+    return { title: lines[i].trim(), summary: lines.slice(i + 1).join('\n').trim() };
   }
 }

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
+from collections.abc import AsyncIterator
+
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..services.cluster_summary import (
-    summarize_cluster,
+    stream_cluster_summary,
     PaperInput,
     ChildInput,
 )
@@ -30,15 +34,23 @@ class SummarizeRequest(BaseModel):
     children: list[ChildIn] | None = None
 
 
-class SummarizeResponse(BaseModel):
-    title: str
-    summary: str
-    method: str
-    model: str | None = None
+def _sse(events: AsyncIterator[dict]) -> AsyncIterator[bytes]:
+    """Frame each event dict as one SSE `data:` message (JSON-encoded so summary
+    newlines never break framing)."""
+    async def gen() -> AsyncIterator[bytes]:
+        async for event in events:
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n".encode("utf-8")
+    return gen()
 
 
-@router.post("/summarize", response_model=SummarizeResponse)
-async def summarize(body: SummarizeRequest) -> SummarizeResponse:
+@router.post("/summarize")
+async def summarize(body: SummarizeRequest) -> StreamingResponse:
+    """Stream a cluster summary token-by-token as Server-Sent Events.
+
+    Each message is `data: {"delta": "..."}`; the stream ends with
+    `data: {"done": true, "title", "summary", "method", "model"}`. Request
+    validation still fails fast with a JSON 422 before any streaming begins.
+    """
     if body.kind not in ("finest", "higher"):
         raise HTTPException(status_code=422, detail="kind must be 'finest' or 'higher'")
 
@@ -54,7 +66,7 @@ async def summarize(body: SummarizeRequest) -> SummarizeResponse:
         ]
         if not papers:
             raise HTTPException(status_code=422, detail="A finest summary requires papers.")
-        result = await summarize_cluster("finest", papers=papers, name=body.name)
+        events = stream_cluster_summary("finest", papers=papers, name=body.name)
     else:
         children = [
             ChildInput(title=c.title, summary=c.summary)
@@ -65,11 +77,10 @@ async def summarize(body: SummarizeRequest) -> SummarizeResponse:
             raise HTTPException(
                 status_code=422, detail="A higher-level summary requires child summaries."
             )
-        result = await summarize_cluster("higher", children=children, name=body.name)
+        events = stream_cluster_summary("higher", children=children, name=body.name)
 
-    return SummarizeResponse(
-        title=result.title,
-        summary=result.summary,
-        method=result.method,
-        model=result.model,
+    return StreamingResponse(
+        _sse(events),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
