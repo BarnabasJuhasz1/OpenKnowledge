@@ -14,15 +14,23 @@
       />
     </div>
 
-    <label class="demo-toggle" title="Use bundled sample data instead of live APIs">
-      <span class="demo-toggle__label">Demo mode</span>
-      <span
-        class="demo-toggle__track"
-        [class.demo-toggle__track--on]="demo.enabled()"
-        (click)="demo.toggle()"
-      >
-        <span class="demo-toggle__thumb"></span>
-      </span>
-    </label>
+    <div class="mode-select" role="radiogroup" aria-label="Search mode">
+      <span class="mode-select__label">Search mode</span>
+      <div class="mode-select__pills">
+        @for (opt of modeOptions; track opt.id) {
+          <button
+            type="button"
+            role="radio"
+            class="mode-select__pill"
+            [class.mode-select__pill--active]="mode.mode() === opt.id"
+            [attr.aria-checked]="mode.mode() === opt.id"
+            [title]="opt.hint"
+            (click)="mode.setMode(opt.id)"
+          >
+            {{ opt.label }}
+          </button>
+        }
+      </div>
+    </div>
   </div>
 </div>

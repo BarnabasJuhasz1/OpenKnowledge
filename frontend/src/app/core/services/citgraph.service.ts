@@ -20,6 +20,13 @@ export interface CitGraphNode {
   hop: number;
   predicted_main_archetype?: string | null;
   predicted_second_tier_archetype?: string | null;
+  // Project ok-score enrichment (present when the node matched a paper in the
+  // active project's DB; otherwise neutral defaults). Combined with the project's
+  // weights to compute the ok-score — see okScore() in cit-node.ts.
+  has_public_code?: boolean | null;
+  is_peer_reviewed?: boolean | null;
+  has_dataset?: boolean;
+  repo_stars?: number;
 }
 
 export interface CitGraphEdge {

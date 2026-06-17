@@ -31,3 +31,24 @@ export function placedIdsInCluster(
     .filter(p => communityAtLevel[p.repIndex] === topCluster)
     .map(p => p.id);
 }
+
+/**
+ * Number of distinct sub-clusters (communities one level finer) contained in
+ * `topCluster`. `parentComm[i]` / `childComm[i]` are node `i`'s community at the
+ * current view level and the level immediately below it. Counts how many child
+ * communities the cluster's members fan out into — i.e. the cluster card's
+ * "M sub-clusters" figure. At the leaf level the child community is each node's
+ * own index, so the count would equal the paper count; callers only show it when
+ * a finer level actually exists.
+ */
+export function subclusterCount(
+  parentComm: readonly number[],
+  childComm: readonly number[],
+  topCluster: number,
+): number {
+  const subs = new Set<number>();
+  for (let i = 0; i < parentComm.length; i++) {
+    if (parentComm[i] === topCluster) subs.add(childComm[i]);
+  }
+  return subs.size;
+}

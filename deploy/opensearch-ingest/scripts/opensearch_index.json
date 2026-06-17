@@ -1,0 +1,37 @@
+{
+  "settings": {
+    "index": {
+      "number_of_shards": 5,
+      "number_of_replicas": 0,
+      "refresh_interval": "1s"
+    },
+    "analysis": {
+      "analyzer": {
+        "default": { "type": "english" }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "corpusid":                 { "type": "long" },
+      "title":                    { "type": "text", "analyzer": "english",
+                                    "fields": { "kw": { "type": "keyword", "ignore_above": 512 } } },
+      "abstract":                 { "type": "text", "analyzer": "english" },
+      "year":                     { "type": "integer" },
+      "publicationdate":          { "type": "date", "ignore_malformed": true },
+      "citationcount":            { "type": "integer" },
+      "influentialcitationcount": { "type": "integer" },
+      "referencecount":           { "type": "integer" },
+      "is_open_access":           { "type": "boolean" },
+      "doi":                      { "type": "keyword" },
+      "arxiv_id":                 { "type": "keyword" },
+      "pubmed_id":                { "type": "keyword" },
+      "url":                      { "type": "keyword", "index": false },
+      "venue":                    { "type": "keyword" },
+      "journal":                  { "type": "keyword" },
+      "authors":                  { "type": "keyword" },
+      "fields_of_study":          { "type": "keyword" },
+      "publication_types":        { "type": "keyword" }
+    }
+  }
+}

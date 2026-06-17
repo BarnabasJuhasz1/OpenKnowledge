@@ -40,12 +40,11 @@
 }
 
 // ── Demo mode toggle ──
-.demo-toggle {
+.mode-select {
   display: inline-flex;
   align-items: center;
-  gap: var(--ok-space-2);
+  gap: var(--ok-space-3);
   margin-top: var(--ok-space-4);
-  cursor: pointer;
   user-select: none;
 
   &__label {
@@ -56,32 +55,33 @@
     white-space: nowrap;
   }
 
-  &__track {
-    position: relative;
-    width: 34px;
-    height: 18px;
-    background: var(--ok-outline-variant);
+  &__pills {
+    display: inline-flex;
+    padding: 2px;
+    background: var(--ok-surface-variant, var(--ok-outline-variant));
     border-radius: var(--ok-radius-full);
-    transition: background var(--ok-transition);
-
-    &--on {
-      background: var(--ok-primary-raw);
-    }
   }
 
-  &__thumb {
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 14px;
-    height: 14px;
-    background: #fff;
-    border-radius: 50%;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-    transition: transform var(--ok-transition);
+  &__pill {
+    appearance: none;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    padding: 4px 12px;
+    font-family: var(--ok-font-label);
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--ok-on-surface-variant);
+    border-radius: var(--ok-radius-full);
+    transition: background var(--ok-transition), color var(--ok-transition);
 
-    .demo-toggle__track--on & {
-      transform: translateX(16px);
+    &:hover {
+      color: var(--ok-on-surface);
+    }
+
+    &--active {
+      background: var(--ok-primary-raw);
+      color: #fff;
     }
   }
 }

@@ -1,26 +1,28 @@
-import { Component, HostListener, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, HostListener, NgZone, OnDestroy, OnInit, QueryList, ViewChildren, computed, effect, inject, signal, untracked } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { OkGraphStateService, PlacedNode } from '../../core/services/okgraph-state.service';
 import { ClusterSummaryService, ClusterSummary } from '../../core/services/cluster-summary.service';
 import { getCommunitiesAtLevel, louvain } from '../citgraph/louvain';
-import { Paper } from '../../core/models/paper.model';
-import { citNodeToPaper, repScore } from './cit-node';
+import { Paper, ScoreWeights } from '../../core/models/paper.model';
+import { citNodeToPaper, okScore } from './cit-node';
 import { clusterColor, lighten, withAlpha, blendColors, MISC_COLOR } from './community-colors';
 import { edgePath as buildEdgePath, LayoutEdge, TOP_PADDING, orderLanesByConnectivity } from './graph-layout';
 import { yearExpandQueues, middleYears, nearestOutwardYear } from './year-expand';
-import { placedIdsInCluster } from './cluster-ops';
+import { placedIdsInCluster, subclusterCount } from './cluster-ops';
 import { getArchetypeIcon } from '../../shared/utils/archetype-icons';
 import { SearchStateService, paperId } from '../../core/services/search-state.service';
 import { CitGraphService, CitGraphNode, CitGraphEdge } from '../../core/services/citgraph.service';
-import { DemoModeService } from '../../core/services/demo-mode.service';
+import { SearchModeService } from '../../core/services/search-mode.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { parseQuery } from '../../shared/utils/query-parser';
 import { matchesNodeKeywords } from '../../shared/utils/keyword-match';
 import { ProjectContextService } from '../../core/services/project-context.service';
 import { ProjectGraphSettingsService } from '../../core/services/project-graph-settings.service';
+import { ProjectScoringService } from '../../core/services/project-scoring.service';
 import { BookshelfService, BookshelfItem } from '../../core/services/bookshelf.service';
+import { environment } from '../../../environments/environment';
 
 interface Blob {
   topCluster: number;
@@ -93,15 +95,17 @@ const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   templateUrl: './okgraph.component.html',
   styleUrl: './okgraph.component.scss',
 })
-export class OkGraphComponent implements OnInit {
+export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
   readonly state = inject(OkGraphStateService);
+  private readonly zone = inject(NgZone);
   readonly summaries = inject(ClusterSummaryService);
   private readonly searchState = inject(SearchStateService);
   private readonly citgraphSvc = inject(CitGraphService);
-  private readonly demo = inject(DemoModeService);
+  private readonly mode = inject(SearchModeService);
   private readonly notify = inject(NotificationService);
   private readonly projectContext = inject(ProjectContextService);
   private readonly graphStore = inject(ProjectGraphSettingsService);
+  private readonly scoring = inject(ProjectScoringService);
   private readonly router = inject(Router);
   private readonly bookshelf = inject(BookshelfService);
 
@@ -111,8 +115,56 @@ export class OkGraphComponent implements OnInit {
   readonly savedItems = signal<BookshelfItem[]>([]);
   readonly activeSeedSourceTab = signal<'selected' | 'library'>('selected');
 
+  // Active project's ok-score weights. Loaded on (re)entry; a signal so every
+  // computed that scores a node (stars, reps, counts) reacts to weight changes.
+  readonly scoreWeights = signal<ScoreWeights>(this.scoring.defaults());
+  /** Project ok-score of a base node under the active weights. Replaces the old
+   *  citation-only repScore throughout the OK-Graph. */
+  private okScoreOf(n: CitGraphNode): number {
+    return okScore(n, this.scoreWeights());
+  }
+
+  // The on-graph cluster cards (one per lane). Watched so each is measured for
+  // its content-driven height (see measureCards).
+  @ViewChildren('laneBoxEl') laneBoxEls?: QueryList<ElementRef<HTMLElement>>;
+
   ngOnInit(): void {
     this.loadBookshelf();
+    this.scoreWeights.set(this.scoring.load(this.projectContext.activeProjectId()));
+  }
+
+  ngAfterViewInit(): void {
+    if (typeof ResizeObserver === 'undefined') return;
+    // A card's div is height:auto, so its offsetHeight is the full content height
+    // regardless of how tall the foreignObject clip is — feeding it back as the
+    // foreignObject height can't change the content height, so this never loops.
+    this.cardResizeObserver = new ResizeObserver(entries => {
+      const next = new Map(this.cardHeights());
+      let changed = false;
+      for (const entry of entries) {
+        const el = entry.target as HTMLElement;
+        const attr = el.dataset['cluster'];
+        if (attr == null) continue;
+        const cluster = Number(attr);
+        const h = el.offsetHeight;
+        if (h > 0 && next.get(cluster) !== h) { next.set(cluster, h); changed = true; }
+      }
+      if (changed) this.zone.run(() => this.cardHeights.set(next));
+    });
+    this.observeCards();
+    this.laneBoxEls?.changes.subscribe(() => this.observeCards());
+  }
+
+  ngOnDestroy(): void {
+    this.cardResizeObserver?.disconnect();
+  }
+
+  /** (Re)attach the ResizeObserver to the currently rendered cluster cards. */
+  private observeCards(): void {
+    const ro = this.cardResizeObserver;
+    if (!ro) return;
+    ro.disconnect();
+    this.laneBoxEls?.forEach(ref => ro.observe(ref.nativeElement));
   }
 
   loadBookshelf(): void {
@@ -316,7 +368,7 @@ export class OkGraphComponent implements OnInit {
       return;
     }
 
-    const req = this.demo.enabled()
+    const req = this.mode.isDemo()
       ? this.citgraphSvc.exploreDemo({
           paper_ids: seedIds,
           direction,
@@ -477,7 +529,56 @@ export class OkGraphComponent implements OnInit {
 
   // Settings panel.
   readonly settingsOpen = signal(false);
+  // Summarization info panel ('i' button next to settings).
+  readonly infoOpen = signal(false);
+  // Which sub-page of the info panel is showing: the summarization run stats or
+  // the configuration that produced the OK-Graph.
+  readonly infoTab = signal<'summary' | 'config'>('summary');
   readonly clearConfirmOpen = signal(false);
+
+  /** Formatted summarization stats for the info panel, or null if no run has
+   *  completed yet. Derives total/average time and the model from the service. */
+  readonly summaryInfo = computed(() => {
+    const s = this.summaries.summaryStats();
+    if (!s) return null;
+    const avgMs = s.clusters > 0 ? s.totalMs / s.clusters : 0;
+    return {
+      clusters: s.clusters,
+      totalTime: this.formatDuration(s.totalMs),
+      avgTime: this.formatDuration(avgMs),
+      model: s.model ?? 'Unknown',
+    };
+  });
+
+  /** Configuration used to build/summarize the current OK-Graph: the project
+   *  ok-score weights (drive ranking, stars and top-k selection) plus the
+   *  summarization model and the env-configured concurrency / top-k. */
+  readonly graphConfig = computed(() => {
+    const w = this.scoreWeights();
+    return {
+      weights: [
+        { label: 'Citations', value: w.w_c },
+        { label: 'Public code', value: w.w_code },
+        { label: 'Peer reviewed', value: w.w_peer },
+        { label: 'Dataset', value: w.w_data },
+        { label: 'Repo stars', value: w.w_stars },
+      ],
+      model: this.summaries.summaryStats()?.model ?? '—',
+      concurrency: environment.SUMMARY_CONCURRENCY,
+      topK: environment.SUMMARY_TOP_K,
+    };
+  });
+
+  /** Human-readable elapsed time: "120 ms" under a second, "12.3 s" under a
+   *  minute, "2m 5s" above. */
+  private formatDuration(ms: number): string {
+    if (ms < 1000) return `${Math.round(ms)} ms`;
+    const totalSec = ms / 1000;
+    if (totalSec < 60) return `${totalSec.toFixed(1)} s`;
+    const min = Math.floor(totalSec / 60);
+    const sec = Math.round(totalSec % 60);
+    return `${min}m ${sec}s`;
+  }
   // Star-marker visibility (icons only; nodes stay on the canvas).
   readonly showGoldStars = signal(true);
   readonly showSilverStars = signal(true);
@@ -500,9 +601,19 @@ export class OkGraphComponent implements OnInit {
   // placed just left of its cluster's left-most node, so they stagger
   // horizontally following where each cluster starts.
   readonly staggeredCards = signal(false);
-  // Fixed on-graph cluster card height (px). The card never scrolls and never
-  // resizes with content; the lane simply centres a card of this size.
-  readonly cardHeight = 150;
+  // On-graph cluster card height (px). The card is content-sized so the title
+  // and summary are never truncated: the foreignObject height is driven by the
+  // measured height of each rendered card (see cardHeights / measureCards), with
+  // this value as the pre-measurement fallback used on first paint.
+  readonly cardHeightFallback = 160;
+  // Measured natural height per cluster card, keyed by topCluster. offsetHeight is
+  // used (not getBoundingClientRect) so the canvas zoom transform doesn't skew it.
+  readonly cardHeights = signal<Map<number, number>>(new Map());
+  private cardResizeObserver?: ResizeObserver;
+  // Height the lane uses to centre/size a card; measured value or the fallback.
+  cardHeightFor(topCluster: number): number {
+    return this.cardHeights().get(topCluster) ?? this.cardHeightFallback;
+  }
   // Fixed on-graph cluster card width (px); kept in sync with the foreignObject.
   readonly cardWidth = 300;
   // Default left x for cards when left-aligned (not staggered).
@@ -527,6 +638,9 @@ export class OkGraphComponent implements OnInit {
 
   toggleSettings(): void { this.settingsOpen.update(v => !v); }
   closeSettings(): void { this.settingsOpen.set(false); }
+  toggleInfo(): void { this.infoOpen.update(v => !v); }
+  closeInfo(): void { this.infoOpen.set(false); this.infoTab.set('summary'); }
+  setInfoTab(tab: 'summary' | 'config'): void { this.infoTab.set(tab); }
 
   // Pending cluster/subcluster the user asked to remove via a card's trashcan,
   // awaiting confirmation. Holds the cluster id (at the current view level) and
@@ -571,7 +685,7 @@ export class OkGraphComponent implements OnInit {
     const base = this.state.nodes();
     const n = base.length;
     if (!n) return { gold: Infinity, silver: Infinity };
-    const scores = base.map(b => repScore(b)).sort((a, b) => b - a);
+    const scores = base.map(b => this.okScoreOf(b)).sort((a, b) => b - a);
     const at = (frac: number) => scores[Math.min(n - 1, Math.max(0, Math.ceil(n * frac) - 1))];
     return { gold: at(0.01), silver: at(0.05) };
   });
@@ -702,7 +816,7 @@ export class OkGraphComponent implements OnInit {
     let best = -1, bestScore = -Infinity;
     for (let i = 0; i < comm.length; i++) {
       if (comm[i] !== community) continue;
-      const s = repScore(nodes[i]);
+      const s = this.okScoreOf(nodes[i]);
       if (s > bestScore) { bestScore = s; best = i; }
     }
     return best;
@@ -725,7 +839,7 @@ export class OkGraphComponent implements OnInit {
       level,
       community,
       topCluster: top >= 0 ? this.communitiesAtLevel()(top)[repIndex] : 0,
-      paper: citNodeToPaper(node, repScore(node)),
+      paper: citNodeToPaper(node, this.okScoreOf(node)),
       clusterSize: this.clusterSize(level, community),
     };
   }
@@ -1169,7 +1283,8 @@ export class OkGraphComponent implements OnInit {
       const repTitle = repIndex >= 0 ? (this.baseNodes()[repIndex]?.title ?? '') : '';
       let name = '';
       if (currentTopLevel === -1) {
-        name = repTitle ? (repTitle.length > 30 ? repTitle.substring(0, 30) + '...' : repTitle) : `Paper ${id}`;
+        // Full title — the card height grows to fit, so no truncation needed.
+        name = repTitle || `Paper ${id}`;
       } else {
         name = isMisc ? 'Miscellaneous' : (isInner ? `Subcluster ${id}` : `Cluster ${id}`);
       }
@@ -1184,6 +1299,13 @@ export class OkGraphComponent implements OnInit {
       const totalPapers = this.baseNodes().filter((n, idx) => {
         return passPathFilter(idx) && currentComm[idx] === id;
       }).length;
+
+      // Distinct sub-clusters one level finer than the current view. Only
+      // meaningful when a finer level exists (child level >= 0); at the leaf view
+      // the "sub-clusters" would just be the individual papers.
+      const subClusters = currentTopLevel >= 1
+        ? subclusterCount(currentComm, this.communitiesAtLevel()(currentTopLevel - 1), id)
+        : 0;
 
       const visibleSeeds = placedFiltered.filter(p => {
         const nodeClusterId = currentComm[p.repIndex];
@@ -1200,7 +1322,7 @@ export class OkGraphComponent implements OnInit {
       }).length;
       
       const totalGold = this.baseNodes().filter((n, idx) => {
-        return passPathFilter(idx) && currentComm[idx] === id && this.starFor(repScore(n)) === 'gold';
+        return passPathFilter(idx) && currentComm[idx] === id && this.starFor(this.okScoreOf(n)) === 'gold';
       }).length;
 
       const visibleSilver = placedFiltered.filter(p => {
@@ -1209,7 +1331,7 @@ export class OkGraphComponent implements OnInit {
       }).length;
       
       const totalSilver = this.baseNodes().filter((n, idx) => {
-        return passPathFilter(idx) && currentComm[idx] === id && this.starFor(repScore(n)) === 'silver';
+        return passPathFilter(idx) && currentComm[idx] === id && this.starFor(this.okScoreOf(n)) === 'silver';
       }).length;
 
       let summary: ClusterSummary | undefined = undefined;
@@ -1250,6 +1372,8 @@ export class OkGraphComponent implements OnInit {
         summary,
         isMisc,
         size,
+        subClusters,
+        paperTotal: totalPapers,
         totalPapers: `${visiblePapers} / ${totalPapers}`,
         totalSeeds: `${visibleSeeds} / ${totalSeeds}`,
         totalGoldStars: `${visibleGold} / ${totalGold}`,
@@ -1448,12 +1572,12 @@ export class OkGraphComponent implements OnInit {
   });
   readonly totalGoldStars = computed(() => {
     const visible = this.nodes().filter(n => n.star === 'gold').length;
-    const total = this.baseNodes().filter(n => this.starFor(repScore(n)) === 'gold').length;
+    const total = this.baseNodes().filter(n => this.starFor(this.okScoreOf(n)) === 'gold').length;
     return `${visible} / ${total}`;
   });
   readonly totalSilverStars = computed(() => {
     const visible = this.nodes().filter(n => n.star === 'silver').length;
-    const total = this.baseNodes().filter(n => this.starFor(repScore(n)) === 'silver').length;
+    const total = this.baseNodes().filter(n => this.starFor(this.okScoreOf(n)) === 'silver').length;
     return `${visible} / ${total}`;
   });
 
@@ -1533,10 +1657,10 @@ export class OkGraphComponent implements OnInit {
     const totalSeeds = base.filter((n, i) => passPathFilter(i) && currentComm[i] === id && this.state.initialSeedIds().has(n.paper_id)).length;
 
     const visibleGold = this.nodes().filter(n => n.star === 'gold' && paperClusterMap.get(n.id) === id).length;
-    const totalGold = base.filter((n, i) => passPathFilter(i) && currentComm[i] === id && this.starFor(repScore(n)) === 'gold').length;
+    const totalGold = base.filter((n, i) => passPathFilter(i) && currentComm[i] === id && this.starFor(this.okScoreOf(n)) === 'gold').length;
 
     const visibleSilver = this.nodes().filter(n => n.star === 'silver' && paperClusterMap.get(n.id) === id).length;
-    const totalSilver = base.filter((n, i) => passPathFilter(i) && currentComm[i] === id && this.starFor(repScore(n)) === 'silver').length;
+    const totalSilver = base.filter((n, i) => passPathFilter(i) && currentComm[i] === id && this.starFor(this.okScoreOf(n)) === 'silver').length;
 
     return {
       id,
@@ -1805,7 +1929,7 @@ export class OkGraphComponent implements OnInit {
     for (let L = 0; L <= currentTopLevel; L++) commAtLevel[L] = this.communitiesAtLevel()(L);
 
     const nodeYear = base.map(n => n.year ?? null);
-    const nodeScore = base.map(n => repScore(n));
+    const nodeScore = base.map(n => this.okScoreOf(n));
     const inView = base.map((_, i) => {
       if (!isInner) return true;
       const last = path[path.length - 1];

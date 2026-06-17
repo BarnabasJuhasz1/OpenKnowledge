@@ -1,9 +1,13 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { environment } from '../../../environments/environment';
 import { OkGraphStateService } from './okgraph-state.service';
+import { NotificationService } from './notification.service';
 import { CitGraphNode, CitGraphEdge } from './citgraph.service';
 import { louvain, getCommunitiesAtLevel, LouvainResult } from '../../features/citgraph/louvain';
-import { repScore } from '../../features/okgraph/cit-node';
+import { okScore } from '../../features/okgraph/cit-node';
+import { ProjectScoringService } from './project-scoring.service';
+import { ProjectContextService } from './project-context.service';
+import { ScoreWeights } from '../models/paper.model';
 
 export interface ClusterSummary {
   title: string;
@@ -23,8 +27,13 @@ interface SummaryEvent {
   model?: string | null;
 }
 
-/** How many summary streams run concurrently within one hierarchy level. */
-const CONCURRENCY = 4;
+/** How many summary streams run concurrently within one hierarchy level.
+ *  Configured via SUMMARY_CONCURRENCY (frontend .env → environment). */
+const CONCURRENCY = Math.max(1, Math.floor(environment.SUMMARY_CONCURRENCY ?? 8));
+
+/** How many top-scoring (by ok-score) papers per cluster are sent to the finest
+ *  summarization prompt. Configured via SUMMARY_TOP_K (frontend .env). */
+const TOP_K = Math.max(1, Math.floor(environment.SUMMARY_TOP_K ?? 15));
 
 /**
  * Summarizes every cluster at every hierarchy level in the background, bottom-up:
@@ -41,7 +50,14 @@ const CONCURRENCY = 4;
 @Injectable({ providedIn: 'root' })
 export class ClusterSummaryService {
   private readonly okGraphState = inject(OkGraphStateService);
+  private readonly notify = inject(NotificationService);
+  private readonly scoring = inject(ProjectScoringService);
+  private readonly projectContext = inject(ProjectContextService);
   private readonly baseUrl = `${environment.BACKEND_URL}/api`;
+
+  // Active project's ok-score weights, captured per summarization run so the
+  // top-k paper selection and representative pick rank by the project ok-score.
+  private weights: ScoreWeights = this.scoring.defaults();
 
   private store = new Map<string, ClusterSummary>();
   private rawCommunityMap = new Map<string, number>();
@@ -50,6 +66,12 @@ export class ClusterSummaryService {
 
   readonly progress = signal<{ done: number; total: number }>({ done: 0, total: 0 });
   readonly running = signal(false);
+
+  /** Stats from the most recently completed summarization run, for the OK-Graph
+   *  info panel. Null until a run finishes (or after a reset). */
+  readonly summaryStats = signal<{ clusters: number; totalMs: number; model: string | null } | null>(null);
+  // Model name reported by the streaming endpoint during the current run.
+  private lastModel: string | null = null;
 
   readonly percent = computed(() => {
     const { done, total } = this.progress();
@@ -101,6 +123,8 @@ export class ClusterSummaryService {
     this.version.update(v => v + 1);
     this.progress.set({ done: 0, total: 0 });
     this.running.set(false);
+    this.summaryStats.set(null);
+    this.lastModel = null;
   }
 
   private set(key: string, value: ClusterSummary): void {
@@ -122,6 +146,9 @@ export class ClusterSummaryService {
     this.rawCommunityMap = new Map();
     this.rawTopLevel.set(-1);
     this.version.update(v => v + 1);
+    this.summaryStats.set(null);
+    this.lastModel = null;
+    this.weights = this.scoring.load(this.projectContext.activeProjectId());
 
     const result = this.cluster(nodes, edges, resolution, maxLevels);
     const levels = result.levels;
@@ -158,6 +185,7 @@ export class ClusterSummaryService {
     const total = membersAt.reduce((s, m) => s + m.size, 0);
     this.progress.set({ done: 0, total });
     this.running.set(true);
+    const startTime = Date.now();
 
     // Bottom-up: a level must finish before the next (higher needs child summaries).
     for (let L = 0; L < levels.length; L++) {
@@ -186,7 +214,28 @@ export class ClusterSummaryService {
       }, myRun);
     }
 
-    if (myRun === this.runId) this.running.set(false);
+    if (myRun === this.runId) {
+      this.running.set(false);
+      // Record stats and announce completion only for runs that actually
+      // generated something and weren't superseded/cancelled (myRun guard above).
+      if (total > 0) {
+        const totalMs = Date.now() - startTime;
+        this.summaryStats.set({ clusters: total, totalMs, model: this.lastModel });
+        this.notify.show(
+          `Cluster summaries ready — generated ${total} summar${total === 1 ? 'y' : 'ies'} in ${this.formatDuration(totalMs)}.`,
+          5000,
+        );
+      }
+    }
+  }
+
+  /** Human-readable elapsed time: "12.3s" under a minute, "2m 5s" above. */
+  private formatDuration(ms: number): string {
+    const totalSec = ms / 1000;
+    if (totalSec < 60) return `${totalSec.toFixed(1)}s`;
+    const min = Math.floor(totalSec / 60);
+    const sec = Math.round(totalSec % 60);
+    return `${min}m ${sec}s`;
   }
 
   /** Reproduce the Clustering view's Louvain run over the shared raw graph. */
@@ -222,7 +271,7 @@ export class ClusterSummaryService {
     let best = members[0];
     let bestScore = -Infinity;
     for (const i of members) {
-      const s = repScore(nodes[i]);
+      const s = okScore(nodes[i], this.weights);
       if (s > bestScore) { bestScore = s; best = i; }
     }
     return nodes[best]?.title ?? '';
@@ -239,7 +288,13 @@ export class ClusterSummaryService {
     key: string,
     myRun: number,
   ): Promise<ClusterSummary> {
-    const papers: PaperPayload[] = members.map(i => {
+    // Only the TOP_K highest ok-score papers are sent to the prompt: large
+    // clusters would otherwise produce huge, slow prompts. Ranking uses the
+    // project ok-score under the active weights (see okScore in cit-node.ts).
+    const topMembers = [...members]
+      .sort((a, b) => okScore(nodes[b], this.weights) - okScore(nodes[a], this.weights))
+      .slice(0, TOP_K);
+    const papers: PaperPayload[] = topMembers.map(i => {
       const node = nodes[i];
       const archetypes = [node.predicted_main_archetype, node.predicted_second_tier_archetype]
         .filter((a): a is string => !!a && a !== 'None');
@@ -302,6 +357,8 @@ export class ClusterSummaryService {
 
     const handle = (evt: SummaryEvent): void => {
       if (evt.done) {
+        // Remember which model produced the summaries (shown in the info panel).
+        if (evt.model) this.lastModel = evt.model;
         final = {
           title: evt.title || repTitle,
           summary: evt.summary ?? text,
