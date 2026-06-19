@@ -19,10 +19,22 @@ import { NotificationService } from '../../core/services/notification.service';
 import { parseQuery } from '../../shared/utils/query-parser';
 import { matchesNodeKeywords } from '../../shared/utils/keyword-match';
 import { ProjectContextService } from '../../core/services/project-context.service';
-import { ProjectGraphSettingsService } from '../../core/services/project-graph-settings.service';
+import { ADMIN_GRAPH_CONFIG } from '../../core/config/admin-graph-config';
 import { ProjectScoringService } from '../../core/services/project-scoring.service';
 import { BookshelfService, BookshelfItem } from '../../core/services/bookshelf.service';
 import { environment } from '../../../environments/environment';
+import { Subscription } from 'rxjs';
+
+export interface ExplorationProgress {
+  phase: 'idle' | 'building' | 'clustering' | 'summarizing' | 'done' | 'error';
+  percent: number;
+  papersCount?: number;
+  clustersCount?: number;
+  summariesDone?: number;
+  summariesTotal?: number;
+  error?: string;
+}
+
 
 interface Blob {
   topCluster: number;
@@ -104,7 +116,6 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
   private readonly mode = inject(SearchModeService);
   private readonly notify = inject(NotificationService);
   private readonly projectContext = inject(ProjectContextService);
-  private readonly graphStore = inject(ProjectGraphSettingsService);
   private readonly scoring = inject(ProjectScoringService);
   private readonly router = inject(Router);
   private readonly bookshelf = inject(BookshelfService);
@@ -157,6 +168,12 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.cardResizeObserver?.disconnect();
+    if (this.progressIntervalId) {
+      clearInterval(this.progressIntervalId);
+    }
+    if (this.exploreSub) {
+      this.exploreSub.unsubscribe();
+    }
   }
 
   /** (Re)attach the ResizeObserver to the currently rendered cluster cards. */
@@ -187,8 +204,56 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   // Exploration states
-  readonly explorationLoading = signal(false);
+  readonly explorationProgress = signal<ExplorationProgress | null>(null);
+  readonly explorationLoading = computed(() => {
+    const prog = this.explorationProgress();
+    return prog ? (prog.phase === 'building' || prog.phase === 'clustering' || prog.phase === 'summarizing') : false;
+  });
   readonly explorationError = signal<string | null>(null);
+
+  private summarizationStarted = false;
+  private exploreSub?: Subscription;
+  private progressIntervalId: any = null;
+
+  readonly progressPercent = computed(() => {
+    const prog = this.explorationProgress();
+    if (!prog) return 0;
+    if (prog.phase === 'building') {
+      return prog.percent;
+    }
+    if (prog.phase === 'clustering') {
+      return 35;
+    }
+    if (prog.phase === 'summarizing') {
+      const sumPercent = this.summaries.percent();
+      return Math.min(99, 45 + Math.round(sumPercent * 0.54));
+    }
+    if (prog.phase === 'done') {
+      return 100;
+    }
+    return 0;
+  });
+
+  closeProgressModal(): void {
+    this.explorationProgress.set(null);
+  }
+
+  cancelExploration(): void {
+    if (this.progressIntervalId) {
+      clearInterval(this.progressIntervalId);
+      this.progressIntervalId = null;
+    }
+    if (this.exploreSub) {
+      this.exploreSub.unsubscribe();
+      this.exploreSub = undefined;
+    }
+    this.summaries.clear();
+    this.state.clear();
+    this.explorationProgress.set(null);
+    this.explorationError.set(null);
+    this.summarizationStarted = false;
+    this.notify.show('Graph building cancelled.');
+  }
 
   // The exploration direction the user has picked (null until one is selected).
   // Picking a direction only highlights the button; the actual exploration is
@@ -261,17 +326,23 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
 
-    this.explorationLoading.set(true);
     this.explorationError.set(null);
+    this.explorationProgress.set({
+      phase: 'building',
+      percent: 5,
+      papersCount: 0,
+    });
 
     const seedIds = seeds.map(p => paperId(p));
     const keywords = parseQuery(this.searchState.rawQuery());
 
-    const projectId = this.projectContext.activeProjectId();
-    const settings = this.graphStore.load(projectId);
-    const kHops = settings.kHops;
-    const maxPerHop = settings.maxPerHop !== null ? settings.maxPerHop : 100000;
-    const resolution = settings.resolution;
+    // Graph-build knobs come from the admin config file (core/config/
+    // admin-graph-config.ts) — the single, code-level place to tune them. There
+    // is intentionally no UI control or per-project override here.
+    const kHops = ADMIN_GRAPH_CONFIG.K_HOPS;
+    const maxPerHop = ADMIN_GRAPH_CONFIG.MAX_PER_HOP;
+    const topKPerPaper = ADMIN_GRAPH_CONFIG.TOP_K_PER_PAPER;
+    const resolution = ADMIN_GRAPH_CONFIG.RESOLUTION;
 
     if (!this.useOnlySelected()) {
       // Build citation graph using only the retrieved papers on the client side
@@ -341,6 +412,12 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
         finalEdges = edges.filter(e => kept.has(e.source) && kept.has(e.target));
       }
 
+      this.explorationProgress.set({
+        phase: 'clustering',
+        percent: 35,
+        papersCount: finalNodes.length,
+      });
+
       const indexOf = new Map(finalNodes.map((n, i) => [n.paper_id, i]));
       const mappedEdges = finalEdges
         .map(e => ({ source: indexOf.get(e.source) ?? -1, target: indexOf.get(e.target) ?? -1 }))
@@ -349,6 +426,17 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       const louvainResult = louvain(finalNodes.length, mappedEdges, {
         resolution: resolution,
         maxLevels: 10,
+      });
+
+      const topLvl = louvainResult.levels.length - 1;
+      const topComm = getCommunitiesAtLevel(louvainResult.levels, finalNodes.length, topLvl);
+      const clustersCount = new Set(topComm).size;
+
+      this.explorationProgress.set({
+        phase: 'summarizing',
+        percent: 45,
+        papersCount: finalNodes.length,
+        clustersCount,
       });
 
       this.state.setHierarchy({
@@ -363,10 +451,24 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
         initialSeedIds: [],
       });
 
-      this.explorationLoading.set(false);
       this.notify.show(`Successfully built surrounding graph with ${finalNodes.length} nodes!`);
       return;
     }
+
+    let fakeProgressVal = 5;
+    if (this.progressIntervalId) {
+      clearInterval(this.progressIntervalId);
+    }
+    this.progressIntervalId = setInterval(() => {
+      const prog = this.explorationProgress();
+      if (prog && prog.phase === 'building') {
+        fakeProgressVal = Math.min(33, fakeProgressVal + Math.random() * 5);
+        this.explorationProgress.update(p => p ? { ...p, percent: Math.round(fakeProgressVal) } : null);
+      } else {
+        clearInterval(this.progressIntervalId);
+        this.progressIntervalId = null;
+      }
+    }, 500);
 
     const req = this.mode.isDemo()
       ? this.citgraphSvc.exploreDemo({
@@ -375,7 +477,8 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
           include_non_matching: !this.keywordFiltering(),
           keywords,
           k: kHops,
-          max_per_hop: maxPerHop
+          max_per_hop: maxPerHop,
+          top_k_per_paper: topKPerPaper
         })
       : this.citgraphSvc.explore({
           paper_ids: seedIds,
@@ -383,19 +486,39 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
           include_non_matching: !this.keywordFiltering(),
           keywords,
           k: kHops,
-          max_per_hop: maxPerHop
+          max_per_hop: maxPerHop,
+          top_k_per_paper: topKPerPaper
         });
 
-    req.subscribe({
+    if (this.exploreSub) {
+      this.exploreSub.unsubscribe();
+    }
+
+    this.exploreSub = req.subscribe({
       next: (res) => {
+        if (this.progressIntervalId) {
+          clearInterval(this.progressIntervalId);
+          this.progressIntervalId = null;
+        }
+        this.exploreSub = undefined;
         const baseNodes = res.nodes;
         const edges = res.edges;
 
         if (!baseNodes.length) {
-          this.explorationLoading.set(false);
+          this.explorationProgress.set({
+            phase: 'error',
+            percent: 0,
+            error: 'No surrounding papers found matching your configuration.'
+          });
           this.explorationError.set('No surrounding papers found matching your configuration.');
           return;
         }
+
+        this.explorationProgress.set({
+          phase: 'clustering',
+          percent: 35,
+          papersCount: baseNodes.length,
+        });
 
         // Louvain re-indexing
         const indexOf = new Map(baseNodes.map((n, i) => [n.paper_id, i]));
@@ -411,6 +534,17 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
           maxLevels: 10,
         });
 
+        const topLvl = louvainResult.levels.length - 1;
+        const topComm = getCommunitiesAtLevel(louvainResult.levels, baseNodes.length, topLvl);
+        const clustersCount = new Set(topComm).size;
+
+        this.explorationProgress.set({
+          phase: 'summarizing',
+          percent: 45,
+          papersCount: baseNodes.length,
+          clustersCount,
+        });
+
         this.state.setHierarchy({
           nodes: baseNodes,
           louvain: louvainResult,
@@ -423,12 +557,21 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
           initialSeedIds: seedIds,
         });
 
-        this.explorationLoading.set(false);
         this.notify.show(`Successfully built surrounding graph with ${baseNodes.length} nodes!`);
       },
       error: (err) => {
-        this.explorationLoading.set(false);
-        this.explorationError.set(err.error?.detail || err.message || 'An error occurred while exploring literature.');
+        if (this.progressIntervalId) {
+          clearInterval(this.progressIntervalId);
+          this.progressIntervalId = null;
+        }
+        this.exploreSub = undefined;
+        const errMsg = err.error?.detail || err.message || 'An error occurred while exploring literature.';
+        this.explorationProgress.set({
+          phase: 'error',
+          percent: 0,
+          error: errMsg,
+        });
+        this.explorationError.set(errMsg);
         this.notify.show('Failed to build surrounding graph');
       }
     });
@@ -677,6 +820,18 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   /**
+   * Seed test for a raw base (cit-graph) node. The visible-seed counts test
+   * `paperId(placed.paper)`, where `.paper` came from `citNodeToPaper()`; the
+   * total-seed counts must use the same id derivation. Testing the raw
+   * `n.paper_id` instead misses seeds keyed by DOI/arXiv id — `initialSeedIds`
+   * stores `paperId()` values (DOI-priority), not backend node ids — which is
+   * why the seed total always read 0.
+   */
+  private isSeedBaseNode(n: CitGraphNode): boolean {
+    return this.state.initialSeedIds().has(paperId(citNodeToPaper(n, 0)));
+  }
+
+  /**
    * Gold / silver ok-score thresholds over ALL papers in the graph (the active
    * base-node set, which already reflects the keyword filter) — not just the
    * placed/visible nodes. Gold = top 1%, silver = top 5%.
@@ -805,6 +960,32 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       } else {
         // A paper was deselected. Automatically collapse the panel.
         this.panelCollapsed.set(true);
+      }
+    }, { allowSignalWrites: true });
+
+    // Track summarization progress to transition to 'done' when it finishes
+    effect(() => {
+      const prog = this.explorationProgress();
+      if (prog && prog.phase === 'summarizing') {
+        const isRunning = this.summaries.running();
+        const progressStats = this.summaries.progress();
+        if (isRunning) {
+          this.summarizationStarted = true;
+        }
+        if (this.summarizationStarted && !isRunning) {
+          this.explorationProgress.set({
+            ...prog,
+            phase: 'done',
+            percent: 100,
+          });
+          this.summarizationStarted = false;
+        } else if (!this.summarizationStarted && !isRunning && progressStats.total === 0) {
+          this.explorationProgress.set({
+            ...prog,
+            phase: 'done',
+            percent: 100,
+          });
+        }
       }
     }, { allowSignalWrites: true });
   }
@@ -1313,7 +1494,7 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       }).length;
       
       const totalSeeds = this.baseNodes().filter((n, idx) => {
-        return passPathFilter(idx) && currentComm[idx] === id && this.state.initialSeedIds().has(n.paper_id);
+        return passPathFilter(idx) && currentComm[idx] === id && this.isSeedBaseNode(n);
       }).length;
 
       const visibleGold = placedFiltered.filter(p => {
@@ -1567,7 +1748,7 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
   });
   readonly totalSeeds = computed(() => {
     const visible = this.nodes().filter(n => this.isSeedNode(n)).length;
-    const total = this.baseNodes().filter(n => this.state.initialSeedIds().has(n.paper_id)).length;
+    const total = this.baseNodes().filter(n => this.isSeedBaseNode(n)).length;
     return `${visible} / ${total}`;
   });
   readonly totalGoldStars = computed(() => {
@@ -1654,7 +1835,7 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     const totalPapers = base.filter((n, i) => passPathFilter(i) && currentComm[i] === id).length;
 
     const visibleSeeds = this.nodes().filter(n => this.isSeedNode(n) && paperClusterMap.get(n.id) === id).length;
-    const totalSeeds = base.filter((n, i) => passPathFilter(i) && currentComm[i] === id && this.state.initialSeedIds().has(n.paper_id)).length;
+    const totalSeeds = base.filter((n, i) => passPathFilter(i) && currentComm[i] === id && this.isSeedBaseNode(n)).length;
 
     const visibleGold = this.nodes().filter(n => n.star === 'gold' && paperClusterMap.get(n.id) === id).length;
     const totalGold = base.filter((n, i) => passPathFilter(i) && currentComm[i] === id && this.starFor(this.okScoreOf(n)) === 'gold').length;
@@ -2125,6 +2306,7 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   showExpandButtons(node: RenderNode): boolean {
+    if (node.rings.length === 0) return false;
     return this.selectedNodeId() === node.id || this.hoveredNodeId() === node.id;
   }
 
