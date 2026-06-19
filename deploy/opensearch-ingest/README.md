@@ -65,7 +65,7 @@ Serving search at runtime does not need Python — see the reboot checklist belo
 The loader uses the **BigQuery Storage Read API** (parallel Arrow read streams, no per-page
 query overhead) and `parallel_bulk` (concurrent indexing). Reading and indexing overlap.
 ```
-python scripts/ingest_opensearch.py                 # full corpus (resumable)
+python scripts/ingest_opensearch.py                 # full corpus (checkpointed, resumable)
 python scripts/ingest_opensearch.py --max-docs 5000 # quick smoke test first
 ```
 Tuning (raise these to push throughput; mind instance CPU/RAM and OpenSearch heap):
@@ -74,10 +74,32 @@ python scripts/ingest_opensearch.py --read-streams 16 --index-threads 12 --chunk
 ```
 - `--read-streams` parallel read streams (server may return fewer), `--index-threads` bulk
   indexing threads, `--chunk-size` docs per bulk request.
-- `_id = corpusid`, so re-running is idempotent. Storage Read streams are **unordered**, so
-  resume with `--resume-from <corpusid>` (applies `corpusid > N` server-side) using a value
-  you know is fully done — or just re-run; idempotent `_id` makes any overlap harmless.
-- The loader disables `refresh_interval` during load and restores it + refreshes at the end.
+- The loader disables `refresh_interval` during load and **always** restores it + refreshes at
+  the end (even on error), so a crash never leaves the index unrefreshable.
+
+### Checkpointing & resume (survives crashes)
+`_id = corpusid` makes every write idempotent, but Storage Read streams are **unordered**, so
+the load is checkpointed by **corpusid bands** instead of a cursor. The corpusid space is split
+into fixed-width half-open ranges; each band is read with a server-side `row_restriction` and
+recorded as done (in a small JSON checkpoint) only once fully indexed. **A crash resumes at the
+first unfinished band** — completed bands are never re-read.
+```
+python scripts/ingest_opensearch.py                       # resumes automatically from the checkpoint
+python scripts/ingest_opensearch.py --reconcile           # FIRST run on a partially-loaded index:
+                                                          #   mark bands that are already fully
+                                                          #   present as done, so they aren't redone
+python scripts/ingest_opensearch.py --band-width 1000000  # finer checkpoint granularity (more bands)
+```
+- `--band-width` (default 2,000,000) — the checkpoint unit; ~118 bands for the 235M corpus.
+- `--checkpoint <path>` — checkpoint file (default `scripts/.ingest_checkpoint.json`). Delete it
+  to force a full re-ingest. Changing `--band-width` invalidates and resets it automatically.
+- `--band-retries` (default 5) — a transient network / BigQuery / OpenSearch error retries the
+  band with exponential backoff; if a band still fails, the run stops **without** marking it done
+  so the next run resumes exactly there.
+- `--reconcile` compares per-band BigQuery vs OpenSearch counts and pre-marks already-complete
+  bands — run it once on an index that was partially loaded before checkpointing existed.
+- `--resume-from <corpusid>` is a **legacy** lower bound (skips bands at/below it); the checkpoint
+  supersedes it. Tip: run under `tmux`/`nohup` (or systemd) so the load survives a dropped SSH session.
 
 ## 6. Point the backend at it
 On the backend host set `OPENSEARCH_URL=http://<instance-internal-ip>:9200` (and

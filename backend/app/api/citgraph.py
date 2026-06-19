@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -149,16 +148,14 @@ async def build_graph(
     project_id: int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
-    api_key = os.getenv("SEMANTIC_SCHOLAR_API_KEY")
     try:
         result = await build_citation_graph(
             paper_id=body.paper_id,
             k=body.k,
             max_per_hop=body.max_per_hop,
-            api_key=api_key,
         )
     except UpstreamError as e:
-        # Transient upstream failure (rate limit / network) — not a missing paper.
+        # Transient hosted-backend failure (OpenSearch / BigQuery) — not a missing paper.
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Failed to build graph: {e}")
@@ -202,7 +199,6 @@ async def explore_graph(
     project_id: int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
-    api_key = os.getenv("SEMANTIC_SCHOLAR_API_KEY")
     try:
         result = await explore_citation_graph(
             seeds=body.paper_ids,
@@ -211,7 +207,6 @@ async def explore_graph(
             keywords=body.keywords,
             k=body.k,
             max_per_hop=body.max_per_hop,
-            api_key=api_key,
         )
     except UpstreamError as e:
         raise HTTPException(status_code=503, detail=str(e))

@@ -159,6 +159,128 @@ class OpenSearchEngine:
         """
         return bool(self._get_client().ping())
 
+    def resolve_corpusids(self, seeds: list[str]) -> dict[str, int]:
+        """Map each seed string to a corpusid using indexed fields only.
+
+        Resolution rules (so the citation graph never needs the public S2 API):
+
+        * a bare integer is taken to be a corpusid directly;
+        * a whitespace-free non-integer (DOI, arXiv id, …) is matched against the
+          indexed ``doi`` / ``arxiv_id`` keyword fields (case-insensitively);
+        * a multi-word string is treated as a title and matched against ``title``.
+
+        Only seeds that resolve are returned; unknown ids (e.g. legacy S2 SHA
+        hashes, which are not stored locally) are silently dropped.
+
+        Raises:
+            OpenSearchNotConfiguredError: if OpenSearch is unavailable/unconfigured.
+            OpenSearchSearchError: if a lookup request fails.
+        """
+        client = self._get_client()
+        resolved: dict[str, int] = {}
+        identifiers: list[str] = []
+        titles: list[str] = []
+        for seed in seeds:
+            s = (seed or "").strip()
+            if not s:
+                continue
+            if s.isdigit():
+                resolved[seed] = int(s)
+            elif any(c.isspace() for c in s):
+                titles.append(seed)
+            else:
+                identifiers.append(seed)
+
+        if identifiers:
+            # One query for all identifier seeds: match either keyword field, then map
+            # the returned doi/arxiv_id back to the originating seed (case-insensitive).
+            lowered = [s.strip().lower() for s in identifiers]
+            body = {
+                "query": {
+                    "bool": {
+                        "should": [
+                            {"terms": {"doi": lowered}},
+                            {"terms": {"arxiv_id": lowered}},
+                        ],
+                        "minimum_should_match": 1,
+                    }
+                },
+                "size": min(len(identifiers), _MAX_RESULT_WINDOW),
+                "_source": ["corpusid", "doi", "arxiv_id"],
+                "track_total_hits": False,
+            }
+            try:
+                resp = client.search(index=self.index, body=body)
+            except Exception as exc:
+                raise OpenSearchSearchError(f"OpenSearch seed lookup failed: {exc}") from exc
+            by_key: dict[str, int] = {}
+            for hit in resp.get("hits", {}).get("hits", []):
+                src = hit.get("_source", {})
+                cid = src.get("corpusid")
+                if cid is None:
+                    continue
+                for field in ("doi", "arxiv_id"):
+                    val = src.get(field)
+                    if val:
+                        by_key[str(val).lower()] = int(cid)
+            for seed in identifiers:
+                cid = by_key.get(seed.strip().lower())
+                if cid is not None:
+                    resolved[seed] = cid
+
+        for seed in titles:
+            body = {
+                "query": {"match": {"title": seed.strip()}},
+                "size": 1,
+                "_source": ["corpusid"],
+                "track_total_hits": False,
+            }
+            try:
+                resp = client.search(index=self.index, body=body)
+            except Exception as exc:
+                raise OpenSearchSearchError(f"OpenSearch seed lookup failed: {exc}") from exc
+            hits = resp.get("hits", {}).get("hits", [])
+            if hits:
+                cid = hits[0].get("_source", {}).get("corpusid")
+                if cid is not None:
+                    resolved[seed] = int(cid)
+
+        return resolved
+
+    def fetch_nodes_by_corpusid(self, corpusids: list[int]) -> dict[int, Paper]:
+        """Batch-fetch papers by corpusid (OpenSearch only).
+
+        corpusids absent from the index are simply omitted from the result — the
+        caller drops their nodes/edges. Chunked so we never approach the result
+        window even for a large frontier.
+
+        Raises:
+            OpenSearchNotConfiguredError: if OpenSearch is unavailable/unconfigured.
+            OpenSearchSearchError: if a fetch request fails.
+        """
+        client = self._get_client()
+        out: dict[int, Paper] = {}
+        unique = list({int(c) for c in corpusids})
+        chunk = 1000
+        for start in range(0, len(unique), chunk):
+            ids = unique[start:start + chunk]
+            body = {
+                "query": {"terms": {"corpusid": ids}},
+                "size": len(ids),
+                "_source": _SOURCE_FIELDS,
+                "track_total_hits": False,
+            }
+            try:
+                resp = client.search(index=self.index, body=body)
+            except Exception as exc:
+                raise OpenSearchSearchError(f"OpenSearch node fetch failed: {exc}") from exc
+            for hit in resp.get("hits", {}).get("hits", []):
+                src = hit.get("_source", {})
+                cid = src.get("corpusid")
+                if cid is not None:
+                    out[int(cid)] = self._hit_to_paper(src)
+        return out
+
     def searchable_count(self) -> int:
         """Number of documents currently searchable in the index.
 

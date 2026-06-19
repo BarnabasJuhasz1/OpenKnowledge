@@ -246,3 +246,66 @@ def test_iter_search_is_lazy(monkeypatch):
     first = next(it)
     assert first.semantic_scholar_id == "0"
     assert started["n"] == 1  # only one hit pulled so far
+
+
+# ── seed resolution & node hydration (citation graph support) ─────────────────
+
+class _RoutingClient:
+    """Routes search() by query shape: identifier terms / title match / corpusid terms."""
+
+    def __init__(self, identifier_hits=None, title_hits=None, node_hits=None):
+        self._identifier_hits = identifier_hits or []
+        self._title_hits = title_hits or []
+        self._node_hits = node_hits or []
+        self.search_calls = 0
+
+    def search(self, index=None, body=None):
+        self.search_calls += 1
+        q = body["query"]
+        if "bool" in q:  # identifier lookup (should: terms on doi/arxiv_id)
+            hits = self._identifier_hits
+        elif "match" in q:  # title lookup
+            hits = self._title_hits
+        elif "terms" in q and "corpusid" in q["terms"]:  # node hydration
+            ids = set(q["terms"]["corpusid"])
+            hits = [h for h in self._node_hits if h.get("corpusid") in ids]
+        else:  # pragma: no cover
+            hits = []
+        return {"hits": {"hits": [{"_source": s} for s in hits]}}
+
+
+def test_resolve_corpusids_integer_passthrough():
+    engine = _make_engine(_RoutingClient())
+    assert engine.resolve_corpusids(["12345"]) == {"12345": 12345}
+
+
+def test_resolve_corpusids_doi_and_title():
+    client = _RoutingClient(
+        identifier_hits=[{"corpusid": 100, "doi": "10.5/xyz", "arxiv_id": None}],
+        title_hits=[{"corpusid": 200}],
+    )
+    engine = _make_engine(client)
+    out = engine.resolve_corpusids(["10.5/XYZ", "Attention Is All You Need", "nope-id"])
+    # DOI resolves case-insensitively; title resolves via match; unknown id is dropped.
+    assert out == {"10.5/XYZ": 100, "Attention Is All You Need": 200}
+
+
+def test_fetch_nodes_by_corpusid_maps_and_chunks():
+    node_hits = [
+        {"corpusid": i, "title": f"P{i}", "authors": [], "publication_types": []}
+        for i in range(1500)
+    ]
+    client = _RoutingClient(node_hits=node_hits)
+    engine = _make_engine(client)
+    out = engine.fetch_nodes_by_corpusid(list(range(1500)))
+    assert len(out) == 1500
+    assert out[7].title == "P7"
+    assert out[7].semantic_scholar_id == "7"
+    assert client.search_calls == 2  # chunked at 1000
+
+
+def test_fetch_nodes_omits_missing():
+    client = _RoutingClient(node_hits=[{"corpusid": 1, "title": "only", "authors": [], "publication_types": []}])
+    engine = _make_engine(client)
+    out = engine.fetch_nodes_by_corpusid([1, 2, 3])
+    assert set(out) == {1}
