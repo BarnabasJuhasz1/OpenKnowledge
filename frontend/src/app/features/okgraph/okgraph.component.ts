@@ -2458,15 +2458,28 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
  
   getBreadcrumbName(step: { level: number; clusterId: number }): string {
     const top = this.topLevel();
+    const summary = this.summaries.summaryAt(step.level, step.clusterId);
+    const summaryTitle = summary?.title ? summary.title.trim() : '';
+
     if (step.level === top) {
-      return step.clusterId === this.miscTopCluster() ? 'Miscellaneous' : `Cluster ${step.clusterId}`;
-    }
-    if (step.level === 0) {
-      const repIndex = this.repIndexOfCluster(0, step.clusterId);
+      if (step.clusterId === this.miscTopCluster()) {
+        return 'Miscellaneous';
+      }
+      if (summaryTitle) {
+        return `Cluster ${step.clusterId} (${summaryTitle})`;
+      }
+      const repIndex = this.repIndexOfCluster(step.level, step.clusterId);
       const repTitle = repIndex >= 0 ? (this.baseNodes()[repIndex]?.title ?? '') : '';
-      return repTitle ? `Subcluster ${step.clusterId} (${repTitle.substring(0, 15)}...)` : `Subcluster ${step.clusterId}`;
+      return repTitle ? `Cluster ${step.clusterId} (${repTitle})` : `Cluster ${step.clusterId}`;
     }
-    return `Subcluster ${step.clusterId}`;
+
+    // Subclusters
+    if (summaryTitle) {
+      return `Subcluster ${step.clusterId} (${summaryTitle})`;
+    }
+    const repIndex = this.repIndexOfCluster(step.level, step.clusterId);
+    const repTitle = repIndex >= 0 ? (this.baseNodes()[repIndex]?.title ?? '') : '';
+    return repTitle ? `Subcluster ${step.clusterId} (${repTitle})` : `Subcluster ${step.clusterId}`;
   }
 
   // --- transition animation helpers -------------------------------------------
