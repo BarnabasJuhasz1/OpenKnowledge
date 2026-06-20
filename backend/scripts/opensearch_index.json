@@ -31,7 +31,13 @@
       "journal":                  { "type": "keyword" },
       "authors":                  { "type": "keyword" },
       "fields_of_study":          { "type": "keyword" },
-      "publication_types":        { "type": "keyword" }
+      "publication_types":        { "type": "keyword" },
+      "predicted_main_archetype":        { "type": "keyword" },
+      "predicted_second_tier_archetype": { "type": "keyword" },
+      "has_public_code":          { "type": "boolean" },
+      "code_url":                 { "type": "keyword", "index": false },
+      "repo_stars":               { "type": "integer" },
+      "has_dataset":              { "type": "boolean" }
     }
   }
 }

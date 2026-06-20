@@ -95,10 +95,15 @@ class BigQueryCitationGraph:
         from google.cloud import bigquery
 
         other_col = "citedcorpusid" if partition_col == "citingcorpusid" else "citingcorpusid"
+        # Rank each source paper's edges by the *neighbour's* citation count (the ok-score
+        # proxy, denormalized into ``neighbor_citationcount`` on both edge tables) so the
+        # per-source ``cap`` keeps the top-K most-cited neighbours instead of an arbitrary
+        # id order. ``{other_col}`` is a deterministic tie-break.
         sql = (
             f"SELECT citingcorpusid, citedcorpusid FROM {self._table(table)} "
             f"WHERE {partition_col} IN UNNEST(@ids) "
-            f"QUALIFY ROW_NUMBER() OVER (PARTITION BY {partition_col} ORDER BY {other_col}) <= @cap"
+            f"QUALIFY ROW_NUMBER() OVER (PARTITION BY {partition_col} "
+            f"ORDER BY neighbor_citationcount DESC, {other_col}) <= @cap"
         )
         job_config = bigquery.QueryJobConfig(
             query_parameters=[

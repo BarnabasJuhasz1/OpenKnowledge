@@ -1,0 +1,140 @@
+<div class="composer">
+  <!-- Mode tabs: Keywords / Description / BibTeX -->
+  <div class="composer__tabs" role="tablist" aria-label="Research input mode">
+    @for (t of tabs; track t.id) {
+      <button
+        type="button"
+        role="tab"
+        class="composer__tab"
+        [class.composer__tab--active]="mode() === t.id"
+        [attr.aria-selected]="mode() === t.id"
+        (click)="setMode(t.id)"
+      >
+        {{ t.label }}
+      </button>
+    }
+  </div>
+
+  <!-- Body: swaps with the selected mode -->
+  <div class="composer__field">
+    <div class="composer__row">
+      @switch (mode()) {
+        @case ('keywords') {
+          <textarea
+            class="composer__textarea"
+            [value]="query()"
+            (input)="query.set($any($event.target).value)"
+            (keydown)="onKeydown($event)"
+            placeholder="Search with keywords or a boolean query, e.g. (graph OR network) AND citation"
+            rows="1"
+            [disabled]="loading"
+          ></textarea>
+        }
+        @case ('description') {
+          <textarea
+            class="composer__textarea"
+            [ngModel]="prompt()"
+            (ngModelChange)="prompt.set($event)"
+            placeholder="Describe your research — AI drafts a boolean query you can review"
+            rows="1"
+            [disabled]="generating()"
+          ></textarea>
+        }
+        @case ('bibtex') {
+          <div
+            class="composer__drop"
+            [class.composer__drop--active]="dragging()"
+            [class.composer__drop--filled]="bibName()"
+            (dragover)="onDragOver($event)"
+            (dragleave)="onDragLeave($event)"
+            (drop)="onDrop($event)"
+          >
+            <input
+              #fileInput
+              type="file"
+              accept=".bib"
+              class="composer__file"
+              (change)="onFileSelected($event)"
+            />
+            @if (bibName(); as name) {
+              <span class="material-symbols-outlined composer__drop-icon">description</span>
+              <span class="composer__drop-name" [title]="name">{{ name }}</span>
+              <button type="button" class="composer__drop-clear" (click)="clearBib()" title="Remove file">
+                <span class="material-symbols-outlined">close</span>
+              </button>
+            } @else {
+              <span class="material-symbols-outlined composer__drop-icon">upload_file</span>
+              <span class="composer__drop-text">
+                Drop a <strong>.bib</strong> file
+                or <button type="button" class="composer__drop-browse" (click)="fileInput.click()">browse</button>
+              </span>
+            }
+          </div>
+        }
+      }
+
+      <!-- Right-hand actions. The Library button stays mounted in every mode
+           (made inert outside Keywords) so the input box width never shifts. -->
+      <div class="composer__actions">
+        <button
+          class="composer__icon-btn composer__icon-btn--library"
+          [class.composer__icon-btn--ghost]="mode() !== 'keywords'"
+          [class.composer__icon-btn--active]="shelfOpen()"
+          [disabled]="mode() !== 'keywords'"
+          [attr.tabindex]="mode() === 'keywords' ? null : -1"
+          [attr.aria-hidden]="mode() !== 'keywords'"
+          [attr.aria-expanded]="shelfOpen()"
+          (click)="toggleShelf()"
+          title="Your query library — save the current query or reuse a saved one"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+        </button>
+
+        <button
+          class="composer__btn"
+          [class.composer__btn--loading]="loading || generating()"
+          [disabled]="!canSubmit"
+          (click)="onPrimary()"
+        >
+          @if (mode() === 'keywords') {
+            @if (loading) {
+              <span class="spinner"></span> Searching…
+            } @else {
+              <span class="material-symbols-outlined">search</span> Search
+            }
+          } @else {
+            <span class="material-symbols-outlined">{{ generating() ? 'progress_activity' : 'auto_awesome' }}</span>
+            {{ generating() ? 'Drafting…' : 'Draft keywords' }}
+          }
+        </button>
+      </div>
+    </div>
+
+    <!-- Shelf dropdown (keywords mode) -->
+    @if (shelfOpen()) {
+      <div class="composer__shelf-dropdown">
+        <!-- Offer to save the current query when it isn't already in the library. -->
+        @if (query().trim() && !currentInLibrary()) {
+          <button class="composer__shelf-save" (click)="saveToShelf()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/><line x1="12" y1="7" x2="12" y2="13"/><line x1="9" y1="10" x2="15" y2="10"/></svg>
+            <span class="composer__shelf-save-label">Save current query</span>
+            <span class="composer__shelf-save-query">{{ query() }}</span>
+          </button>
+        }
+        @if (recentItems().length === 0) {
+          <div class="composer__shelf-empty">No saved queries yet</div>
+        } @else {
+          @for (item of recentItems(); track item.id) {
+            <button class="composer__shelf-item" (click)="pickShelfItem(item)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <span class="composer__shelf-item-label">{{ item.label || item.query_text }}</span>
+              @if (item.label && item.label !== item.query_text) {
+                <span class="composer__shelf-item-query">{{ item.query_text }}</span>
+              }
+            </button>
+          }
+        }
+      </div>
+    }
+  </div>
+</div>

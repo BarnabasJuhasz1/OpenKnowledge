@@ -1,6 +1,7 @@
 import { Injectable, computed, signal } from '@angular/core';
 import { Paper, ScoreWeights, BackgroundProgress } from '../models/paper.model';
 import { deduplicatePapers } from '../../shared/utils/dedup-papers';
+import { parseQuery } from '../../shared/utils/query-parser';
 
 function computeOkScore(p: Paper, w: ScoreWeights): number {
   const citations = p.citation_count ?? 0;
@@ -81,6 +82,21 @@ export class SearchStateService {
   readonly currentPage = signal(1);
   readonly rawQuery = signal('');
   readonly activeFilter = signal<string | null>(null);
+
+  /** Flattened keyword list from the raw query, used to bold abstract matches. */
+  readonly searchKeywords = computed(() => parseQuery(this.rawQuery()));
+
+  // ── Scholar mode: server-side pagination (only the current page is held) ──────
+  /** Exact total number of papers matching the query + filters (server-reported). */
+  readonly scholarTotal = signal(0);
+  /** Whether another page is reachable within the navigable window. */
+  readonly scholarHasMore = signal(false);
+  /** Max number of results reachable via paging (server safety/window cap). */
+  readonly scholarResultCap = signal(0);
+  /** Pages the pagination bar may offer = matches clamped to the navigable window. */
+  readonly scholarNavigableTotal = computed(() =>
+    Math.min(this.scholarTotal(), this.scholarResultCap() || this.scholarTotal()),
+  );
   /** Databases the user has selected to include in the results (all by default). */
   readonly selectedSources = signal<Set<string>>(new Set(ALL_SOURCES));
   readonly queriesUsed = signal<Record<string, string>>({});
@@ -418,6 +434,9 @@ export class SearchStateService {
     this.scoresLoading.set(false);
     this.backgroundJobId.set(null);
     this.backgroundProgress.set({});
+    this.scholarTotal.set(0);
+    this.scholarHasMore.set(false);
+    this.scholarResultCap.set(0);
     this.graphPaperIds.set(new Set());
     this.externalGraphPapers.set(new Map());
     this.graphInitialized = false;

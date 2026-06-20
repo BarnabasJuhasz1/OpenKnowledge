@@ -16,25 +16,43 @@ from app.services.retrieval.opensearch_search import (
 
 
 class _FakeEngine:
-    def __init__(self, *, papers=None, raises=None, is_configured=True, iter_raises=None):
+    def __init__(self, *, papers=None, raises=None, is_configured=True, iter_raises=None,
+                 total=None):
         self._papers = papers or []
         self._raises = raises
         self._iter_raises = iter_raises
+        self._total = total
         self.is_configured = is_configured
         self.last_query = None
+        self.last_limit = "<unset>"
+        self.last_page_args = None
 
-    def search(self, boolean_query):
+    def search_page(self, boolean_query, *, offset, size, sort="relevancy", filters=None):
         self.last_query = boolean_query
+        self.last_page_args = {"offset": offset, "size": size, "sort": sort, "filters": filters}
         if self._raises is not None:
             raise self._raises
-        return self._papers
+        total = self._total if self._total is not None else len(self._papers)
+        page = self._papers[offset:offset + size] if size > 0 else []
+        return page, total
 
-    def iter_search(self, boolean_query):
+    def search(self, boolean_query):  # legacy convenience; endpoints use iter_search now
+        return list(self.iter_search(boolean_query))
+
+    def iter_search(self, boolean_query, *, result_limit="<unset>"):
         self.last_query = boolean_query
+        self.last_limit = result_limit
+        if self._raises is not None:
+            raise self._raises
+        emitted = 0
         for i, paper in enumerate(self._papers):
+            # Honour a finite cap so endpoint-level cap behaviour can be asserted.
+            if isinstance(result_limit, int) and emitted >= result_limit:
+                break
             # Optionally blow up partway through to exercise the in-band error line.
             if self._iter_raises is not None and i == self._iter_raises:
                 raise OpenSearchSearchError("scroll boom")
+            emitted += 1
             yield paper
 
 
@@ -163,3 +181,155 @@ def test_stream_midstream_error_emits_error_line(client, monkeypatch):
     records = _ndjson_lines(resp)
     assert [r["type"] for r in records] == ["paper", "paper", "error"]
     assert "scroll boom" in records[-1]["detail"]
+
+
+# ── safety cap (_effective_limit) ─────────────────────────────────────────────
+
+def test_effective_limit_defaults_when_env_unset(monkeypatch):
+    monkeypatch.delenv("SCHOLAR_MAX_RESULTS", raising=False)
+    req = scholar_api.SearchRequest(keywords=["x"], max_total_results=None)
+    assert scholar_api._effective_limit(req) == scholar_api._DEFAULT_SCHOLAR_MAX_RESULTS
+
+
+@pytest.mark.parametrize("bad", ["", "0", "-3", "abc"])
+def test_effective_limit_falls_back_on_bad_env(monkeypatch, bad):
+    """The backstop must never resolve to unlimited, even with junk env values."""
+    monkeypatch.setenv("SCHOLAR_MAX_RESULTS", bad)
+    req = scholar_api.SearchRequest(keywords=["x"], max_total_results=None)
+    assert scholar_api._effective_limit(req) == scholar_api._DEFAULT_SCHOLAR_MAX_RESULTS
+
+
+def test_effective_limit_honours_env(monkeypatch):
+    monkeypatch.setenv("SCHOLAR_MAX_RESULTS", "500")
+    req = scholar_api.SearchRequest(keywords=["x"], max_total_results=None)
+    assert scholar_api._effective_limit(req) == 500
+
+
+def test_effective_limit_client_can_request_fewer(monkeypatch):
+    monkeypatch.setenv("SCHOLAR_MAX_RESULTS", "500")
+    req = scholar_api.SearchRequest(keywords=["x"], max_total_results=100)
+    assert scholar_api._effective_limit(req) == 100
+
+
+def test_effective_limit_client_cannot_exceed_backstop(monkeypatch):
+    monkeypatch.setenv("SCHOLAR_MAX_RESULTS", "500")
+    req = scholar_api.SearchRequest(keywords=["x"], max_total_results=999_999)
+    assert scholar_api._effective_limit(req) == 500
+
+
+def test_buffered_search_applies_cap(client, monkeypatch):
+    """The buffered endpoint must pass a finite cap into iter_search (no unbounded list)."""
+    monkeypatch.setenv("SCHOLAR_MAX_RESULTS", "2")
+    papers = [Paper(title=t) for t in ("A", "B", "C", "D", "E")]
+    engine = _FakeEngine(papers=papers)
+    _set_engine(monkeypatch, engine)
+
+    resp = client.post("/api/retrieval/scholar/search", json={"keywords": ["LLM"]})
+    assert resp.status_code == 200
+    assert engine.last_limit == 2
+    assert resp.json()["total_found"] == 2  # capped, not all 5
+
+
+def test_stream_applies_cap_and_reports_capped(client, monkeypatch):
+    monkeypatch.setenv("SCHOLAR_MAX_RESULTS", "2")
+    papers = [Paper(title=t) for t in ("A", "B", "C", "D", "E")]
+    engine = _FakeEngine(papers=papers)
+    _set_engine(monkeypatch, engine)
+
+    resp = client.post("/api/retrieval/scholar/search/stream", json={"keywords": ["LLM"]})
+    assert resp.status_code == 200
+    assert engine.last_limit == 2
+    records = _ndjson_lines(resp)
+    paper_lines = [r for r in records if r["type"] == "paper"]
+    summary = records[-1]
+    assert len(paper_lines) == 2
+    assert summary["result_cap"] == 2
+    assert summary["capped"] is True
+
+
+# ── paginated endpoint (/search/page) ─────────────────────────────────────────
+
+def test_page_returns_page_and_total(client, monkeypatch):
+    papers = [Paper(title=t) for t in ("A", "B", "C")]
+    engine = _FakeEngine(papers=papers, total=4242)
+    _set_engine(monkeypatch, engine)
+
+    resp = client.post(
+        "/api/retrieval/scholar/search/page",
+        json={"keywords": ["LLM"], "page": 1, "page_size": 3},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total_found"] == 4242
+    assert body["page"] == 1 and body["page_size"] == 3
+    assert [p["title"] for p in body["papers"]] == ["A", "B", "C"]
+    assert body["has_more"] is True  # 3 returned < total 4242
+    assert engine.last_page_args["offset"] == 0
+    assert engine.last_page_args["size"] == 3
+
+
+def test_page_offset_and_sort_filters_forwarded(client, monkeypatch):
+    papers = [Paper(title=f"P{i}") for i in range(50)]
+    engine = _FakeEngine(papers=papers, total=50)
+    _set_engine(monkeypatch, engine)
+
+    resp = client.post(
+        "/api/retrieval/scholar/search/page",
+        json={
+            "keywords": ["LLM"], "page": 3, "page_size": 10, "sort": "year_desc",
+            "filters": {"year_min": 2020, "open_access_only": True},
+        },
+    )
+    assert resp.status_code == 200
+    args = engine.last_page_args
+    assert args["offset"] == 20  # (3-1)*10
+    assert args["size"] == 10
+    assert args["sort"] == "year_desc"
+    assert args["filters"].year_min == 2020
+    assert args["filters"].open_access_only is True
+
+
+def test_page_beyond_cap_is_empty_but_reports_total(client, monkeypatch):
+    monkeypatch.setenv("SCHOLAR_MAX_RESULTS", "50")
+    papers = [Paper(title=f"P{i}") for i in range(50)]
+    engine = _FakeEngine(papers=papers, total=9999)
+    _set_engine(monkeypatch, engine)
+
+    # page 2 @ size 50 -> offset 100, beyond the cap of 50.
+    resp = client.post(
+        "/api/retrieval/scholar/search/page",
+        json={"keywords": ["LLM"], "page": 2, "page_size": 50},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["papers"] == []
+    assert body["has_more"] is False
+    assert body["total_found"] == 9999      # real total still surfaced
+    assert body["result_cap"] == 50
+    assert engine.last_page_args["size"] == 0  # nothing fetchable past the window
+
+
+def test_page_has_more_false_on_last_page(client, monkeypatch):
+    papers = [Paper(title=f"P{i}") for i in range(5)]
+    engine = _FakeEngine(papers=papers, total=5)
+    _set_engine(monkeypatch, engine)
+
+    resp = client.post(
+        "/api/retrieval/scholar/search/page",
+        json={"keywords": ["LLM"], "page": 1, "page_size": 10},
+    )
+    body = resp.json()
+    assert len(body["papers"]) == 5
+    assert body["has_more"] is False
+
+
+def test_page_empty_request_is_422(client, monkeypatch):
+    _set_engine(monkeypatch, _FakeEngine())
+    resp = client.post("/api/retrieval/scholar/search/page", json={"keywords": []})
+    assert resp.status_code == 422
+
+
+def test_page_not_configured_is_503(client, monkeypatch):
+    _set_engine(monkeypatch, _FakeEngine(raises=OpenSearchNotConfiguredError("no url")))
+    resp = client.post("/api/retrieval/scholar/search/page", json={"keywords": ["LLM"]})
+    assert resp.status_code == 503

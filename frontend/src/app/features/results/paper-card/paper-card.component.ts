@@ -6,6 +6,7 @@ import { SearchModeService } from '../../../core/services/search-mode.service';
 import { NotificationService } from '../../../core/services/notification.service';
 import { BookshelfService } from '../../../core/services/bookshelf.service';
 import { getArchetypeIcon } from '../../../shared/utils/archetype-icons';
+import { HighlightSegment, highlightSegments } from '../../../shared/utils/keyword-match';
 
 @Component({
   selector: 'app-paper-card',
@@ -39,7 +40,18 @@ export class PaperCardComponent implements OnInit {
   bookmarked = signal(false);
 
   toggleAbstract(): void {
+    if (!this.hasAbstract) return;
     this.abstractExpanded.update(v => !v);
+  }
+
+  get hasAbstract(): boolean {
+    return !!this.paper.abstract;
+  }
+
+  /** Abstract split into plain/bold runs, with query-matched text flagged for bolding. */
+  get abstractSegments(): HighlightSegment[] {
+    if (!this.paper.abstract) return [];
+    return highlightSegments(this.paper.abstract, this.state.searchKeywords());
   }
 
   async copyBibtex(): Promise<void> {

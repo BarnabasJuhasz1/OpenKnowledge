@@ -1,0 +1,386 @@
+// ============================================================================
+// Search Composer — unified Keywords / Description / BibTeX input (Dark Mode)
+// ============================================================================
+
+.composer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+
+  // ── Mode tabs ──────────────────────────────────────────────────────────────
+  &__tabs {
+    display: inline-flex;
+    align-self: flex-start;
+    padding: 2px;
+    background: var(--ok-surface-variant, var(--ok-outline-variant));
+    border-radius: var(--ok-radius-full);
+  }
+
+  &__tab {
+    appearance: none;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    padding: 5px 14px;
+    font-family: var(--ok-font-label);
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--ok-on-surface-variant);
+    border-radius: var(--ok-radius-full);
+    transition: background var(--ok-transition), color var(--ok-transition);
+
+    &:hover { color: var(--ok-on-surface); }
+
+    &--active {
+      background: var(--ok-primary-raw);
+      color: #fff;
+    }
+  }
+
+  // ── Field + actions ────────────────────────────────────────────────────────
+  &__field {
+    position: relative;
+  }
+
+  &__row {
+    display: flex;
+    // Center-align so the action buttons stay vertically centered against the
+    // input box even as the textarea grows taller with more text.
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  &__textarea {
+    flex: 1;
+    resize: none;
+    // Default ~half-height (52px) matching the BibTeX drop zone, but auto-grows
+    // downward with its content up to a ceiling, after which it scrolls.
+    field-sizing: content;
+    min-height: 52px;
+    max-height: 240px;
+    overflow-y: auto;
+    padding: 0.6rem 1rem;
+    font-family: var(--ok-font-body);
+    font-size: 0.95rem;
+    border: 1px solid var(--ok-outline-variant);
+    border-radius: var(--ok-radius);
+    background: var(--ok-surface-container-lowest);
+    color: var(--ok-on-surface);
+    line-height: 1.5;
+    transition: border-color var(--ok-transition-fast), box-shadow var(--ok-transition-fast);
+    outline: none;
+
+    &::placeholder { color: var(--ok-outline); }
+
+    &:focus {
+      border-color: var(--ok-primary-raw);
+      box-shadow: 0 0 0 3px rgba(var(--ok-primary-rgb), 0.15);
+    }
+
+    &:disabled {
+      background: var(--ok-surface-container-low);
+      color: var(--ok-outline);
+    }
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  &__icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    // Matches the input field's default height.
+    height: 52px;
+    border: 1px solid var(--ok-outline-variant);
+    border-radius: var(--ok-radius);
+    background: var(--ok-surface-container);
+    color: var(--ok-on-surface-variant);
+    cursor: pointer;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    transition: background var(--ok-transition-fast), color var(--ok-transition-fast), border-color var(--ok-transition-fast);
+
+    &:hover:not(:disabled) {
+      background: rgba(var(--ok-primary-rgb), 0.15);
+      color: var(--ok-primary);
+      border-color: rgba(var(--ok-primary-rgb), 0.3);
+    }
+
+    // Pressed/open state while the library dropdown is showing.
+    &--active:not(:disabled) {
+      background: rgba(var(--ok-primary-rgb), 0.15);
+      color: var(--ok-primary);
+      border-color: rgba(var(--ok-primary-rgb), 0.3);
+    }
+
+    &:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    // Outside Keywords mode the library button drops out of the flow entirely so
+    // the flex:1 input box expands to ingest the freed horizontal space.
+    &--ghost {
+      display: none;
+    }
+  }
+
+  // ── Primary button (Search / Generate keywords) ─────────────────────────────
+  &__btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    // Matches the input field's default height.
+    height: 52px;
+    // Fixed width so "Search" and "Draft keywords" occupy an identical footprint.
+    // min-width:0 overrides a flex item's default min-width:auto, which would
+    // otherwise let the wider "Draft keywords" label push the button past `width`.
+    width: 168px;
+    min-width: 0;
+    padding: 0 1.1rem;
+    box-sizing: border-box;
+    background: var(--ok-gradient-primary);
+    color: #fff;
+    border: none;
+    border-radius: var(--ok-radius);
+    font-family: var(--ok-font-label);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: opacity var(--ok-transition-fast);
+    box-shadow: 0 4px 14px 0 rgba(var(--ok-primary-rgb), 0.3);
+
+    .material-symbols-outlined { font-size: 18px; }
+
+    &:hover:not(:disabled) { background: var(--ok-gradient-primary-hover); }
+
+    &:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    &--loading { opacity: 0.8; }
+  }
+
+  // ── BibTeX drop zone ────────────────────────────────────────────────────────
+  &__drop {
+    position: relative;
+    flex: 1;
+    align-self: stretch;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: var(--ok-space-2);
+    // Matches the textarea height so switching to BibTeX doesn't resize the box.
+    height: 52px;
+    padding: 0 var(--ok-space-3);
+    text-align: center;
+    border: 1.5px dashed var(--ok-outline-variant);
+    border-radius: var(--ok-radius);
+    background: var(--ok-surface-container-lowest);
+    color: var(--ok-on-surface-variant);
+    transition: border-color var(--ok-transition), background var(--ok-transition);
+
+    &--active {
+      border-color: var(--ok-primary);
+      background: rgba(var(--ok-primary-rgb), 0.08);
+    }
+
+    &--filled { border-style: solid; }
+  }
+
+  &__file { display: none; }
+
+  &__drop-icon {
+    font-size: 24px;
+    color: var(--ok-primary);
+  }
+
+  &__drop-text {
+    font-size: 0.85rem;
+    line-height: 1.4;
+  }
+
+  &__drop-browse {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--ok-primary);
+    font: inherit;
+    font-weight: 600;
+    text-decoration: underline;
+    cursor: pointer;
+    position: relative;
+    z-index: 1;
+  }
+
+  &__drop-name {
+    max-width: 60%;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--ok-on-surface);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__drop-clear {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    padding: 2px;
+    border: none;
+    border-radius: var(--ok-radius-full);
+    background: var(--ok-hover-overlay);
+    color: var(--ok-on-surface-variant);
+    cursor: pointer;
+
+    .material-symbols-outlined { font-size: 16px; }
+    &:hover { color: var(--ok-on-surface); }
+  }
+
+  // ── Shelf dropdown ──────────────────────────────────────────────────────────
+  &__shelf-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 4px;
+    background: var(--ok-glass-bg-floating);
+    backdrop-filter: blur(var(--ok-glass-blur-floating));
+    -webkit-backdrop-filter: blur(var(--ok-glass-blur-floating));
+    border: 1px solid var(--ok-glass-border);
+    border-radius: var(--ok-radius-md);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+    z-index: 50;
+    overflow: hidden;
+    animation: shelf-in 0.15s ease-out;
+  }
+
+  // Save-current-query action pinned to the top of the dropdown.
+  &__shelf-save {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.65rem 0.85rem;
+    border: none;
+    border-bottom: 1px solid var(--ok-outline-variant);
+    background: transparent;
+    color: var(--ok-primary);
+    font-family: var(--ok-font-label);
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--ok-transition-fast);
+
+    &:hover { background: rgba(var(--ok-primary-rgb), 0.12); }
+
+    svg { flex-shrink: 0; }
+  }
+
+  &__shelf-save-label { flex-shrink: 0; }
+
+  &__shelf-save-query {
+    margin-left: auto;
+    font-family: var(--ok-font-label);
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--ok-outline);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 200px;
+  }
+
+  &__shelf-empty {
+    padding: 1rem;
+    text-align: center;
+    font-size: 0.85rem;
+    color: var(--ok-outline);
+  }
+
+  &__shelf-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.65rem 0.85rem;
+    border: none;
+    background: transparent;
+    color: var(--ok-on-surface);
+    font-family: var(--ok-font-body);
+    font-size: 0.85rem;
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--ok-transition-fast);
+
+    &:hover { background: rgba(var(--ok-primary-rgb), 0.1); }
+
+    &:not(:last-child) { border-bottom: 1px solid var(--ok-outline-variant); }
+
+    svg {
+      flex-shrink: 0;
+      color: var(--ok-outline);
+    }
+  }
+
+  &__shelf-item-label {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__shelf-item-query {
+    margin-left: auto;
+    font-family: var(--ok-font-label);
+    font-size: 0.75rem;
+    color: var(--ok-outline);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 200px;
+    flex-shrink: 0;
+  }
+
+}
+
+@keyframes shelf-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 768px) {
+  .composer {
+    &__row { flex-direction: column; align-items: stretch; }
+    &__actions { justify-content: flex-end; }
+    &__btn { flex: 1; justify-content: center; }
+  }
+}

@@ -8,7 +8,7 @@
   -webkit-backdrop-filter: blur(var(--ok-glass-blur));
   border: 1px solid var(--ok-glass-border);
   border-radius: var(--ok-radius-md);
-  padding: 1.1rem 1.25rem;
+  padding: 0.9rem 1.25rem;
   transition: box-shadow var(--ok-transition), border-color var(--ok-transition), transform var(--ok-transition);
 
   &:hover {
@@ -89,12 +89,34 @@
     }
   }
 
+  // Byline row: authors/venue text on the left, citation/reference badges
+  // aligned to the right on the same line.
+  &__byline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: 0.45rem;
+  }
+
+  &__byline-text {
+    min-width: 0;
+    flex: 1;
+  }
+
+  &__byline-badges {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-shrink: 0;
+  }
+
   &__authors {
     font-family: var(--ok-font-body);
     font-style: italic;
     font-size: 0.87rem;
     color: var(--ok-on-surface-variant);
-    margin: 0.45rem 0 0;
+    margin: 0;
     line-height: 1.4;
   }
 
@@ -109,7 +131,6 @@
     display: flex;
     align-items: center;
     gap: 0.3rem;
-    margin-top: 0.65rem;
     padding: 0;
     background: none;
     border: none;
@@ -122,6 +143,16 @@
 
     &:hover {
       color: var(--ok-primary);
+    }
+
+    &--empty {
+      cursor: default;
+      opacity: 0.6;
+      font-style: italic;
+
+      &:hover {
+        color: var(--ok-on-surface-variant);
+      }
     }
   }
 
@@ -154,14 +185,30 @@
     margin: 0.6rem 0 0.1rem;
   }
 
-  &__info-row {
+  &__abstract-mark {
+    font-weight: 700;
+    color: var(--ok-on-surface);
+  }
+
+  // Metrics row (archetypes + citation/reference/code badges) — sits above the
+  // separator, no border of its own.
+  &__metrics {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
-    margin-top: 0.75rem;
-    padding-top: 0.65rem;
-    border-top: 1px solid var(--ok-outline-variant);
+    align-items: center;
+    margin-top: 0.5rem;
     gap: 1rem;
+  }
+
+  // Action bar below the separator: abstract toggle in line with seed/save.
+  &__action-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--ok-outline-variant);
   }
 
   &__archetypes-stack {
@@ -190,6 +237,15 @@
       color: var(--ok-outline);
       flex-shrink: 0;
     }
+  }
+
+  // Material Symbols quotation-mark glyph for the citation badge.
+  &__cite-icon {
+    font-family: 'Material Symbols Outlined', inherit;
+    font-size: 16px;
+    line-height: 1;
+    color: var(--ok-outline);
+    flex-shrink: 0;
   }
 
   &__code-badge {
@@ -228,18 +284,11 @@
     svg { flex-shrink: 0; }
   }
 
-  &__meta-stack {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 0.5rem;
-    flex: 1;
-  }
-
   &__badges-row {
     display: flex;
     flex-wrap: wrap;
     justify-content: flex-end;
+    align-items: center;
     gap: 0.4rem;
   }
 
@@ -247,6 +296,7 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
+    flex-shrink: 0;
   }
 
   &__graph-btn {

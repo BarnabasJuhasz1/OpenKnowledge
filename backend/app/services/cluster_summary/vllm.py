@@ -23,6 +23,14 @@ from .config import temperature, max_output_tokens
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
 _LABEL_RE = re.compile(r"^\s*(?:title|summary)\s*[:\-]\s*", re.IGNORECASE)
+# A line's leading list marker ("- ", "* ", "• ", "1. ", "2) "). Requires
+# trailing whitespace so we never strip a "3D ..." that legitimately starts
+# with a digit.
+_BULLET_MARK_RE = re.compile(r"^\s*(?:[-*•‣]|\d+[.)])\s+")
+# Delimiter separating the prose summary from the bullet list.
+_BULLET_SEP = "###"
+# How many bullets we keep (the prompt asks for 3).
+_MAX_BULLETS = 3
 
 
 class VLLMClusterSummarizer:
@@ -108,3 +116,53 @@ def parse_title_summary(text: str) -> tuple[str, str]:
         return "", title
 
     return title, summary
+
+
+def _parse_bullets(text: str) -> list[str]:
+    """Pull up to `_MAX_BULLETS` note-style phrases from a bullet block, stripping
+    any leading list marker. Lines without content are skipped."""
+    bullets: list[str] = []
+    for line in (text or "").splitlines():
+        phrase = _BULLET_MARK_RE.sub("", line.strip()).strip()
+        if phrase:
+            bullets.append(phrase)
+        if len(bullets) >= _MAX_BULLETS:
+            break
+    return bullets
+
+
+def parse_summary(text: str) -> tuple[str, str, list[str]]:
+    """Extract (title, summary, bullets) from the streamed model output.
+
+    The expected format is the prose block (title line + ~100-word summary)
+    followed by a ``###`` delimiter and a short bullet list. Parsing is tolerant:
+    the prose is handled by :func:`parse_title_summary`; bullets come from the
+    text after the first ``###`` (empty when absent). A JSON-wrapped response
+    carrying a ``bullets`` array is also honored.
+    """
+    cleaned = _FENCE_RE.sub("", text or "").strip()
+    if not cleaned:
+        return "", "", []
+
+    # Tolerant whole-object JSON: may carry a bullets array alongside title/summary.
+    try:
+        parsed = json.loads(cleaned)
+        if isinstance(parsed, dict) and (parsed.get("summary") or parsed.get("title")):
+            raw = parsed.get("bullets")
+            bullets = (
+                [str(b).strip() for b in raw if str(b).strip()][:_MAX_BULLETS]
+                if isinstance(raw, list)
+                else []
+            )
+            return (
+                str(parsed.get("title", "")).strip(),
+                str(parsed.get("summary", "")).strip(),
+                bullets,
+            )
+    except json.JSONDecodeError:
+        pass
+
+    head, sep, tail = cleaned.partition(_BULLET_SEP)
+    title, summary = parse_title_summary(head if sep else cleaned)
+    bullets = _parse_bullets(tail) if sep else []
+    return title, summary, bullets

@@ -19,8 +19,23 @@ class ChildInput:
 
 
 @dataclass
+class SiblingInput:
+    """A compact structural fingerprint of a sibling cluster at the same level.
+
+    Provides contrastive context (no generated summary, so it is available before
+    the level is summarized) so the model can highlight what makes the current
+    cluster distinct from the others it sits alongside.
+    """
+    title: str
+    size: int = 0
+    archetypes: list[str] = field(default_factory=list)
+
+
+@dataclass
 class ClusterSummaryResult:
     title: str
     summary: str
-    method: str = "fallback"  # "gemma" | "fallback"
+    # Up to 3 short note-style keyword phrases for a fast glance at the cluster.
+    bullets: list[str] = field(default_factory=list)
+    method: str = "fallback"  # "vllm" | "fallback"
     model: str | None = None

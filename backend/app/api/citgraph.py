@@ -26,7 +26,12 @@ class CitGraphExploreRequest(BaseModel):
     include_non_matching: bool = True
     keywords: list[str] = Field(default_factory=list)
     k: int = Field(default=1, ge=1, le=10)
-    max_per_hop: int = Field(default=20, ge=1, le=100000)
+    max_per_hop: int | None = Field(default=None, ge=1, le=100000)
+    # Of the references/citers fetched per paper, keep only the top-K by ok-score
+    # per hop level. None/null = keep all.
+    top_k_per_paper: list[int | None] | None = Field(default=None)
+
+
 
 
 class CitGraphNodeOut(BaseModel):
@@ -207,6 +212,7 @@ async def explore_graph(
             keywords=body.keywords,
             k=body.k,
             max_per_hop=body.max_per_hop,
+            top_k_per_paper=body.top_k_per_paper,
         )
     except UpstreamError as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -236,6 +242,7 @@ async def explore_graph_demo(
             keywords=body.keywords,
             k=body.k,
             max_per_hop=body.max_per_hop,
+            top_k_per_paper=body.top_k_per_paper,
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Failed to explore graph: {e}")

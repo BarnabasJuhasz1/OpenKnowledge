@@ -8,9 +8,9 @@ import { getCommunitiesAtLevel, louvain } from '../citgraph/louvain';
 import { Paper, ScoreWeights } from '../../core/models/paper.model';
 import { citNodeToPaper, okScore } from './cit-node';
 import { clusterColor, lighten, withAlpha, blendColors, MISC_COLOR } from './community-colors';
-import { edgePath as buildEdgePath, LayoutEdge, TOP_PADDING, orderLanesByConnectivity } from './graph-layout';
+import { edgePath as buildEdgePath, LayoutEdge, TOP_PADDING, orderLanesByConnectivity, citationLinksBetweenPlaced } from './graph-layout';
 import { yearExpandQueues, middleYears, nearestOutwardYear } from './year-expand';
-import { placedIdsInCluster, subclusterCount } from './cluster-ops';
+import { baseIdsInCluster, subclusterCount, subclusterCommunities } from './cluster-ops';
 import { getArchetypeIcon } from '../../shared/utils/archetype-icons';
 import { SearchStateService, paperId } from '../../core/services/search-state.service';
 import { CitGraphService, CitGraphNode, CitGraphEdge } from '../../core/services/citgraph.service';
@@ -22,6 +22,7 @@ import { ProjectContextService } from '../../core/services/project-context.servi
 import { ADMIN_GRAPH_CONFIG } from '../../core/config/admin-graph-config';
 import { ProjectScoringService } from '../../core/services/project-scoring.service';
 import { BookshelfService, BookshelfItem } from '../../core/services/bookshelf.service';
+import { RetrievalService } from '../../core/services/retrieval.service';
 import { environment } from '../../../environments/environment';
 import { Subscription } from 'rxjs';
 
@@ -119,12 +120,80 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
   private readonly scoring = inject(ProjectScoringService);
   private readonly router = inject(Router);
   private readonly bookshelf = inject(BookshelfService);
+  private readonly retrieval = inject(RetrievalService);
 
   // Setup options
   readonly useOnlySelected = signal(true);
   readonly keywordFiltering = signal(false);
   readonly savedItems = signal<BookshelfItem[]>([]);
-  readonly activeSeedSourceTab = signal<'selected' | 'library'>('selected');
+
+  // --- Seed source pickers (Seed mode only) ---
+  // Which bottom-middle picker popover is open, if any.
+  readonly seedPickerOpen = signal<'library' | 'title' | null>(null);
+  // Add-by-title search state.
+  readonly titleQuery = signal('');
+  readonly titleResults = signal<Paper[]>([]);
+  readonly titleSearching = signal(false);
+  private titleSearchTimer: any = null;
+  private titleSearchSub?: Subscription;
+
+  openSeedPicker(which: 'library' | 'title'): void {
+    this.seedPickerOpen.update(cur => (cur === which ? null : which));
+    if (this.seedPickerOpen() === 'library') {
+      // Refresh the library so newly saved papers show up.
+      this.loadBookshelf();
+    }
+  }
+
+  closeSeedPicker(): void {
+    this.seedPickerOpen.set(null);
+  }
+
+  /** Debounced academic-DB search for the add-by-title picker. */
+  onTitleQueryChange(value: string): void {
+    this.titleQuery.set(value);
+    if (this.titleSearchTimer) clearTimeout(this.titleSearchTimer);
+    const term = value.trim();
+    if (term.length < 3) {
+      this.titleSearchSub?.unsubscribe();
+      this.titleSearching.set(false);
+      this.titleResults.set([]);
+      return;
+    }
+    this.titleSearching.set(true);
+    this.titleSearchTimer = setTimeout(() => this.runTitleSearch(term), 350);
+  }
+
+  private runTitleSearch(term: string): void {
+    const keywords = parseQuery(term);
+    if (!keywords.length) {
+      this.titleSearching.set(false);
+      this.titleResults.set([]);
+      return;
+    }
+    this.titleSearchSub?.unsubscribe();
+    this.titleSearchSub = this.retrieval
+      .scholarSearchPage({ keywords, raw_query: term }, 0, 8, 'relevancy', {})
+      .subscribe({
+        next: (res) => {
+          this.titleResults.set(res.papers);
+          this.titleSearching.set(false);
+        },
+        error: () => {
+          this.titleResults.set([]);
+          this.titleSearching.set(false);
+        },
+      });
+  }
+
+  /** Toggle a paper picked from the title search as an (external) seed. */
+  addTitleResult(paper: Paper): void {
+    if (this.searchState.isInGraph(paper)) {
+      this.searchState.removeFromGraph(paperId(paper));
+    } else {
+      this.searchState.addExternalGraphPapers([paper]);
+    }
+  }
 
   // Active project's ok-score weights. Loaded on (re)entry; a signal so every
   // computed that scores a node (stars, reps, counts) reacts to weight changes.
@@ -168,12 +237,17 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.cardResizeObserver?.disconnect();
+    this.stopElapsedTimer();
     if (this.progressIntervalId) {
       clearInterval(this.progressIntervalId);
     }
     if (this.exploreSub) {
       this.exploreSub.unsubscribe();
     }
+    if (this.titleSearchTimer) {
+      clearTimeout(this.titleSearchTimer);
+    }
+    this.titleSearchSub?.unsubscribe();
   }
 
   /** (Re)attach the ResizeObserver to the currently rendered cluster cards. */
@@ -182,6 +256,36 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     if (!ro) return;
     ro.disconnect();
     this.laneBoxEls?.forEach(ref => ro.observe(ref.nativeElement));
+    // The ResizeObserver only fires reliably on subsequent size changes; measure
+    // explicitly once on (re)render so a card taller than the fallback height is
+    // never clipped by its foreignObject on first paint.
+    this.scheduleMeasure();
+  }
+
+  /** Read every rendered card's natural height (offsetHeight is unaffected by the
+   *  canvas zoom transform) into `cardHeights`, so the foreignObject — and, for
+   *  expanded cards, the lane — is always sized to fit the content. */
+  private measureCards(): void {
+    const els = this.laneBoxEls;
+    if (!els) return;
+    const next = new Map(this.cardHeights());
+    let changed = false;
+    els.forEach(ref => {
+      const el = ref.nativeElement;
+      const attr = el.dataset['cluster'];
+      if (attr == null) return;
+      const cluster = Number(attr);
+      const h = el.offsetHeight;
+      if (h > 0 && next.get(cluster) !== h) { next.set(cluster, h); changed = true; }
+    });
+    if (changed) this.cardHeights.set(next);
+  }
+
+  /** Re-measure after the DOM has rendered the latest card content (toggled
+   *  summary, added/removed cards). Runs on a macrotask so layout is settled. */
+  private scheduleMeasure(): void {
+    if (typeof window === 'undefined') return;
+    setTimeout(() => this.measureCards(), 0);
   }
 
   loadBookshelf(): void {
@@ -209,11 +313,49 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     const prog = this.explorationProgress();
     return prog ? (prog.phase === 'building' || prog.phase === 'clustering' || prog.phase === 'summarizing') : false;
   });
-  readonly explorationError = signal<string | null>(null);
-
   private summarizationStarted = false;
   private exploreSub?: Subscription;
   private progressIntervalId: any = null;
+
+  // Elapsed-time counter for the build-progress modal: how long the user has
+  // been waiting since the exploration started. Frozen once the process
+  // finishes (phase 'done'/'error').
+  readonly elapsedSeconds = signal(0);
+  private elapsedIntervalId: any = null;
+  private explorationStartTime = 0;
+
+  readonly elapsedDisplay = computed(() => {
+    const total = this.elapsedSeconds();
+    const minutes = Math.floor(total / 60);
+    const seconds = total % 60;
+    return minutes > 0
+      ? `${minutes}m ${seconds.toString().padStart(2, '0')}s`
+      : `${seconds}s`;
+  });
+
+  private startElapsedTimer(): void {
+    this.explorationStartTime = Date.now();
+    this.elapsedSeconds.set(0);
+    if (this.elapsedIntervalId) {
+      clearInterval(this.elapsedIntervalId);
+    }
+    this.elapsedIntervalId = setInterval(() => {
+      const prog = this.explorationProgress();
+      if (prog && (prog.phase === 'building' || prog.phase === 'clustering' || prog.phase === 'summarizing')) {
+        this.elapsedSeconds.set(Math.floor((Date.now() - this.explorationStartTime) / 1000));
+      } else {
+        // Process finished (done/error) or modal closed — freeze the counter.
+        this.stopElapsedTimer();
+      }
+    }, 1000);
+  }
+
+  private stopElapsedTimer(): void {
+    if (this.elapsedIntervalId) {
+      clearInterval(this.elapsedIntervalId);
+      this.elapsedIntervalId = null;
+    }
+  }
 
   readonly progressPercent = computed(() => {
     const prog = this.explorationProgress();
@@ -239,6 +381,7 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   cancelExploration(): void {
+    this.stopElapsedTimer();
     if (this.progressIntervalId) {
       clearInterval(this.progressIntervalId);
       this.progressIntervalId = null;
@@ -250,18 +393,19 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     this.summaries.clear();
     this.state.clear();
     this.explorationProgress.set(null);
-    this.explorationError.set(null);
     this.summarizationStarted = false;
     this.notify.show('Graph building cancelled.');
   }
 
-  // The exploration direction the user has picked (null until one is selected).
-  // Picking a direction only highlights the button; the actual exploration is
-  // kicked off separately by the "Explore" CTA.
-  readonly selectedDirection = signal<'past' | 'both' | 'future' | null>(null);
+  // The exploration direction the user has picked. Defaults to 'both' (Explore
+  // Context): 'past'/'future' are temporarily teased ("coming soon") and disabled,
+  // so 'both' is the only selectable option for now.
+  readonly selectedDirection = signal<'past' | 'both' | 'future' | null>('both');
 
-  /** Pick (or toggle off) an exploration direction. */
+  /** Pick (or toggle off) an exploration direction.
+   * 'past'/'future' are temporarily unavailable, so selecting them is a no-op. */
   selectDirection(direction: 'past' | 'both' | 'future'): void {
+    if (direction !== 'both') return;
     this.selectedDirection.update(cur => (cur === direction ? null : direction));
   }
 
@@ -326,23 +470,26 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
 
-    this.explorationError.set(null);
     this.explorationProgress.set({
       phase: 'building',
       percent: 5,
       papersCount: 0,
     });
+    this.startElapsedTimer();
 
     const seedIds = seeds.map(p => paperId(p));
     const keywords = parseQuery(this.searchState.rawQuery());
 
     // Graph-build knobs come from the admin config file (core/config/
     // admin-graph-config.ts) — the single, code-level place to tune them. There
-    // is intentionally no UI control or per-project override here.
-    const kHops = ADMIN_GRAPH_CONFIG.K_HOPS;
-    const maxPerHop = ADMIN_GRAPH_CONFIG.MAX_PER_HOP;
-    const topKPerPaper = ADMIN_GRAPH_CONFIG.TOP_K_PER_PAPER;
-    const resolution = ADMIN_GRAPH_CONFIG.RESOLUTION;
+    // is intentionally no UI control or per-project override here. The config
+    // is split per construction mode: 'seed' (expand from selected seeds) vs
+    // 'all' (build from every retrieved paper).
+    const cfg = ADMIN_GRAPH_CONFIG[this.useOnlySelected() ? 'seed' : 'all'];
+    const kHops = cfg.K_HOPS;
+    const maxPerHop = cfg.MAX_PER_HOP;
+    const topKPerPaper = cfg.TOP_K_PER_PAPER;
+    const resolution = cfg.RESOLUTION;
 
     if (!this.useOnlySelected()) {
       // Build citation graph using only the retrieved papers on the client side
@@ -508,9 +655,8 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
           this.explorationProgress.set({
             phase: 'error',
             percent: 0,
-            error: 'No surrounding papers found matching your configuration.'
+            error: 'An unexpected error occurred.'
           });
-          this.explorationError.set('No surrounding papers found matching your configuration.');
           return;
         }
 
@@ -565,13 +711,11 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
           this.progressIntervalId = null;
         }
         this.exploreSub = undefined;
-        const errMsg = err.error?.detail || err.message || 'An error occurred while exploring literature.';
         this.explorationProgress.set({
           phase: 'error',
           percent: 0,
-          error: errMsg,
+          error: 'An unexpected error occurred.',
         });
-        this.explorationError.set(errMsg);
         this.notify.show('Failed to build surrounding graph');
       }
     });
@@ -758,7 +902,35 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     return this.cardHeights().get(topCluster) ?? this.cardHeightFallback;
   }
   // Fixed on-graph cluster card width (px); kept in sync with the foreignObject.
-  readonly cardWidth = 300;
+  // Same for every card. Wide enough that — together with the 2-line title clamp
+  // and single-line bullet ellipsis — the card stays a predictable height.
+  readonly cardWidth = 360;
+
+  // Clusters whose longer summary text is currently expanded on their card. The
+  // long summary is hidden by default (only the title + bullets show) so the
+  // card stays compact and fits within its lane; the chevron toggle reveals it.
+  readonly expandedSummaries = signal<Set<number>>(new Set<number>());
+  isSummaryExpanded(topCluster: number): boolean {
+    return this.expandedSummaries().has(topCluster);
+  }
+  toggleSummary(topCluster: number, event: Event): void {
+    event.stopPropagation();
+    const next = new Set(this.expandedSummaries());
+    if (next.has(topCluster)) next.delete(topCluster);
+    else next.add(topCluster);
+    this.expandedSummaries.set(next);
+    // The card grows/shrinks once the (collapsed) summary text renders; re-measure
+    // so the foreignObject and the lane height track the new card size.
+    this.scheduleMeasure();
+  }
+  // Card heading: cluster label plus the generated title on one line, e.g.
+  // "Cluster 0: Self-supervised pretraining". Falls back to just the label
+  // (e.g. "Miscellaneous") when no generated title is available yet.
+  laneTitle(box: { name: string; summary?: ClusterSummary }): string {
+    const s = box.summary;
+    const title = s && s.status === 'done' ? s.title : '';
+    return title ? `${box.name}: ${title}` : box.name;
+  }
   // Default left x for cards when left-aligned (not staggered).
   readonly cardAlignedX = 20;
   // Horizontal gap (px) between a staggered card's right edge and its cluster's
@@ -800,6 +972,91 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     const target = this.clusterRemovalTarget();
     if (target) this.removeCluster(target.topCluster);
     this.clusterRemovalTarget.set(null);
+  }
+
+  /**
+   * "Expand naturally": behaves exactly like double-clicking the cluster's
+   * highest-level expandable node. Finds the coarsest placed node of the cluster
+   * that still has sibling recommendations and adds its top past + top future
+   * candidate (same as `onNodeDblClick`).
+   */
+  expandClusterNatural(topCluster: number, event: Event): void {
+    event.stopPropagation();
+    const currentComm = this.communitiesAtLevel()(this.currentTopLevel());
+    const nodes = this.state.placed()
+      .filter(p => currentComm[p.repIndex] === topCluster)
+      .sort((a, b) => b.level - a.level);
+    for (const n of nodes) {
+      const past = this.splitByTime(n, 'past');
+      const future = this.splitByTime(n, 'future');
+      if (past.length || future.length) {
+        this.selectedNodeId.set(n.id);
+        this.selectedClusterId.set(topCluster);
+        if (past.length) this.addCandidate(n, past[0]);
+        if (future.length) this.addCandidate(n, future[0]);
+        return;
+      }
+    }
+  }
+
+  // Pending "expand the whole cluster" confirmation: the cluster id, its display
+  // name, and how many additional papers the expansion would place.
+  readonly clusterExpandTarget = signal<{ topCluster: number; name: string; additional: number } | null>(null);
+
+  /** Inner-view path filter, mirroring laneLayout's: outside an entered cluster
+   *  every base node passes; inside, only nodes in the entered (sub)cluster. */
+  private passesPathFilter(idx: number): boolean {
+    const path = this.innerViewPath();
+    if (path.length === 0) return true;
+    const last = path[path.length - 1];
+    return this.communitiesAtLevel()(last.level)[idx] === last.clusterId;
+  }
+
+  /** Base-node indices of `topCluster` (at the current view level) that are not
+   *  removed and not already on the canvas — the papers a full expansion adds. */
+  private clusterUnplacedBaseIndices(topCluster: number): number[] {
+    const currentComm = this.communitiesAtLevel()(this.currentTopLevel());
+    const removed = this.state.removedIds();
+    const baseNodes = this.baseNodes();
+    const placedIds = new Set(this.state.placed().map(p => p.id));
+    const out: number[] = [];
+    baseNodes.forEach((n, idx) => {
+      if (currentComm[idx] !== topCluster) return;
+      if (!this.passesPathFilter(idx)) return;
+      if (removed.has(n.paper_id)) return;
+      if (placedIds.has(n.paper_id)) return;
+      out.push(idx);
+    });
+    return out;
+  }
+
+  /** Open the "expand whole cluster?" confirmation, or no-op (with a hint) when
+   *  every paper of the cluster is already shown. */
+  requestExpandClusterFull(topCluster: number, name: string, event: Event): void {
+    event.stopPropagation();
+    const additional = this.clusterUnplacedBaseIndices(topCluster).length;
+    if (additional === 0) {
+      this.notify.show('All papers in this cluster are already shown.');
+      return;
+    }
+    this.clusterExpandTarget.set({ topCluster, name, additional });
+  }
+  cancelExpandClusterFull(): void { this.clusterExpandTarget.set(null); }
+  confirmExpandClusterFull(): void {
+    const target = this.clusterExpandTarget();
+    if (target) this.expandClusterFull(target.topCluster);
+    this.clusterExpandTarget.set(null);
+  }
+
+  /** Place every not-yet-placed paper of the cluster as an individual leaf node.
+   *  No manual links are added — `laneLayout` derives the citation links between
+   *  the placed nodes from the raw graph, matching `expandSubclusters`. */
+  private expandClusterFull(topCluster: number): void {
+    const indices = this.clusterUnplacedBaseIndices(topCluster);
+    if (!indices.length) return;
+    const additions = indices.map(idx => this.buildPlaced(-1, idx, idx));
+    this.state.placed.update(p => [...p, ...additions]);
+    this.selectedClusterId.set(topCluster);
   }
 
   requestClearGraph(): void { this.clearConfirmOpen.set(true); }
@@ -994,9 +1251,13 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     if (level < 0) return community; // leaf cluster == a single base node
     const comm = this.communitiesAtLevel()(level);
     const nodes = this.baseNodes();
+    const removed = this.state.removedIds();
     let best = -1, bestScore = -Infinity;
     for (let i = 0; i < comm.length; i++) {
       if (comm[i] !== community) continue;
+      // Permanently-removed papers can't represent a cluster: a removed rep is
+      // replaced by the next-best, and a fully-removed cluster yields -1 (never placed).
+      if (removed.has(nodes[i].paper_id)) continue;
       const s = this.okScoreOf(nodes[i]);
       if (s > bestScore) { bestScore = s; best = i; }
     }
@@ -1047,6 +1308,72 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     }
     this.state.placed.set(placed);
     this.state.links.set([]);
+
+    // When the graph was built from a specific set of seed papers ('seed'
+    // construction mode), surface those seeds inside their clusters straight
+    // away instead of leaving them collapsed under the cluster representative.
+    // The user hand-picked them, so they should be visible by default.
+    if (this.state.initialSeedIds().size > 0) {
+      this.placeSeedPapers();
+    }
+  }
+
+  /**
+   * Add every (non-removed) seed paper to the canvas as a leaf node within its
+   * own cluster, on top of the already-placed cluster representatives. Deduped
+   * by paper id so a seed that happens to be its cluster's representative isn't
+   * doubled. Used to make seed papers visible by default in 'seed' mode.
+   */
+  private placeSeedPapers(): void {
+    const base = this.baseNodes();
+    const removed = this.state.removedIds();
+    const placedIds = new Set(this.state.placed().map(p => p.id));
+    const additions: PlacedNode[] = [];
+    for (let i = 0; i < base.length; i++) {
+      const n = base[i];
+      if (!this.isSeedBaseNode(n) || removed.has(n.paper_id)) continue;
+      const cand = this.buildPlaced(-1, i, i);
+      if (placedIds.has(cand.id)) continue;        // already on the canvas (e.g. a rep)
+      placedIds.add(cand.id);
+      additions.push(cand);
+    }
+    if (additions.length) {
+      this.state.placed.update(p => [...p, ...additions]);
+    }
+  }
+
+  /**
+   * Place the representative of EVERY sub-cluster of `(parentLevel, parentClusterId)`
+   * so that entering a cluster reveals all of its sub-clusters at once instead of
+   * leaving the user to expand each node by hand. Sub-clusters are the communities
+   * one level finer (`parentLevel - 1`); at level `-1` they are the cluster's
+   * individual leaf papers, so the fully-expanded finest view shows every paper.
+   *
+   * Representatives already on the canvas are kept (the parent cluster's own rep is
+   * one of these). `repIndexOfCluster` skips permanently-removed papers and yields
+   * `-1` for a fully-removed sub-cluster, so removal stays irreversible. No manual
+   * links are added — `laneLayout` derives the citation links between the placed
+   * sub-cluster representatives from the raw graph.
+   */
+  private expandSubclusters(parentLevel: number, parentClusterId: number): void {
+    if (parentLevel < 0) return;
+    const childLevel = parentLevel - 1;
+    const parentComm = this.communitiesAtLevel()(parentLevel);
+    const childComm = this.communitiesAtLevel()(childLevel);
+    const subs = subclusterCommunities(parentComm, childComm, parentClusterId);
+    const placedIds = new Set(this.state.placed().map(p => p.id));
+    const additions: PlacedNode[] = [];
+    for (const c of subs) {
+      const rep = this.repIndexOfCluster(childLevel, c);
+      if (rep < 0) continue;                       // fully-removed sub-cluster
+      const cand = this.buildPlaced(childLevel, c, rep);
+      if (placedIds.has(cand.id)) continue;        // already on the canvas
+      placedIds.add(cand.id);
+      additions.push(cand);
+    }
+    if (additions.length) {
+      this.state.placed.update(p => [...p, ...additions]);
+    }
   }
 
   /**
@@ -1065,6 +1392,8 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     const r = node.repIndex;
     if (r < 0) return [];
     const placedIds = new Set(this.state.placed().map(p => p.id));
+    const removed = this.state.removedIds();
+    const baseNodes = this.baseNodes();
 
     for (let d = node.level; d >= 0; d--) {
       const commD = this.communitiesAtLevel()(d);
@@ -1086,12 +1415,16 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       } else { // d === 0 → leaf papers of this level-0 community
         for (let i = 0; i < commD.length; i++) {
           if (commD[i] !== cD || i === r) continue;
+          if (removed.has(baseNodes[i].paper_id)) continue;  // permanently removed
           const cand = this.buildPlaced(-1, i, i);
           if (!placedIds.has(cand.id)) cands.push(cand);
         }
       }
 
-      if (cands.length) return cands;  // first (coarsest) level with new siblings
+      // Drop any candidate whose representative was permanently removed (the rep
+      // chooser already skips removed, but guard the result regardless).
+      const live = cands.filter(c => !removed.has(c.id));
+      if (live.length) return live;  // first (coarsest) level with new siblings
     }
     return [];
   }
@@ -1141,6 +1474,7 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     const isInner = path.length > 0;
     const currentTopLevel = this.currentTopLevel();
     const currentComm = this.communitiesAtLevel()(currentTopLevel);
+    const removed = this.state.removedIds();
 
     const passPathFilter = (idx: number): boolean => {
       if (!isInner) return true;
@@ -1264,9 +1598,24 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const laneHeights: number[] = [];
     const isUnified = this.unifiedVerticalExpansion();
+    // When a cluster card's full summary is expanded it grows taller than the
+    // node area; grow that specific lane so the (centered) card fits without
+    // overlapping its neighbours. Reading these signals keeps the layout in
+    // sync as cards are toggled / re-measured.
+    const cardsOn = this.useInGraphCards() && currentTopLevel >= 0;
+    const expandedSummaries = this.expandedSummaries();
+    const measuredCardHeights = this.cardHeights();
     for (let i = 0; i < numLanes; i++) {
       const cellCount = isUnified ? maxCell : (maxCellForLane.get(i) ?? 1);
-      laneHeights.push(Math.max(LANE_MIN_HEIGHT, cellCount * LANE_NODE_VGAP + LANE_PAD));
+      let h = Math.max(LANE_MIN_HEIGHT, cellCount * LANE_NODE_VGAP + LANE_PAD);
+      if (cardsOn) {
+        const clusterId = laneClusters[i];
+        if (expandedSummaries.has(clusterId)) {
+          const cardH = measuredCardHeights.get(clusterId) ?? this.cardHeightFallback;
+          h = Math.max(h, cardH + LANE_PAD);
+        }
+      }
+      laneHeights.push(h);
     }
 
     const laneYStart: number[] = [TOP_PADDING];
@@ -1446,10 +1795,31 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       : 400;
     const height = laneYStart[numLanes] + 20;
 
-    // Manual links between placed-with-year nodes.
+    // Edges drawn between placed nodes — two sources, unioned and de-duped:
+    //  1. Real citation edges from the raw graph, between two placed nodes in the
+    //     SAME current-view cluster. This is what makes a cluster show its
+    //     internal citation structure no matter how its papers were revealed —
+    //     the drill-in / "expand whole cluster" paths add no manual links, so
+    //     without this their nodes render disconnected. Cross-cluster citation
+    //     edges are intentionally left to the blob bridges, not drawn as links.
+    //  2. The manual parent→child links recorded during interactive expansion
+    //     (double-click, year-expand). Kept so explicit lineage between a node
+    //     and a placed sibling survives even when no direct citation edge joins
+    //     them (siblings share a cluster, not necessarily a citation).
     const known = new Set(placedFiltered.map(p => p.id));
     const seen = new Set<string>();
-    const edges: LayoutEdge[] = [];
+    const edges: LayoutEdge[] = citationLinksBetweenPlaced(
+      placedFiltered,
+      this.state.rawGraph()?.edges ?? [],
+      idxOf,
+      currentComm,
+      (level: number) => this.communitiesAtLevel()(level),
+      this.baseNodes().length,
+    );
+    for (const e of edges) {
+      const key = e.fromId < e.toId ? `${e.fromId}|${e.toId}` : `${e.toId}|${e.fromId}`;
+      seen.add(key);
+    }
     for (const e of this.state.links()) {
       if (!known.has(e.fromId) || !known.has(e.toId)) continue;
       const key = e.fromId < e.toId ? `${e.fromId}|${e.toId}` : `${e.toId}|${e.fromId}`;
@@ -1478,7 +1848,7 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       }).length;
       
       const totalPapers = this.baseNodes().filter((n, idx) => {
-        return passPathFilter(idx) && currentComm[idx] === id;
+        return passPathFilter(idx) && currentComm[idx] === id && !removed.has(n.paper_id);
       }).length;
 
       // Distinct sub-clusters one level finer than the current view. Only
@@ -1494,7 +1864,7 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       }).length;
       
       const totalSeeds = this.baseNodes().filter((n, idx) => {
-        return passPathFilter(idx) && currentComm[idx] === id && this.isSeedBaseNode(n);
+        return passPathFilter(idx) && currentComm[idx] === id && this.isSeedBaseNode(n) && !removed.has(n.paper_id);
       }).length;
 
       const visibleGold = placedFiltered.filter(p => {
@@ -1503,7 +1873,7 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       }).length;
       
       const totalGold = this.baseNodes().filter((n, idx) => {
-        return passPathFilter(idx) && currentComm[idx] === id && this.starFor(this.okScoreOf(n)) === 'gold';
+        return passPathFilter(idx) && currentComm[idx] === id && this.starFor(this.okScoreOf(n)) === 'gold' && !removed.has(n.paper_id);
       }).length;
 
       const visibleSilver = placedFiltered.filter(p => {
@@ -1512,7 +1882,7 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       }).length;
       
       const totalSilver = this.baseNodes().filter((n, idx) => {
-        return passPathFilter(idx) && currentComm[idx] === id && this.starFor(this.okScoreOf(n)) === 'silver';
+        return passPathFilter(idx) && currentComm[idx] === id && this.starFor(this.okScoreOf(n)) === 'silver' && !removed.has(n.paper_id);
       }).length;
 
       let summary: ClusterSummary | undefined = undefined;
@@ -1741,24 +2111,43 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
   readonly svgHeight = computed(() => this.laneLayout().height);
 
   readonly totalClusters = computed(() => this.blobs().length);
+  /**
+   * Base nodes minus permanently-removed papers, scoped to the cluster the user
+   * has drilled into. The "total" side of every `visible / total` counter draws
+   * from this so that removing a paper or whole cluster shrinks the totals too,
+   * not just the visible counts — and so that entering a cluster (without
+   * selecting a subcluster) reports that cluster's totals rather than the
+   * graph-wide totals. Mirrors `passesPathFilter` / `baseNodesFiltered`.
+   */
+  private readonly liveBaseNodes = computed(() => {
+    const removed = this.state.removedIds();
+    const base = this.baseNodes();
+    const path = this.innerViewPath();
+    if (path.length === 0) {
+      return removed.size ? base.filter(n => !removed.has(n.paper_id)) : base;
+    }
+    const last = path[path.length - 1];
+    const comm = this.communitiesAtLevel()(last.level);
+    return base.filter((n, idx) => comm[idx] === last.clusterId && !removed.has(n.paper_id));
+  });
   readonly totalPapers = computed(() => {
     const visible = this.nodes().length;
-    const total = this.baseNodes().length;
+    const total = this.liveBaseNodes().length;
     return `${visible} / ${total}`;
   });
   readonly totalSeeds = computed(() => {
     const visible = this.nodes().filter(n => this.isSeedNode(n)).length;
-    const total = this.baseNodes().filter(n => this.isSeedBaseNode(n)).length;
+    const total = this.liveBaseNodes().filter(n => this.isSeedBaseNode(n)).length;
     return `${visible} / ${total}`;
   });
   readonly totalGoldStars = computed(() => {
     const visible = this.nodes().filter(n => n.star === 'gold').length;
-    const total = this.baseNodes().filter(n => this.starFor(this.okScoreOf(n)) === 'gold').length;
+    const total = this.liveBaseNodes().filter(n => this.starFor(this.okScoreOf(n)) === 'gold').length;
     return `${visible} / ${total}`;
   });
   readonly totalSilverStars = computed(() => {
     const visible = this.nodes().filter(n => n.star === 'silver').length;
-    const total = this.baseNodes().filter(n => this.starFor(this.okScoreOf(n)) === 'silver').length;
+    const total = this.liveBaseNodes().filter(n => this.starFor(this.okScoreOf(n)) === 'silver').length;
     return `${visible} / ${total}`;
   });
 
@@ -1820,6 +2209,7 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const base = this.baseNodes();
     const currentComm = this.communitiesAtLevel()(currentTopLevel);
+    const removed = this.state.removedIds();
     const paperClusterMap = new Map<string, number>();
     for (let i = 0; i < base.length; i++) {
       paperClusterMap.set(base[i].paper_id, currentComm[i]);
@@ -1832,16 +2222,16 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     };
 
     const visiblePapers = this.nodes().filter(n => paperClusterMap.get(n.id) === id).length;
-    const totalPapers = base.filter((n, i) => passPathFilter(i) && currentComm[i] === id).length;
+    const totalPapers = base.filter((n, i) => passPathFilter(i) && currentComm[i] === id && !removed.has(n.paper_id)).length;
 
     const visibleSeeds = this.nodes().filter(n => this.isSeedNode(n) && paperClusterMap.get(n.id) === id).length;
-    const totalSeeds = base.filter((n, i) => passPathFilter(i) && currentComm[i] === id && this.isSeedBaseNode(n)).length;
+    const totalSeeds = base.filter((n, i) => passPathFilter(i) && currentComm[i] === id && this.isSeedBaseNode(n) && !removed.has(n.paper_id)).length;
 
     const visibleGold = this.nodes().filter(n => n.star === 'gold' && paperClusterMap.get(n.id) === id).length;
-    const totalGold = base.filter((n, i) => passPathFilter(i) && currentComm[i] === id && this.starFor(this.okScoreOf(n)) === 'gold').length;
+    const totalGold = base.filter((n, i) => passPathFilter(i) && currentComm[i] === id && this.starFor(this.okScoreOf(n)) === 'gold' && !removed.has(n.paper_id)).length;
 
     const visibleSilver = this.nodes().filter(n => n.star === 'silver' && paperClusterMap.get(n.id) === id).length;
-    const totalSilver = base.filter((n, i) => passPathFilter(i) && currentComm[i] === id && this.starFor(this.okScoreOf(n)) === 'silver').length;
+    const totalSilver = base.filter((n, i) => passPathFilter(i) && currentComm[i] === id && this.starFor(this.okScoreOf(n)) === 'silver' && !removed.has(n.paper_id)).length;
 
     return {
       id,
@@ -2118,11 +2508,13 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     });
 
     const placedIds = new Set(this.state.placed().map(p => p.id));
+    const removed = this.state.removedIds();
     const isPlaced = (i: number) => placedIds.has(base[i].paper_id);
+    const isRemoved = (i: number) => removed.has(base[i].paper_id);
 
     const raw = yearExpandQueues({
       commAtLevel, currentTopLevel, nodeYear, nodeScore,
-      laneClusterOf: currentComm, inView, selectedYear: year, isPlaced,
+      laneClusterOf: currentComm, inView, selectedYear: year, isPlaced, isRemoved,
     });
 
     const queues = new Map<number, PlacedNode[]>();
@@ -2145,11 +2537,14 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     const parentTargetId = last ? last.clusterId : null;
 
     const placedIds = new Set(this.state.placed().map(p => p.id));
+    const removed = this.state.removedIds();
     const result = new Set<number>();
 
     for (let i = 0; i < base.length; i++) {
       const node = base[i];
       if (node.year == null) continue;
+      // Permanently removed → never expandable.
+      if (removed.has(node.paper_id)) continue;
       // Is it in view?
       const inView = !isInner || (parentComm != null && parentComm[i] === parentTargetId);
       if (!inView) continue;
@@ -2316,17 +2711,11 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
   removeSelectedNode(): void {
     const id = this.selectedNodeId();
     if (!id) return;
+    // Permanent: also exclude it from every future expansion / re-seed.
+    this.state.markRemoved([id]);
     this.state.placed.update(p => p.filter(n => n.id !== id));
     this.state.links.update(l => l.filter(e => e.fromId !== id && e.toId !== id));
     this.selectedNodeId.set(null);
-  }
-
-  /** Base-node ids of every placed node belonging to `topCluster` at the current
-   *  view level. Community ids are globally unique per level, so this isolates a
-   *  single cluster (main view) or subcluster (inner view). Pure given inputs. */
-  private placedIdsInCluster(topCluster: number): string[] {
-    const currentComm = this.communitiesAtLevel()(this.currentTopLevel());
-    return placedIdsInCluster(this.state.placed(), currentComm, topCluster);
   }
 
   /**
@@ -2336,8 +2725,15 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
    * survives leaving and re-entering the OK-Graph tab.
    */
   removeCluster(topCluster: number): void {
-    const ids = new Set(this.placedIdsInCluster(topCluster));
-    if (!ids.size) return;
+    // Permanently remove the cluster's ENTIRE base membership (not just the placed
+    // representatives) so no expansion can later surface any of its papers.
+    const currentComm = this.communitiesAtLevel()(this.currentTopLevel());
+    const baseIds = this.baseNodes().map(n => n.paper_id);
+    const memberIds = baseIdsInCluster(currentComm, baseIds, topCluster);
+    if (!memberIds.length) return;
+    this.state.markRemoved(memberIds);
+
+    const ids = new Set(memberIds);
     this.state.placed.update(p => p.filter(n => !ids.has(n.id)));
     this.state.links.update(l => l.filter(e => !ids.has(e.fromId) && !ids.has(e.toId)));
     const sel = this.selectedNodeId();
@@ -2354,19 +2750,26 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     this.selectedYear.set(null);
     this.selectedGap.set(null);
     this.clusterRemovalTarget.set(null);
+    this.clusterExpandTarget.set(null);
     this.state.clear();
   }
  
   moveInside(clusterId: number, event?: MouseEvent): void {
     event?.stopPropagation();
     const currentLvl = this.currentTopLevel();
-    if (currentLvl < 0) return;
+    // Refuse to enter finest-grade clusters (level-0 Louvain communities):
+    // moving into one would drop to the leaf level of individual papers, which
+    // has no sub-clusters to reveal. Such clusters expose no Move-Inside button;
+    // this guards the method path regardless.
+    if (currentLvl < 1) return;
  
     // Find the blob in the current layout
     const blob = this.blobs().find(b => b.topCluster === clusterId);
     if (!blob) {
       this.innerViewAnchor.set(null);
       this.innerViewPath.update(p => [...p, { level: currentLvl, clusterId }]);
+      // Enter fully expanded: place a representative for every sub-cluster.
+      this.expandSubclusters(currentLvl, clusterId);
       this.selectedClusterId.set(null);
       this.selectedNodeId.set(null);
       this.expandPopup.set(null);
@@ -2410,6 +2813,8 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
  
     setTimeout(guard(() => {
       this.innerViewPath.update(p => [...p, { level: currentLvl, clusterId }]);
+      // Enter fully expanded: place a representative for every sub-cluster.
+      this.expandSubclusters(currentLvl, clusterId);
       this.selectedClusterId.set(null);
       this.selectedNodeId.set(null);
       this.expandPopup.set(null);

@@ -20,6 +20,9 @@ CACHE_PATH = _HERE.parents[4] / "database" / "demo_citgraph_index.pkl"
 # Bump when the on-disk index layout changes so stale caches are rebuilt.
 _CACHE_VERSION = 3
 
+_EXPLORE_FETCH_CAP = 100_000
+
+
 _UUID_RE = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 )
@@ -270,7 +273,8 @@ class DemoCitGraphStore:
         include_non_matching: bool = True,
         keywords: list[str] = [],
         k: int = 1,
-        max_per_hop: int = 20,
+        max_per_hop: int | None = None,
+        top_k_per_paper: list[int | None] | int | None = None,
     ) -> CitGraphResult:
         index = await self._ensure_loaded()
 
@@ -293,30 +297,74 @@ class DemoCitGraphStore:
         frontier: list[str] = list(resolved_seeds)
 
         for hop in range(1, k + 1):
-            next_frontier: list[str] = []
+            hop_usable: list[tuple[str, str, tuple[str, str]]] = []
             for pid in frontier:
-                refs = index.forward.get(pid, [])[:max_per_hop] if direction in ('past', 'both') else []
-                cits = index.reverse.get(pid, [])[:max_per_hop] if direction in ('future', 'both') else []
+                refs = index.forward.get(pid, [])[:_EXPLORE_FETCH_CAP] if direction in ('past', 'both') else []
+                cits = index.reverse.get(pid, [])[:_EXPLORE_FETCH_CAP] if direction in ('future', 'both') else []
 
+                usable: list[tuple[str, tuple[str, str]]] = []
                 for neighbour, edge in (
                     [(r, (pid, r)) for r in refs]
                     + [(c, (c, pid)) for c in cits]
                 ):
                     if neighbour not in index.meta:
                         continue
-
                     if not include_non_matching:
                         m = index.meta[neighbour]
                         if not matches_keywords(m.get("title"), m.get("abstract"), keywords):
                             continue
+                    usable.append((neighbour, edge))
 
-                    if edge not in edge_set:
-                        edge_set.add(edge)
-                        edges.append(CitGraphEdge(source=edge[0], target=edge[1]))
+                # Per-paper top-K cap: keep only the K highest-ok-score neighbours
+                # of this paper. Demo nodes carry no ok-score enrichment, so rank
+                # by citation count (n_citation) — see citgraph_builder._traverse.
+                current_top_k = None
+                if top_k_per_paper is not None:
+                    if isinstance(top_k_per_paper, list):
+                        if hop <= len(top_k_per_paper):
+                            current_top_k = top_k_per_paper[hop - 1]
+                        elif len(top_k_per_paper) > 0:
+                            current_top_k = top_k_per_paper[-1]
+                    else:
+                        current_top_k = top_k_per_paper
 
-                    if neighbour not in visited:
-                        visited[neighbour] = self._node(index, neighbour, hop)
-                        next_frontier.append(neighbour)
+                if current_top_k is not None:
+                    usable.sort(
+                        key=lambda ne: _to_int(index.meta[ne[0]].get("n_citation")) or 0,
+                        reverse=True,
+                    )
+                    usable = usable[:current_top_k]
+
+                for neighbour, edge in usable:
+                    hop_usable.append((pid, neighbour, edge))
+
+            # Cumulative per-hop cap across all frontier papers
+            if max_per_hop is not None:
+                new_scores: dict[str, int] = {}
+                for _anchor, neighbour, _edge in hop_usable:
+                    if neighbour not in visited and neighbour not in new_scores:
+                        new_scores[neighbour] = _to_int(index.meta[neighbour].get("n_citation")) or 0
+
+                if len(new_scores) > max_per_hop:
+                    kept_new = {
+                        pid for pid, _ in sorted(
+                            new_scores.items(), key=lambda kv: kv[1], reverse=True
+                        )[:max_per_hop]
+                    }
+                    hop_usable = [
+                        t for t in hop_usable
+                        if t[1] in visited or t[1] in kept_new
+                    ]
+
+            next_frontier: list[str] = []
+            for _anchor, neighbour, edge in hop_usable:
+                if edge not in edge_set:
+                    edge_set.add(edge)
+                    edges.append(CitGraphEdge(source=edge[0], target=edge[1]))
+
+                if neighbour not in visited:
+                    visited[neighbour] = self._node(index, neighbour, hop)
+                    next_frontier.append(neighbour)
 
             frontier = next_frontier
 
@@ -324,3 +372,4 @@ class DemoCitGraphStore:
         return CitGraphResult(
             nodes=list(visited.values()), edges=edges, seed_id=seed_id
         )
+

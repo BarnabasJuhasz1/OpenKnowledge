@@ -1,5 +1,9 @@
 <div class="results-page">
   <main class="results-page__main">
+    <!-- The inline search box only appears once results are present (rendered
+         inside the results content column below). When the tab is empty —
+         welcome / loading / error / no-matches — the search bar is hidden. -->
+
     <!-- Prompt when no search has been performed yet -->
     @if (!state.hasSearched() && !state.loading()) {
       <div class="results-page__welcome">
@@ -86,45 +90,75 @@
 
     <!-- Results (show as soon as papers start arriving) -->
     @if (!state.error() && state.totalRaw() > 0) {
-      <div class="results-page__header">
-        <app-results-meta
-          [totalFound]="state.totalFound()"
-          [totalRaw]="state.totalRaw()"
-          [deduplicatesRemoved]="state.deduplicatesRemoved()"
-          [activeFilter]="state.activeFilter()"
-          [sourcesQueried]="state.sourcesQueried()"
-          [sourcesFailed]="state.sourcesFailed()"
-          [sourceErrors]="state.sourceErrors()"
-        />
-      </div>
-
-      @if (state.activeFilter()) {
-        <div class="filter-info">
-          <span class="filter-info__count">
-            {{ state.filteredPapers().length }} papers from {{ state.activeFilter() }}
-          </span>
-          <div class="filter-info__query">
-            <span class="filter-info__query-label">Query used:</span>
-            <code class="filter-info__query-value">{{ state.activeQuery() }}</code>
-          </div>
-        </div>
-      }
-
       <div class="results-layout">
         <app-filters-sidebar class="results-layout__sidebar" />
         <div class="results-layout__content">
-          <app-paper-list
-            [papers]="state.filteredPapers()"
-            [page]="state.currentPage()"
-            [scoresLoading]="state.scoresLoading()"
-          />
+          <!-- Search box pinned above the paper list and aligned with it, so the
+               filter/sort sidebar can start at the same top edge as the search box. -->
+          <div class="results-page__search results-page__search--inline">
+            <app-search-composer
+              [initialQuery]="state.rawQuery()"
+              [loading]="state.loading()"
+              (search)="onComposerSearch($event)"
+              (generated)="onKeywordsGenerated($event)"
+            />
+          </div>
 
-          <app-pagination
-            [totalItems]="state.filteredPapers().length"
-            [pageSize]="pageSize"
-            [currentPage]="state.currentPage()"
-            (pageChange)="onPageChange($event)"
-          />
+          <div class="results-page__header">
+            <app-results-meta
+              [totalFound]="mode.isScholar() ? state.scholarTotal() : state.totalFound()"
+              [totalRaw]="state.totalRaw()"
+              [deduplicatesRemoved]="state.deduplicatesRemoved()"
+              [activeFilter]="state.activeFilter()"
+              [sourcesQueried]="state.sourcesQueried()"
+              [sourcesFailed]="state.sourcesFailed()"
+              [sourceErrors]="state.sourceErrors()"
+            />
+          </div>
+
+          @if (state.activeFilter()) {
+            <div class="filter-info">
+              <span class="filter-info__count">
+                {{ state.filteredPapers().length }} papers from {{ state.activeFilter() }}
+              </span>
+              <div class="filter-info__query">
+                <span class="filter-info__query-label">Query used:</span>
+                <code class="filter-info__query-value">{{ state.activeQuery() }}</code>
+              </div>
+            </div>
+          }
+
+          @if (mode.isScholar()) {
+            <!-- Server fetches a 100-result window at a time, but only 10 are shown
+                 per page: the loaded window is sliced client-side by the local page,
+                 and paging past it fetches the next window from the backend. -->
+            <app-paper-list
+              [papers]="state.filteredPapers()"
+              [page]="scholarLocalPage()"
+              [clientPaginate]="true"
+              [scoresLoading]="state.scoresLoading()"
+            />
+
+            <app-pagination
+              [totalItems]="state.scholarNavigableTotal()"
+              [pageSize]="pageSize"
+              [currentPage]="state.currentPage()"
+              (pageChange)="onPageChange($event)"
+            />
+          } @else {
+            <app-paper-list
+              [papers]="state.filteredPapers()"
+              [page]="state.currentPage()"
+              [scoresLoading]="state.scoresLoading()"
+            />
+
+            <app-pagination
+              [totalItems]="state.filteredPapers().length"
+              [pageSize]="pageSize"
+              [currentPage]="state.currentPage()"
+              (pageChange)="onPageChange($event)"
+            />
+          }
         </div>
       </div>
     }

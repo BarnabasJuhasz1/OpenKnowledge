@@ -1,5 +1,6 @@
 from __future__ import annotations
 from datetime import datetime
+from typing import Literal
 from pydantic import BaseModel, Field
 
 
@@ -108,6 +109,48 @@ class SearchResponse(BaseModel):
     deduplication_removed: int
     background_job_id: str | None = None  # Non-null if background fetch is continuing
     retrieved_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# Sort orders the paginated Scholar search supports (server-side field sorts, no BM25).
+ScholarSort = Literal[
+    "relevancy", "year_desc", "year_asc", "citations_desc", "citations_asc", "title_asc"
+]
+
+
+class ScholarFilters(BaseModel):
+    """Server-side filters for the paginated Scholar search — applied across ALL matches.
+
+    year/citation/open-access/peer-review map to indexed fields and work today. The
+    archetype + code-only filters target index fields that are only populated by a future
+    corpus-wide backfill; they are wired here so they activate automatically once the data
+    lands (and simply match nothing until then).
+    """
+    year_min: int | None = None
+    year_max: int | None = None
+    citation_min: int | None = None
+    citation_max: int | None = None
+    open_access_only: bool = False
+    peer_reviewed_only: bool = False
+    code_only: bool = False
+    archetypes: list[str] | None = None  # None/empty = no archetype constraint
+
+
+class ScholarPageRequest(SearchRequest):
+    """A single page of the Scholar result set, sorted + filtered server-side."""
+    page: int = 1            # 1-based
+    page_size: int = 100
+    sort: ScholarSort = "relevancy"
+    filters: ScholarFilters = Field(default_factory=ScholarFilters)
+
+
+class ScholarPageResponse(BaseModel):
+    papers: list[Paper]            # this page only (already sorted + scored)
+    total_found: int               # total matches for the query + filters
+    page: int
+    page_size: int
+    has_more: bool                 # another page is available within the navigable window
+    queries_used: dict[str, str] = {}
+    result_cap: int                # max number of results reachable via paging
 
 
 class BackgroundProgress(BaseModel):

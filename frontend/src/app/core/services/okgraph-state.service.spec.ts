@@ -29,4 +29,27 @@ describe('OkGraphStateService', () => {
     expect(service.panelCollapsed()).toBe(true);
     expect(service.autoOpenEnabled()).toBe(true);
   });
+
+  it('markRemoved accumulates ids (irreversible removal set)', () => {
+    expect(service.removedIds().size).toBe(0);
+    service.markRemoved(['a', 'b']);
+    service.markRemoved(['b', 'c']);
+    expect([...service.removedIds()].sort()).toEqual(['a', 'b', 'c']);
+  });
+
+  it('resets removedIds on clear()', () => {
+    service.markRemoved(['a']);
+    expect(service.removedIds().size).toBe(1);
+    service.clear();
+    expect(service.removedIds().size).toBe(0);
+  });
+
+  it('resets removedIds on a new graph (setHierarchy)', () => {
+    service.markRemoved(['a']);
+    service.setHierarchy({
+      nodes: [], louvain: { levels: [] } as any, edges: [],
+      resolution: 1, maxLevels: 10, keywords: [], seedId: '', prefiltered: false,
+    });
+    expect(service.removedIds().size).toBe(0);
+  });
 });

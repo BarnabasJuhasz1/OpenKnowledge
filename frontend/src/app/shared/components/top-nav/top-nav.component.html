@@ -1,9 +1,12 @@
 <nav class="top-nav">
   <div class="top-nav__inner">
-    <a class="top-nav__logo" routerLink="/">
-      <img class="top-nav__logo-icon" [src]="themeSvc.theme() === 'light' ? 'openknowledge_icon.svg' : 'openknowledge_icon_white.svg'" alt="" />
-      <span class="top-nav__logo-text">OpenKnowledge</span>
-    </a>
+    <div class="top-nav__brand">
+      <a class="top-nav__logo" routerLink="/">
+        <img class="top-nav__logo-icon" [src]="themeSvc.theme() === 'light' ? 'openknowledge_icon.svg' : 'openknowledge_icon_white.svg'" alt="" />
+        <span class="top-nav__logo-text">OpenKnowledge</span>
+      </a>
+      <span class="top-nav__tagline">A free, open-source, AI-powered tool for researchers.</span>
+    </div>
 
     <div class="top-nav__actions">
       <a
