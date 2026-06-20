@@ -14,26 +14,76 @@ Two read paths:
 from __future__ import annotations
 
 import json
+import logging
+import os
 from collections.abc import AsyncIterator
 
 import anyio
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from ..models.paper import SearchRequest, SearchResponse
+from ..models.paper import (
+    ScholarPageRequest,
+    ScholarPageResponse,
+    SearchRequest,
+    SearchResponse,
+)
 from ..services import archetype
 from ..services.retrieval.boolean_query import BooleanQueryError, compile_to_opensearch
 from ..services.retrieval.opensearch_search import (
+    _MAX_RESULT_WINDOW,
     OpenSearchError,
     OpenSearchNotConfiguredError,
     get_engine,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/retrieval/scholar", tags=["scholar"])
 
 # Papers are pulled (and archetype-classified) in batches of this size while streaming, so
 # memory stays bounded regardless of how many million the query matches.
 _STREAM_BATCH = 500
+
+# Hard backstop on how many papers a single Scholar search may return, applied even when
+# OPENSEARCH_RESULT_LIMIT is unset (unlimited). Without it, a broad query like
+# "learning OR entailment OR compositional" materialises/streams hundreds of thousands of
+# papers and OOM-kills the backend. Tunable via SCHOLAR_MAX_RESULTS.
+_DEFAULT_SCHOLAR_MAX_RESULTS = 10000
+
+
+def _scholar_max_results() -> int:
+    """The server-side safety cap from ``SCHOLAR_MAX_RESULTS`` (positive int), else default.
+
+    Unset/empty/invalid/non-positive all fall back to the default — this cap must never
+    resolve to "unlimited", since it is the OOM backstop.
+    """
+    raw = os.getenv("SCHOLAR_MAX_RESULTS")
+    if raw is None or raw.strip() == "":
+        return _DEFAULT_SCHOLAR_MAX_RESULTS
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning(
+            "Invalid int for SCHOLAR_MAX_RESULTS=%r; using default %d",
+            raw, _DEFAULT_SCHOLAR_MAX_RESULTS,
+        )
+        return _DEFAULT_SCHOLAR_MAX_RESULTS
+    return value if value > 0 else _DEFAULT_SCHOLAR_MAX_RESULTS
+
+
+def _effective_limit(request: SearchRequest) -> int:
+    """Smallest positive cap to apply: the server backstop, or a tighter client request.
+
+    Always a positive int (never ``None``/unlimited) so the search is bounded regardless
+    of ``OPENSEARCH_RESULT_LIMIT``. A client may ask for *fewer* via ``max_total_results``
+    but cannot exceed the server backstop.
+    """
+    cap = _scholar_max_results()
+    requested = request.max_total_results
+    if requested is not None and requested > 0:
+        cap = min(cap, requested)
+    return cap
 
 
 def _boolean_source(request: SearchRequest) -> str:
@@ -50,9 +100,11 @@ async def scholar_search(request: SearchRequest) -> SearchResponse:
 
     boolean_query = _boolean_source(request)
     engine = get_engine()
+    cap = _effective_limit(request)
 
     try:
-        papers = engine.search(boolean_query)
+        # Bounded by `cap` so this never materialises an unbounded match set into memory.
+        papers = list(engine.iter_search(boolean_query, result_limit=cap))
     except BooleanQueryError as exc:
         raise HTTPException(status_code=422, detail=f"Invalid boolean query: {exc}")
     except OpenSearchNotConfiguredError as exc:
@@ -74,6 +126,68 @@ async def scholar_search(request: SearchRequest) -> SearchResponse:
         queries_used={"semantic_scholar": boolean_query},
         deduplication_removed=0,
         background_job_id=None,
+    )
+
+
+# Upper bound on a single page so one request can never pull an unreasonable batch.
+_MAX_PAGE_SIZE = 200
+
+
+@router.post("/search/page", response_model=ScholarPageResponse)
+async def scholar_search_page(request: ScholarPageRequest) -> ScholarPageResponse:
+    """One sorted/filtered page of Scholar results, plus the exact total match count.
+
+    The fast, default read path: returns the total immediately and only the requested page
+    (top results by ok-score proxy), so the backend holds at most ``page_size`` papers and
+    the client fetches further pages on demand. Filters apply across the whole match set.
+    """
+    if not request.keywords and not (request.raw_query and request.raw_query.strip()):
+        raise HTTPException(status_code=422, detail="At least one keyword is required.")
+
+    page = max(1, request.page)
+    page_size = max(1, min(request.page_size, _MAX_PAGE_SIZE))
+    boolean_query = _boolean_source(request)
+    engine = get_engine()
+    queries_used = {"semantic_scholar": boolean_query}
+
+    # Deep paging past the index result window isn't supported by from/size, so the
+    # navigable depth is capped at the smaller of the window and the safety cap.
+    cap = min(_scholar_max_results(), _MAX_RESULT_WINDOW)
+    offset = (page - 1) * page_size
+    remaining = cap - offset
+    # Past the navigable window: fetch nothing (size 0) but still report the real total.
+    fetch_offset = offset if remaining > 0 else 0
+    fetch_size = min(page_size, remaining) if remaining > 0 else 0
+
+    try:
+        papers, total = engine.search_page(
+            boolean_query,
+            offset=fetch_offset,
+            size=fetch_size,
+            sort=request.sort,
+            filters=request.filters,
+        )
+    except BooleanQueryError as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid boolean query: {exc}")
+    except OpenSearchNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=503, detail=f"Semantic Scholar mode is not configured: {exc}"
+        )
+    except Exception as exc:  # connection / query errors
+        raise HTTPException(status_code=502, detail=f"Semantic Scholar search failed: {exc}")
+
+    # ≤ page_size papers → classification is fast; already-archetyped (backfilled) docs skip.
+    await archetype.classify_papers(papers)
+
+    has_more = (offset + len(papers)) < min(total, cap)
+    return ScholarPageResponse(
+        papers=papers,
+        total_found=total,
+        page=page,
+        page_size=page_size,
+        has_more=has_more,
+        queries_used=queries_used,
+        result_cap=cap,
     )
 
 
@@ -120,6 +234,7 @@ async def scholar_search_stream(request: SearchRequest) -> StreamingResponse:
 
     boolean_query = _boolean_source(request)
     engine = get_engine()
+    cap = _effective_limit(request)
 
     # Fail fast with a real HTTP status *before* the 200 stream is committed.
     if not engine.is_configured:
@@ -132,7 +247,8 @@ async def scholar_search_stream(request: SearchRequest) -> StreamingResponse:
         raise HTTPException(status_code=422, detail=f"Invalid boolean query: {exc}")
 
     async def stream() -> AsyncIterator[bytes]:
-        iterator = engine.iter_search(boolean_query)
+        # `cap` bounds the scroll: memory stays per-batch and the stream always terminates.
+        iterator = engine.iter_search(boolean_query, result_limit=cap)
         total = 0
         while True:
             # Pull a batch off the blocking scroll in a worker thread so the event loop is
@@ -160,6 +276,9 @@ async def scholar_search_stream(request: SearchRequest) -> StreamingResponse:
             "queries_used": {"semantic_scholar": boolean_query},
             "deduplication_removed": 0,
             "background_job_id": None,
+            # True when the stream stopped at the safety cap (more matches likely exist).
+            "result_cap": cap,
+            "capped": total >= cap,
         })
 
     return StreamingResponse(

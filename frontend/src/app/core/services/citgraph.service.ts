@@ -67,7 +67,8 @@ export class CitGraphService {
     include_non_matching: boolean;
     keywords: string[];
     k?: number;
-    max_per_hop?: number;
+    max_per_hop?: number | null;
+    top_k_per_paper?: (number | null)[] | null;
   }): Observable<CitGraphResponse> {
     return this.http.post<CitGraphResponse>(`${this.baseUrl}/explore`, req);
   }
@@ -78,7 +79,8 @@ export class CitGraphService {
     include_non_matching: boolean;
     keywords: string[];
     k?: number;
-    max_per_hop?: number;
+    max_per_hop?: number | null;
+    top_k_per_paper?: (number | null)[] | null;
   }): Observable<CitGraphResponse> {
     return this.http.post<CitGraphResponse>(`${this.baseUrl}/demo/explore`, req);
   }

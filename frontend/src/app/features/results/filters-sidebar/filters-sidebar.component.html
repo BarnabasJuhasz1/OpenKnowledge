@@ -1,4 +1,4 @@
-@if (hasClassifiedPapers()) {
+@if (!isScholar && hasClassifiedPapers()) {
   <div class="archetype-dist">
     <h4 class="archetype-dist__title">Archetype Distribution</h4>
     
@@ -110,13 +110,15 @@
   <!-- Toggle filters -->
   <section class="sidebar__section">
     <h4 class="sidebar__label">Show only</h4>
-    <label class="sidebar__toggle">
-      <input type="checkbox" [(ngModel)]="codeOnly" />
-      <span class="sidebar__toggle-text">
-        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-        Has code
-      </span>
-    </label>
+    @if (!isScholar) {
+      <label class="sidebar__toggle">
+        <input type="checkbox" [(ngModel)]="codeOnly" />
+        <span class="sidebar__toggle-text">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          Has code
+        </span>
+      </label>
+    }
     <label class="sidebar__toggle">
       <input type="checkbox" [(ngModel)]="peerReviewedOnly" />
       <span class="sidebar__toggle-text">
@@ -133,7 +135,8 @@
     </label>
   </section>
 
-  <!-- Archetype -->
+  <!-- Archetype (hidden in Scholar mode until archetypes are backfilled corpus-wide) -->
+  @if (!isScholar) {
   <section class="sidebar__section sidebar__section--archetypes">
     <h4 class="sidebar__label">Archetype</h4>
     <div class="arch-select" [class.arch-select--open]="archetypesOpen">
@@ -194,4 +197,5 @@
       }
     </div>
   </section>
+  }
 </aside>

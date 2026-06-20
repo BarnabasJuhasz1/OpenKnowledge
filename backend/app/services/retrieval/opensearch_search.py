@@ -21,12 +21,16 @@ from .boolean_query import compile_to_opensearch
 
 logger = logging.getLogger(__name__)
 
-# _source fields fetched per hit (everything needed to build a Paper).
+# _source fields fetched per hit (everything needed to build a Paper). The archetype +
+# code-availability fields are absent until a corpus-wide backfill populates them; fetching
+# them is harmless meanwhile (they simply come back missing).
 _SOURCE_FIELDS = [
     "corpusid", "title", "abstract", "year", "publicationdate",
     "citationcount", "referencecount", "is_open_access", "url", "venue",
     "journal", "authors", "doi", "arxiv_id", "pubmed_id",
     "fields_of_study", "publication_types",
+    "predicted_main_archetype", "predicted_second_tier_archetype",
+    "has_public_code", "code_url", "repo_stars", "has_dataset",
 ]
 
 
@@ -119,6 +123,10 @@ class OpenSearchEngine:
             retry_on_timeout if retry_on_timeout is not None
             else _env_bool("OPENSEARCH_RETRY_ON_TIMEOUT", True)
         )
+        # Node hydration fans its 1000-id chunks out over this many threads (see
+        # fetch_nodes_by_corpusid). The client connection pool is sized to match so
+        # concurrent chunk requests are not throttled by the pool.
+        self.hydrate_workers = _env_int("OPENSEARCH_HYDRATE_WORKERS", 8)
         self._client = None  # lazily created
 
     @property
@@ -144,6 +152,7 @@ class OpenSearchEngine:
                 timeout=self.timeout,
                 max_retries=self.max_retries,
                 retry_on_timeout=self.retry_on_timeout,
+                maxsize=max(10, self.hydrate_workers),
             )
         except Exception as exc:
             raise OpenSearchNotConfiguredError(
@@ -194,17 +203,20 @@ class OpenSearchEngine:
         if identifiers:
             # One query for all identifier seeds: match either keyword field, then map
             # the returned doi/arxiv_id back to the originating seed (case-insensitive).
+            #
+            # doi/arxiv_id are case-sensitive `keyword`s and S2 stores DOIs in their
+            # original (often upper) case, so an exact `terms` match on a lowercased
+            # seed misses ~70% of papers (the old "No papers found" graph bug). Match
+            # case-insensitively instead — `terms` has no such option, so we OR a
+            # per-value `term` with `case_insensitive` for each field. DOIs are
+            # case-insensitive identifiers by spec, so this is the correct semantics.
             lowered = [s.strip().lower() for s in identifiers]
+            should: list[dict] = []
+            for val in lowered:
+                should.append({"term": {"doi": {"value": val, "case_insensitive": True}}})
+                should.append({"term": {"arxiv_id": {"value": val, "case_insensitive": True}}})
             body = {
-                "query": {
-                    "bool": {
-                        "should": [
-                            {"terms": {"doi": lowered}},
-                            {"terms": {"arxiv_id": lowered}},
-                        ],
-                        "minimum_should_match": 1,
-                    }
-                },
+                "query": {"bool": {"should": should, "minimum_should_match": 1}},
                 "size": min(len(identifiers), _MAX_RESULT_WINDOW),
                 "_source": ["corpusid", "doi", "arxiv_id"],
                 "track_total_hits": False,
@@ -258,27 +270,50 @@ class OpenSearchEngine:
             OpenSearchNotConfiguredError: if OpenSearch is unavailable/unconfigured.
             OpenSearchSearchError: if a fetch request fails.
         """
-        client = self._get_client()
-        out: dict[int, Paper] = {}
         unique = list({int(c) for c in corpusids})
+        if not unique:
+            return {}
         chunk = 1000
-        for start in range(0, len(unique), chunk):
-            ids = unique[start:start + chunk]
-            body = {
-                "query": {"terms": {"corpusid": ids}},
-                "size": len(ids),
-                "_source": _SOURCE_FIELDS,
-                "track_total_hits": False,
-            }
-            try:
-                resp = client.search(index=self.index, body=body)
-            except Exception as exc:
-                raise OpenSearchSearchError(f"OpenSearch node fetch failed: {exc}") from exc
-            for hit in resp.get("hits", {}).get("hits", []):
-                src = hit.get("_source", {})
-                cid = src.get("corpusid")
-                if cid is not None:
-                    out[int(cid)] = self._hit_to_paper(src)
+        chunks = [unique[i:i + chunk] for i in range(0, len(unique), chunk)]
+        # Common case (a frontier that fits one chunk, e.g. seed hydration): no pool.
+        if len(chunks) == 1:
+            return self._fetch_nodes_chunk(chunks[0])
+
+        # Many chunks: fan the per-chunk searches out concurrently. The opensearch-py
+        # client is thread-safe (shared connection pool sized via maxsize), so dozens
+        # of serial round-trips collapse into a few parallel waves. _get_client is
+        # warmed first so the threads don't race to create the client.
+        self._get_client()
+        out: dict[int, Paper] = {}
+        workers = max(1, min(self.hydrate_workers, len(chunks)))
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            # map() re-raises the first chunk failure as OpenSearchSearchError on iteration.
+            for chunk_result in pool.map(self._fetch_nodes_chunk, chunks):
+                out.update(chunk_result)
+        return out
+
+    def _fetch_nodes_chunk(self, ids: list[int]) -> dict[int, Paper]:
+        """Fetch a single ``corpusid`` chunk (<= result window). Used by the parallel
+        and single-chunk paths of :meth:`fetch_nodes_by_corpusid`."""
+        client = self._get_client()
+        body = {
+            "query": {"terms": {"corpusid": ids}},
+            "size": len(ids),
+            "_source": _SOURCE_FIELDS,
+            "track_total_hits": False,
+        }
+        try:
+            resp = client.search(index=self.index, body=body)
+        except Exception as exc:
+            raise OpenSearchSearchError(f"OpenSearch node fetch failed: {exc}") from exc
+        out: dict[int, Paper] = {}
+        for hit in resp.get("hits", {}).get("hits", []):
+            src = hit.get("_source", {})
+            cid = src.get("corpusid")
+            if cid is not None:
+                out[int(cid)] = self._hit_to_paper(src)
         return out
 
     def searchable_count(self) -> int:
@@ -312,10 +347,10 @@ class OpenSearchEngine:
         """
         return list(self.iter_search(boolean_query))
 
-    def iter_search(self, boolean_query: str):
+    def iter_search(self, boolean_query: str, *, result_limit=_UNSET):
         """Compile and run a boolean query; yield matching papers lazily.
 
-        This is the scalable entry point. Behaviour depends on ``result_limit``:
+        This is the scalable entry point. Behaviour depends on the effective limit:
 
         * **Finite and within the result window** (``<= _MAX_RESULT_WINDOW``): a single
           ``search`` request, BM25-ranked — the right thing for top-N queries.
@@ -325,6 +360,10 @@ class OpenSearchEngine:
           scroll. Scan order is ``_doc`` (not relevance): cheap and constant-memory, which
           is what lets it scale to millions. A finite cap still stops the stream early.
 
+        ``result_limit`` overrides the engine's env-configured cap for this one call: pass
+        an int to cap (an OOM backstop the caller controls per-request), or ``None`` for
+        unlimited. When left unset, the engine's own ``self.result_limit`` applies.
+
         Raises:
             BooleanQueryError: if the boolean query is malformed.
             OpenSearchNotConfiguredError: if OpenSearch is unavailable/unconfigured.
@@ -332,7 +371,7 @@ class OpenSearchEngine:
         """
         client = self._get_client()  # raises OpenSearchNotConfiguredError if unavailable
         query = compile_to_opensearch(boolean_query)
-        limit = self.result_limit
+        limit = self.result_limit if result_limit is _UNSET else result_limit
 
         if limit is not None and limit <= _MAX_RESULT_WINDOW:
             yield from self._search_top_n(client, query, limit)
@@ -356,6 +395,136 @@ class OpenSearchEngine:
                     len(hits), limit)
         for hit in hits:
             yield self._hit_to_paper(hit.get("_source", {}))
+
+    # Peer-reviewed is inferred from these Semantic Scholar publication types.
+    _PEER_REVIEWED_TYPES = ["JournalArticle", "Conference"]
+
+    @staticmethod
+    def _build_filters(filters) -> list[dict]:
+        """Translate a ``ScholarFilters``-shaped object into OpenSearch filter clauses.
+
+        ``filters`` may be ``None`` or any object exposing the attributes; missing/zero
+        values contribute no clause. These run as ``filter`` context (no scoring), so they
+        constrain the *entire* match set, not just a page.
+        """
+        if filters is None:
+            return []
+        clauses: list[dict] = []
+
+        def _attr(name):
+            return getattr(filters, name, None)
+
+        year_min, year_max = _attr("year_min"), _attr("year_max")
+        if year_min is not None or year_max is not None:
+            rng = {}
+            if year_min is not None:
+                rng["gte"] = year_min
+            if year_max is not None:
+                rng["lte"] = year_max
+            clauses.append({"range": {"year": rng}})
+
+        cite_min, cite_max = _attr("citation_min"), _attr("citation_max")
+        if cite_min is not None or cite_max is not None:
+            rng = {}
+            if cite_min is not None:
+                rng["gte"] = cite_min
+            if cite_max is not None:
+                rng["lte"] = cite_max
+            clauses.append({"range": {"citationcount": rng}})
+
+        if _attr("open_access_only"):
+            clauses.append({"term": {"is_open_access": True}})
+        if _attr("peer_reviewed_only"):
+            clauses.append(
+                {"terms": {"publication_types": OpenSearchEngine._PEER_REVIEWED_TYPES}}
+            )
+        if _attr("code_only"):
+            clauses.append({"term": {"has_public_code": True}})
+
+        archetypes = _attr("archetypes")
+        if archetypes:
+            clauses.append({
+                "bool": {
+                    "should": [
+                        {"terms": {"predicted_main_archetype": list(archetypes)}},
+                        {"terms": {"predicted_second_tier_archetype": list(archetypes)}},
+                    ],
+                    "minimum_should_match": 1,
+                }
+            })
+        return clauses
+
+    @staticmethod
+    def _build_sort(sort: str) -> list[dict]:
+        """Field sort for a page, with a ``corpusid`` tiebreaker for stable pagination."""
+        tiebreak = {"corpusid": {"order": "asc"}}
+        field_orders = {
+            # relevancy is proxied by citation count (the dominant ok-score term for indexed
+            # papers); exact ok_score is computed per page for display.
+            "relevancy": ("citationcount", "desc"),
+            "citations_desc": ("citationcount", "desc"),
+            "citations_asc": ("citationcount", "asc"),
+            "year_desc": ("year", "desc"),
+            "year_asc": ("year", "asc"),
+        }
+        if sort == "title_asc":
+            return [{"title.kw": {"order": "asc"}}, tiebreak]
+        field, order = field_orders.get(sort, field_orders["relevancy"])
+        return [{field: {"order": order, "missing": "_last"}}, tiebreak]
+
+    def search_page(
+        self,
+        boolean_query: str,
+        *,
+        offset: int,
+        size: int,
+        sort: str = "relevancy",
+        filters=None,
+    ) -> tuple[list[Paper], int]:
+        """One sorted+filtered page of results, plus the total match count.
+
+        A single ``search`` request with ``from``/``size`` and ``track_total_hits`` — so the
+        caller gets the exact total cheaply and never materialises more than ``size`` papers.
+        The caller is responsible for keeping ``offset + size`` within the index result
+        window (``_MAX_RESULT_WINDOW``).
+
+        Returns ``(papers, total_matches)``.
+
+        Raises:
+            BooleanQueryError: if the boolean query is malformed.
+            OpenSearchNotConfiguredError: if OpenSearch is unavailable/unconfigured.
+            OpenSearchSearchError: if the search request fails.
+        """
+        client = self._get_client()
+        compiled = compile_to_opensearch(boolean_query)
+        bool_query: dict = {"must": [compiled]}
+        filter_clauses = self._build_filters(filters)
+        if filter_clauses:
+            bool_query["filter"] = filter_clauses
+
+        body = {
+            "query": {"bool": bool_query},
+            "from": offset,
+            "size": size,
+            "sort": self._build_sort(sort),
+            "_source": _SOURCE_FIELDS,
+            "track_total_hits": True,
+        }
+        try:
+            resp = client.search(index=self.index, body=body)
+        except Exception as exc:
+            raise OpenSearchSearchError(f"OpenSearch page query failed: {exc}") from exc
+
+        hits = resp.get("hits", {})
+        total_raw = hits.get("total", 0)
+        # OpenSearch returns total as {"value": N, "relation": ...} when track_total_hits.
+        total = total_raw.get("value", 0) if isinstance(total_raw, dict) else int(total_raw)
+        papers = [self._hit_to_paper(h.get("_source", {})) for h in hits.get("hits", [])]
+        logger.info(
+            "Semantic Scholar (OpenSearch) page ok: %d/%d (from=%d size=%d sort=%s)",
+            len(papers), total, offset, size, sort,
+        )
+        return papers, int(total)
 
     def _scan_all(self, client, query: dict, limit: int | None):
         """Scroll path: stream every match (or up to ``limit``) past the result window."""
@@ -416,6 +585,14 @@ class OpenSearchEngine:
             reference_count=src.get("referencecount"),
             fields_of_study=list(src.get("fields_of_study") or []),
             is_peer_reviewed=any(t in pub_types for t in ("JournalArticle", "Conference")),
+            # Archetype + code-availability fields exist only once the corpus backfill runs;
+            # default-safe (None / 0 / False) so un-backfilled docs are unaffected.
+            has_public_code=src.get("has_public_code"),
+            code_url=src.get("code_url"),
+            repo_stars=src.get("repo_stars") or 0,
+            has_dataset=bool(src.get("has_dataset", False)),
+            predicted_main_archetype=src.get("predicted_main_archetype") or None,
+            predicted_second_tier_archetype=src.get("predicted_second_tier_archetype") or None,
             sources=["semantic_scholar"],
         )
 

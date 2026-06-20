@@ -37,12 +37,31 @@ $brand-light: rgba(var(--ok-primary-rgb), 0.15);
     padding-right: clamp(10px, 1vw, 14px);
   }
 
+  &__brand {
+    display: flex;
+    align-items: center;
+    gap: var(--ok-space-3);
+    min-width: 0;
+  }
+
   &__logo {
     display: flex;
     align-items: center;
     gap: var(--ok-space-2);
     text-decoration: none;
+    flex-shrink: 0;
     &:hover { text-decoration: none; }
+  }
+
+  &__tagline {
+    padding-left: var(--ok-space-3);
+    border-left: 1px solid var(--ok-outline-variant);
+    font-family: var(--ok-font-body);
+    font-size: 13px;
+    color: var(--ok-on-surface-variant);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   &__logo-icon {
@@ -208,6 +227,7 @@ $brand-light: rgba(var(--ok-primary-rgb), 0.15);
   .top-nav {
     &__inner { padding: 0 var(--ok-margin-mobile); }
     &__logo-text { display: none; }
+    &__tagline { display: none; }
     &__btn--ghost { display: none; }
     &__btn {
       padding: 0.5rem 0.9rem;

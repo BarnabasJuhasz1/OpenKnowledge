@@ -5,7 +5,13 @@ You are given the short title and ~100-word summary of each finer sub-cluster th
 2. Devise a short, specific title of at most 6 words naming this broader cluster.
 3. Write a concise summary of approximately 100 words explaining what this broader area of work is about and why these sub-clusters belong together (focus on the shared methodology or problem space).
 
+4. After the summary, write exactly 3 short note-style keyword phrases capturing this broader area's most distinctive properties (its key methods, problem spaces, or sub-areas). Each phrase should be a few words — not a sentence — optionally with a short "label: detail" form, e.g. "scalable self-attention models: BERT, GPT-3".
+
+If a list of other clusters at the same level is provided, treat it as contrast only: use it to pin down what makes THIS broader cluster distinct, and avoid generic statements that would apply equally to those sibling clusters. Do NOT summarize or mention the sibling clusters themselves.
+
 Output format (plain text only):
 - The FIRST line is the title, and nothing else.
-- The remaining lines are the ~100-word summary.
-Do NOT use JSON, markdown, bullet points, code fences, or "Title:"/"Summary:" labels. Do NOT write any reasoning or commentary.
+- The following lines are the ~100-word summary.
+- Then a line containing only ### as a separator.
+- Then the 3 keyword phrases, one per line, each starting with "- ".
+Do NOT use JSON, markdown headings, code fences, or "Title:"/"Summary:" labels. Do NOT write any reasoning or commentary.

@@ -182,3 +182,33 @@ async def test_explore_keyword_filter():
     edges = {(e.source, e.target) for e in result.edges}
     assert edges == {("seed", "A")}
 
+
+@pytest.mark.asyncio
+async def test_explore_max_per_hop_cumulative_demo():
+    store = _make_store()
+    # Seed cites A (10 citations) and B (5 citations).
+    # explore with direction=past, k=1, max_per_hop=1 (cumulative).
+    # Since max_per_hop=1, only A (10 citations) should be kept, and B (5 citations) should be capped.
+    result = await store.explore(
+        ["seed"], direction="past", include_non_matching=True, k=1, max_per_hop=1
+    )
+    node_ids = {n.paper_id for n in result.nodes}
+    assert node_ids == {"seed", "A"}
+    edges = {(e.source, e.target) for e in result.edges}
+    assert edges == {("seed", "A")}
+
+
+@pytest.mark.asyncio
+async def test_explore_top_k_per_paper_per_hop_demo():
+    store = _make_store()
+    # A cites E (1) and dup (9)
+    store._index.forward["A"] = ["E", "dup"]
+    result = await store.explore(
+        ["seed"], direction="past", include_non_matching=True, k=2, top_k_per_paper=[None, 1]
+    )
+    node_ids = {n.paper_id for n in result.nodes}
+    assert "dup" in node_ids
+    assert "E" not in node_ids
+
+
+

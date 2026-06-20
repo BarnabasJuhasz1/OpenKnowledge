@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { placedIdsInCluster, subclusterCount, ClusterMember } from './cluster-ops';
+import {
+  placedIdsInCluster,
+  baseIdsInCluster,
+  subclusterCount,
+  subclusterCommunities,
+  ClusterMember,
+} from './cluster-ops';
 
 /**
  * 6 base nodes across two clusters at the current view level.
@@ -40,6 +46,23 @@ describe('placedIdsInCluster', () => {
   });
 });
 
+describe('baseIdsInCluster', () => {
+  // Full base membership (placed or not), one id per base node index.
+  const baseIds = ['a', 'b', 'c', 'd', 'e', 'f'];
+
+  it('returns EVERY base member of the cluster, including unplaced ones', () => {
+    // Cluster 10 = indices 0,1,3; cluster 11 = 2,4; cluster 12 = 5 (never placed).
+    expect(baseIdsInCluster(communityAtLevel, baseIds, 10)).toEqual(['a', 'b', 'd']);
+    expect(baseIdsInCluster(communityAtLevel, baseIds, 11)).toEqual(['c', 'e']);
+    // 'f' (community 12) has no placed node but is still a real member → removed too.
+    expect(baseIdsInCluster(communityAtLevel, baseIds, 12)).toEqual(['f']);
+  });
+
+  it('returns an empty list for an unknown cluster', () => {
+    expect(baseIdsInCluster(communityAtLevel, baseIds, 99)).toEqual([]);
+  });
+});
+
 describe('subclusterCount', () => {
   /**
    * 6 nodes. At the current (parent) level there are two clusters, 10 and 11.
@@ -65,5 +88,34 @@ describe('subclusterCount', () => {
     // At the leaf level each node is its own child community (index identity).
     const leafChild = [0, 1, 2, 3, 4, 5];
     expect(subclusterCount(parent, leafChild, 10)).toBe(3);
+  });
+});
+
+describe('subclusterCommunities', () => {
+  // Same fixture as subclusterCount: cluster 10 → child communities {1, 2},
+  // cluster 11 → {3}.
+  const parent = [10, 10, 10, 11, 11, 11];
+  const child = [1, 1, 2, 3, 3, 3];
+
+  it('returns the distinct child community ids within a cluster', () => {
+    expect(subclusterCommunities(parent, child, 10).sort((a, b) => a - b)).toEqual([1, 2]);
+    expect(subclusterCommunities(parent, child, 11)).toEqual([3]);
+  });
+
+  it('returns an empty list for a cluster with no members', () => {
+    expect(subclusterCommunities(parent, child, 99)).toEqual([]);
+  });
+
+  it('yields one entry per paper at the leaf level (index identity)', () => {
+    // At the leaf level each node is its own child community, so a cluster's
+    // children are exactly its papers — the fully-expanded finest view.
+    const leafChild = [0, 1, 2, 3, 4, 5];
+    expect(subclusterCommunities(parent, leafChild, 10).sort((a, b) => a - b)).toEqual([0, 1, 2]);
+    expect(subclusterCommunities(parent, leafChild, 11).sort((a, b) => a - b)).toEqual([3, 4, 5]);
+  });
+
+  it('agrees with subclusterCount on the number of sub-clusters', () => {
+    expect(subclusterCommunities(parent, child, 10).length).toBe(subclusterCount(parent, child, 10));
+    expect(subclusterCommunities(parent, child, 11).length).toBe(subclusterCount(parent, child, 11));
   });
 });

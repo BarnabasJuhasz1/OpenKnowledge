@@ -5,6 +5,29 @@ import { environment } from '../../../environments/environment';
 import { SearchRequest, SearchResponse, StreamEvent, BackgroundProgress, Paper } from '../models/paper.model';
 import { ProjectContextService } from './project-context.service';
 
+/** Server-side filters for a paginated Scholar search (applied across all matches). */
+export interface ScholarFiltersPayload {
+  year_min?: number | null;
+  year_max?: number | null;
+  citation_min?: number | null;
+  citation_max?: number | null;
+  open_access_only?: boolean;
+  peer_reviewed_only?: boolean;
+  code_only?: boolean;
+  archetypes?: string[] | null;
+}
+
+/** One page of Scholar results plus the exact total match count. */
+export interface ScholarPageResponse {
+  papers: Paper[];
+  total_found: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+  queries_used: Record<string, string>;
+  result_cap: number;
+}
+
 @Injectable({ providedIn: 'root' })
 export class RetrievalService {
   private readonly http = inject(HttpClient);
@@ -29,6 +52,24 @@ export class RetrievalService {
   /** Cost-bounded boolean search over the Semantic Scholar BigQuery corpus. */
   scholarSearch(request: SearchRequest): Observable<SearchResponse> {
     return this.http.post<SearchResponse>(`${this.baseUrl}/retrieval/scholar/search`, request);
+  }
+
+  /**
+   * One page of Scholar results: the backend returns the exact total match count and only
+   * the requested page (top results by ok-score), sorted + filtered server-side across all
+   * matches. The frontend holds just the current page — further pages are fetched on demand.
+   */
+  scholarSearchPage(
+    request: SearchRequest,
+    page: number,
+    pageSize: number,
+    sort: string,
+    filters: ScholarFiltersPayload,
+  ): Observable<ScholarPageResponse> {
+    return this.http.post<ScholarPageResponse>(
+      `${this.baseUrl}/retrieval/scholar/search/page`,
+      { ...request, page, page_size: pageSize, sort, filters },
+    );
   }
 
   searchStream(

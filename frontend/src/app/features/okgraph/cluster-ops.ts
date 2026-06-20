@@ -33,6 +33,26 @@ export function placedIdsInCluster(
 }
 
 /**
+ * Ids of EVERY base node belonging to `topCluster` at the current view level —
+ * including ones not currently placed on the canvas. Unlike `placedIdsInCluster`
+ * (which only sees placed nodes), this resolves the cluster's full membership so a
+ * "remove cluster" action can permanently exclude every paper in it, not just the
+ * visible representatives. `communityAtLevel[i]` / `baseIds[i]` describe base node
+ * `i` at the level currently shown.
+ */
+export function baseIdsInCluster(
+  communityAtLevel: readonly number[],
+  baseIds: readonly string[],
+  topCluster: number,
+): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < communityAtLevel.length; i++) {
+    if (communityAtLevel[i] === topCluster) out.push(baseIds[i]);
+  }
+  return out;
+}
+
+/**
  * Number of distinct sub-clusters (communities one level finer) contained in
  * `topCluster`. `parentComm[i]` / `childComm[i]` are node `i`'s community at the
  * current view level and the level immediately below it. Counts how many child
@@ -46,9 +66,25 @@ export function subclusterCount(
   childComm: readonly number[],
   topCluster: number,
 ): number {
+  return subclusterCommunities(parentComm, childComm, topCluster).length;
+}
+
+/**
+ * Distinct child community ids (one level finer) contained in `topCluster`. Same
+ * scan as `subclusterCount` but returns the ids themselves, so a caller entering a
+ * cluster can resolve and place each sub-cluster's representative. `parentComm[i]` /
+ * `childComm[i]` are node `i`'s community at the current view level and the level
+ * immediately below it. At the leaf level the child community is each node's own
+ * index, so this yields one entry per paper in the cluster.
+ */
+export function subclusterCommunities(
+  parentComm: readonly number[],
+  childComm: readonly number[],
+  topCluster: number,
+): number[] {
   const subs = new Set<number>();
   for (let i = 0; i < parentComm.length; i++) {
     if (parentComm[i] === topCluster) subs.add(childComm[i]);
   }
-  return subs.size;
+  return [...subs];
 }

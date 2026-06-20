@@ -1,36 +1,39 @@
 <div class="search-tab">
+  <!-- Decorative Voronoi backdrop: closed polygonal cells generated in the
+       component, mostly neutral with a few accent-tinted cells and soft accent
+       glows. Border cells are clipped by the viewport. Purely cosmetic. -->
+  <svg class="search-tab__bg" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <defs>
+      <filter id="okBgGlow" x="-60%" y="-60%" width="220%" height="220%">
+        <feGaussianBlur stdDeviation="55" />
+      </filter>
+    </defs>
+
+    <!-- soft accent glows -->
+    <circle class="search-tab__bg-glow" cx="210" cy="180" r="90" filter="url(#okBgGlow)" />
+    <circle class="search-tab__bg-glow" cx="1250" cy="700" r="120" filter="url(#okBgGlow)" />
+
+    <!-- Voronoi cells -->
+    <g class="search-tab__bg-cells">
+      @for (cell of voronoiCells; track $index) {
+        <polygon [attr.points]="cell.points" [class.is-accent]="cell.accent" />
+      }
+    </g>
+  </svg>
+
   <div class="search-tab__inner">
     <h1 class="search-tab__title">Discover Research Literature</h1>
     <p class="search-tab__subtitle">
-      Search across OpenAlex, Semantic Scholar, arXiv, PubMed, DBLP, CrossRef, Europe PMC and CORE — open source, no subscription required.
+      Explore over 235 million scientific papers across all disciplines.
     </p>
 
     <div class="search-tab__search">
-      <app-prompt-keywords (generated)="onKeywordsGenerated($event)" />
-      <app-query-input
+      <app-search-composer
         [initialQuery]="state.rawQuery()"
         [loading]="state.loading()"
         (search)="onSearch($event)"
+        (generated)="onKeywordsGenerated($event)"
       />
-    </div>
-
-    <div class="mode-select" role="radiogroup" aria-label="Search mode">
-      <span class="mode-select__label">Search mode</span>
-      <div class="mode-select__pills">
-        @for (opt of modeOptions; track opt.id) {
-          <button
-            type="button"
-            role="radio"
-            class="mode-select__pill"
-            [class.mode-select__pill--active]="mode.mode() === opt.id"
-            [attr.aria-checked]="mode.mode() === opt.id"
-            [title]="opt.hint"
-            (click)="mode.setMode(opt.id)"
-          >
-            {{ opt.label }}
-          </button>
-        }
-      </div>
     </div>
   </div>
 </div>

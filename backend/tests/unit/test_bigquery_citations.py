@@ -53,6 +53,8 @@ def test_references_query_shape_and_rows():
     assert "citation_edges`" in sql
     assert "citingcorpusid IN UNNEST(@ids)" in sql
     assert "PARTITION BY citingcorpusid" in sql
+    # Cap keeps the top-K by the neighbour's citation count (ranked QUALIFY), not id order.
+    assert "ORDER BY neighbor_citationcount DESC" in sql
     assert "<= @cap" in sql
     params = {p.name: p for p in g._client.last_config.query_parameters}
     assert params["ids"].values == [100]

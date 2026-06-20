@@ -79,6 +79,13 @@ export interface YearExpandOptions {
   selectedYear: number;
   /** Whether a given base-node index is already placed on the canvas. */
   isPlaced: (paperIndex: number) => boolean;
+  /**
+   * Whether a given base-node index was permanently removed. Removed nodes are
+   * never offered as candidates AND are skipped when choosing a community's
+   * representative (so a removed rep is replaced by the next-best, mirroring
+   * repIndexOfCluster). Defaults to "nothing removed".
+   */
+  isRemoved?: (paperIndex: number) => boolean;
 }
 
 /**
@@ -91,16 +98,20 @@ export function yearExpandQueues(opts: YearExpandOptions): Map<number, YearCandi
     commAtLevel, currentTopLevel, nodeYear, nodeScore,
     laneClusterOf, inView, selectedYear, isPlaced,
   } = opts;
+  const isRemoved = opts.isRemoved ?? (() => false);
 
   const n = nodeYear.length;
 
   // Representative (max-score, lower-index tie-break) per community at each level.
   // Mirrors repIndexOfCluster's strict `>` comparison: the first-seen max wins.
+  // Removed nodes are skipped so a removed representative is replaced by the
+  // next-best (and a fully-removed community simply has no rep).
   const repAt: Map<number, number>[] = [];
   for (let L = 0; L <= currentTopLevel; L++) {
     const comm = commAtLevel[L];
     const best = new Map<number, number>();      // community -> rep index
     for (let i = 0; i < n; i++) {
+      if (isRemoved(i)) continue;
       const c = comm[i];
       const cur = best.get(c);
       if (cur === undefined || nodeScore[i] > nodeScore[cur]) best.set(c, i);
@@ -120,6 +131,7 @@ export function yearExpandQueues(opts: YearExpandOptions): Map<number, YearCandi
     if (!inView[i]) continue;
     if (nodeYear[i] !== selectedYear) continue;
     if (isPlaced(i)) continue;
+    if (isRemoved(i)) continue;
 
     const level = highestRepLevel(i);
     const community = level >= 0 ? commAtLevel[level][i] : i;

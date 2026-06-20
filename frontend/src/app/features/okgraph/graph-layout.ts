@@ -255,6 +255,81 @@ export function orderLanesByConnectivity(
   return [...result, ...isolated];
 }
 
+/** Minimal placed-node shape the citation-link derivation needs. */
+export interface PlacedRef {
+  id: string;
+  /** Base-node index this node represents (its cluster representative). */
+  repIndex: number;
+  /** Hierarchy level the node represents (-1 = an individual leaf paper). */
+  level: number;
+  /** Community id at `level` the node represents. */
+  community: number;
+}
+
+/**
+ * Derive the links to draw between placed nodes from the REAL citation edges,
+ * so a cluster shows its internal citation structure regardless of how its
+ * papers were revealed (drilling in / "expand whole cluster" add no manual
+ * links). Each base node is mapped to the finest placed node that represents it
+ * in the current view; a citation edge whose two endpoints fall in the SAME
+ * current-view cluster becomes one link between those placed nodes. Cross-cluster
+ * edges are dropped on purpose — they are shown as blob bridges, not node links.
+ * Result is undirected and de-duplicated.
+ *
+ * @param placed              nodes currently on the canvas (already filtered).
+ * @param rawEdges            citation edges in paper_id form (source cites target).
+ * @param idxOf               paper_id -> base-node index.
+ * @param currentComm         community id per base-node index at the view level.
+ * @param communitiesAtLevel  community array for a hierarchy level (-1 = leaves).
+ * @param baseCount           number of base nodes.
+ */
+export function citationLinksBetweenPlaced(
+  placed: PlacedRef[],
+  rawEdges: { source: string; target: string }[],
+  idxOf: Map<string, number>,
+  currentComm: number[],
+  communitiesAtLevel: (level: number) => number[],
+  baseCount: number,
+): LayoutEdge[] {
+  // Group placed nodes by level → (community -> placed id).
+  const commByLevel = new Map<number, Map<number, string>>();
+  for (const p of placed) {
+    let m = commByLevel.get(p.level);
+    if (!m) { m = new Map(); commByLevel.set(p.level, m); }
+    m.set(p.community, p.id);
+  }
+
+  // Map each base node to the finest (lowest-level) placed node covering it.
+  const baseToPlaced: (string | null)[] = new Array(baseCount).fill(null);
+  const levelsFinestFirst = [...commByLevel.keys()].sort((a, b) => a - b);
+  for (const lvl of levelsFinestFirst) {
+    const m = commByLevel.get(lvl)!;
+    const comm = communitiesAtLevel(lvl);
+    for (let i = 0; i < baseCount; i++) {
+      if (baseToPlaced[i] !== null) continue;
+      const id = m.get(comm[i]);
+      if (id !== undefined) baseToPlaced[i] = id;
+    }
+  }
+
+  const seen = new Set<string>();
+  const edges: LayoutEdge[] = [];
+  for (const e of rawEdges) {
+    const u = idxOf.get(e.source);
+    const v = idxOf.get(e.target);
+    if (u == null || v == null) continue;
+    if (currentComm[u] !== currentComm[v]) continue;   // intra-cluster only
+    const fromId = baseToPlaced[u];
+    const toId = baseToPlaced[v];
+    if (!fromId || !toId || fromId === toId) continue;
+    const key = fromId < toId ? `${fromId}|${toId}` : `${toId}|${fromId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    edges.push({ fromId, toId });
+  }
+  return edges;
+}
+
 export function edgePath(
   from: { x: number; y: number },
   to: { x: number; y: number },

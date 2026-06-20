@@ -1,6 +1,7 @@
 import { Component, ElementRef, HostListener, inject, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ALL_SOURCES, SearchStateService, SortField, ALL_ARCHETYPES } from '../../../core/services/search-state.service';
+import { SearchModeService } from '../../../core/services/search-mode.service';
 
 const ARCHETYPE_META: Record<string, { color: string; icon: string; gradient: string }> = {
   'The Innovator': { color: '#a855f7', icon: 'emoji_objects', gradient: 'linear-gradient(90deg, #a855f7, #c084fc)' },
@@ -22,7 +23,14 @@ const ARCHETYPE_META: Record<string, { color: string; icon: string; gradient: st
 })
 export class FiltersSidebarComponent {
   readonly state = inject(SearchStateService);
+  private readonly mode = inject(SearchModeService);
   private readonly host = inject(ElementRef<HTMLElement>);
+
+  /** Scholar mode: archetype + code + per-database filters aren't yet filterable across the
+   *  whole corpus (those fields aren't backfilled / it's a single source), so they're hidden. */
+  get isScholar(): boolean {
+    return this.mode.isScholar();
+  }
 
   /** Computed archetype distribution of scored papers. */
   readonly archetypeDistribution = computed(() => {

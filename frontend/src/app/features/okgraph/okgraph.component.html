@@ -17,89 +17,57 @@
             <!-- Left panel: Seed Papers -->
             <div class="setup-panel setup-panel--papers">
               <h2 class="setup-section-title">
-                <span class="material-symbols-outlined" style="color: #4caf50; font-variation-settings: 'FILL' 1;">eco</span>
-                1. Seed Papers
+                <span class="material-symbols-outlined">tune</span>
+                1. Configuration
               </h2>
+
+              <!-- Primary source selector: build from the specific Seed papers, or from
+                   every retrieved search result. -->
+              <div class="seed-source-tabs">
+                <button
+                  type="button"
+                  class="seed-source-tab"
+                  [class.seed-source-tab--active]="useOnlySelected()"
+                  (click)="useOnlySelected.set(true)"
+                >
+                  Seed ({{ selectedPapers().length }})
+                </button>
+                <button
+                  type="button"
+                  class="seed-source-tab"
+                  [class.seed-source-tab--active]="!useOnlySelected()"
+                  (click)="useOnlySelected.set(false)"
+                >
+                  All ({{ retrievedPapersCount() }})
+                </button>
+              </div>
 
               <div class="selected-papers-list">
                 @if (useOnlySelected()) {
-                  <div class="seed-source-tabs">
-                    <button
-                      type="button"
-                      class="seed-source-tab"
-                      [class.seed-source-tab--active]="activeSeedSourceTab() === 'selected'"
-                      (click)="activeSeedSourceTab.set('selected')"
-                    >
-                      Selected ({{ selectedPapers().length }})
-                    </button>
-                    <button
-                      type="button"
-                      class="seed-source-tab"
-                      [class.seed-source-tab--active]="activeSeedSourceTab() === 'library'"
-                      (click)="activeSeedSourceTab.set('library')"
-                    >
-                      Library ({{ savedItems().length }})
-                    </button>
-                  </div>
-
-                  @if (activeSeedSourceTab() === 'selected') {
-                    @if (selectedPapers().length === 0) {
-                      <div class="papers-list-empty">
-                        <span class="material-symbols-outlined">info</span>
-                        <p>
-                          No papers selected. Switch to the "Library" tab above to select from saved papers, or go to the <a routerLink="../../research">Literature Search</a> tab.
-                        </p>
-                      </div>
-                    } @else {
-                      <div class="papers-scroll-container">
-                        @for (paper of selectedPapers(); track paperId(paper)) {
-                          <div class="paper-item">
-                            <span class="material-symbols-outlined paper-item__icon">eco</span>
-                            <div class="paper-item__details">
-                              <span class="paper-item__title" [title]="paper.title">{{ paper.title }}</span>
-                              <span class="paper-item__meta">
-                                {{ paper.year || '—' }} · {{ paper.authors[0]?.name || 'Unknown Author' }}
-                              </span>
-                            </div>
-                            <button class="paper-item__remove" (click)="removePaper(paper)" title="Remove from selection">
-                              <span class="material-symbols-outlined">close</span>
-                            </button>
-                          </div>
-                        }
-                      </div>
-                    }
+                  @if (selectedPapers().length === 0) {
+                    <div class="papers-list-empty">
+                      <span class="material-symbols-outlined">info</span>
+                      <p>
+                        No seed papers yet. Use the buttons below to add a work by title or pick one from your library, or mark papers from the <a routerLink="../../research">Literature Search</a> tab.
+                      </p>
+                    </div>
                   } @else {
-                    @if (savedItems().length === 0) {
-                      <div class="papers-list-empty">
-                        <span class="material-symbols-outlined">info</span>
-                        <p>
-                          No saved papers in your library. Go to the <a routerLink="../../research">Literature Search</a> tab to search and save papers first.
-                        </p>
-                      </div>
-                    } @else {
-                      <div class="papers-scroll-container">
-                        @for (item of savedItems(); track item.id) {
-                          @if (item.paper; as paper) {
-                            <div
-                              class="paper-item paper-item--library"
-                              [class.paper-item--selected]="isSeedSelected(paper)"
-                              (click)="toggleSeed(paper)"
-                              [title]="isSeedSelected(paper) ? 'Remove from seed papers' : 'Add to seed papers'"
-                            >
-                              <span class="material-symbols-outlined paper-item__checkbox" [class.paper-item__checkbox--selected]="isSeedSelected(paper)">
-                                {{ isSeedSelected(paper) ? 'check_box' : 'check_box_outline_blank' }}
-                              </span>
-                              <div class="paper-item__details">
-                                <span class="paper-item__title" [title]="paper.title">{{ paper.title }}</span>
-                                <span class="paper-item__meta">
-                                  {{ paper.year || '—' }} · {{ paper.authors[0]?.name || 'Unknown Author' }}
-                                </span>
-                              </div>
-                            </div>
-                          }
-                        }
-                      </div>
-                    }
+                    <div class="papers-scroll-container">
+                      @for (paper of selectedPapers(); track paperId(paper)) {
+                        <div class="paper-item">
+                          <span class="material-symbols-outlined paper-item__icon">eco</span>
+                          <div class="paper-item__details">
+                            <span class="paper-item__title" [title]="paper.title">{{ paper.title }}</span>
+                            <span class="paper-item__meta">
+                              {{ paper.year || '—' }} · {{ paper.authors[0]?.name || 'Unknown Author' }}
+                            </span>
+                          </div>
+                          <button class="paper-item__remove" (click)="removePaper(paper)" title="Remove from selection">
+                            <span class="material-symbols-outlined">close</span>
+                          </button>
+                        </div>
+                      }
+                    </div>
                   }
                 } @else {
                   @if (retrievedPapersCount() === 0) {
@@ -115,27 +83,115 @@
                   }
                 }
               </div>
+
+              <!-- Bottom-middle seed actions: only relevant when seeding from specific
+                   papers, but always rendered (hidden in "All" mode) so switching the
+                   source never changes the panel height. -->
+              <div class="seed-actions" [class.seed-actions--hidden]="!useOnlySelected()">
+                <button
+                    type="button"
+                    class="seed-action-btn"
+                    [class.seed-action-btn--active]="seedPickerOpen() === 'title'"
+                    (click)="openSeedPicker('title')"
+                    title="Add a work by title"
+                  >
+                    <span class="material-symbols-outlined">add</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="seed-action-btn"
+                    [class.seed-action-btn--active]="seedPickerOpen() === 'library'"
+                    (click)="openSeedPicker('library')"
+                    title="Add from your library"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                  </button>
+
+                  @if (useOnlySelected() && seedPickerOpen(); as picker) {
+                    <div class="seed-picker-backdrop" (click)="closeSeedPicker()"></div>
+                    <div class="seed-picker">
+                      @if (picker === 'title') {
+                        <div class="seed-picker__header">Add a work by title</div>
+                        <input
+                          type="text"
+                          class="seed-picker__input"
+                          placeholder="Search by paper title…"
+                          [ngModel]="titleQuery()"
+                          (ngModelChange)="onTitleQueryChange($event)"
+                          autofocus
+                        />
+                        <div class="seed-picker__results">
+                          @if (titleSearching()) {
+                            <div class="seed-picker__status">Searching…</div>
+                          } @else if (titleQuery().trim().length < 3) {
+                            <div class="seed-picker__status">Type at least 3 characters to search.</div>
+                          } @else if (titleResults().length === 0) {
+                            <div class="seed-picker__status">No matching works found.</div>
+                          } @else {
+                            @for (paper of titleResults(); track paperId(paper)) {
+                              <div
+                                class="paper-item paper-item--library"
+                                [class.paper-item--selected]="isSeedSelected(paper)"
+                                (click)="addTitleResult(paper)"
+                                [title]="isSeedSelected(paper) ? 'Remove from seed papers' : 'Add to seed papers'"
+                              >
+                                <span class="material-symbols-outlined paper-item__checkbox" [class.paper-item__checkbox--selected]="isSeedSelected(paper)">
+                                  {{ isSeedSelected(paper) ? 'check_box' : 'check_box_outline_blank' }}
+                                </span>
+                                <div class="paper-item__details">
+                                  <span class="paper-item__title" [title]="paper.title">{{ paper.title }}</span>
+                                  <span class="paper-item__meta">
+                                    {{ paper.year || '—' }} · {{ paper.authors[0]?.name || 'Unknown Author' }}
+                                  </span>
+                                </div>
+                              </div>
+                            }
+                          }
+                        </div>
+                      } @else {
+                        <div class="seed-picker__header">Add from your library</div>
+                        <div class="seed-picker__results">
+                          @if (savedItems().length === 0) {
+                            <div class="seed-picker__status">
+                              No saved papers. Go to the <a routerLink="../../research">Literature Search</a> tab to save papers first.
+                            </div>
+                          } @else {
+                            @for (item of savedItems(); track item.id) {
+                              @if (item.paper; as paper) {
+                                <div
+                                  class="paper-item paper-item--library"
+                                  [class.paper-item--selected]="isSeedSelected(paper)"
+                                  (click)="toggleSeed(paper)"
+                                  [title]="isSeedSelected(paper) ? 'Remove from seed papers' : 'Add to seed papers'"
+                                >
+                                  <span class="material-symbols-outlined paper-item__checkbox" [class.paper-item__checkbox--selected]="isSeedSelected(paper)">
+                                    {{ isSeedSelected(paper) ? 'check_box' : 'check_box_outline_blank' }}
+                                  </span>
+                                  <div class="paper-item__details">
+                                    <span class="paper-item__title" [title]="paper.title">{{ paper.title }}</span>
+                                    <span class="paper-item__meta">
+                                      {{ paper.year || '—' }} · {{ paper.authors[0]?.name || 'Unknown Author' }}
+                                    </span>
+                                  </div>
+                                </div>
+                              }
+                            }
+                          }
+                        </div>
+                      }
+                    </div>
+                  }
+                </div>
             </div>
 
             <!-- Right panel: Configuration -->
             <div class="setup-panel setup-panel--config">
               <h2 class="setup-section-title">
-                <span class="material-symbols-outlined">settings</span>
-                2. Configuration
+                <span class="material-symbols-outlined">filter_alt</span>
+                2. Filter
               </h2>
 
               <div class="filter-toggles">
-                <label class="filter-toggle">
-                  <input type="checkbox" [ngModel]="useOnlySelected()" (ngModelChange)="useOnlySelected.set($event)" />
-                  <span class="filter-toggle__box"></span>
-                  <div class="filter-toggle__details">
-                    <span class="filter-toggle__label">Only Selected Papers</span>
-                    <span class="filter-toggle__description">
-                      Start only from papers you specifically selected ({{ selectedPapers().length }}). If unchecked, uses all retrieved search results ({{ retrievedPapersCount() }}).
-                    </span>
-                  </div>
-                </label>
-
                 <label class="filter-toggle">
                   <input type="checkbox" [ngModel]="keywordFiltering()" (ngModelChange)="keywordFiltering.set($event)" />
                   <span class="filter-toggle__box"></span>
@@ -157,30 +213,16 @@
               3. Explore Surrounding Literature
             </h2>
 
-            @if (explorationLoading()) {
-              <div class="exploration-loader">
-                <div class="exploration-loader__spinner"></div>
-                <p class="exploration-loader__text">Building citation graph and running community clustering...</p>
-              </div>
-            } @else {
-              @if (explorationError()) {
-                <div class="exploration-error">
-                  <span class="material-symbols-outlined">error</span>
-                  <span>{{ explorationError() }}</span>
-                </div>
-              }
-
-              <div class="direction-buttons">
-                <!-- Left Button: Explore Past -->
+            <div class="direction-buttons">
+                <!-- Left Button: Explore Past (temporarily disabled — teased) -->
                 <button
-                  class="direction-btn"
-                  [class.direction-btn--selected]="selectedDirection() === 'past'"
-                  [disabled]="!hasSourcePapers()"
-                  (click)="selectDirection('past')"
+                  class="direction-btn direction-btn--coming-soon"
+                  type="button"
+                  disabled
+                  aria-disabled="true"
+                  title="Coming soon"
                 >
-                  @if (selectedDirection() === 'past') {
-                    <span class="material-symbols-outlined direction-btn__check">check_circle</span>
-                  }
+                  <span class="direction-btn__badge">Coming soon</span>
                   <div class="direction-btn__icon-wrapper direction-btn__icon-wrapper--past">
                     <span class="material-symbols-outlined">history</span>
                   </div>
@@ -209,16 +251,15 @@
                   </span>
                 </button>
 
-                <!-- Right Button: Explore Future -->
+                <!-- Right Button: Explore Future (temporarily disabled — teased) -->
                 <button
-                  class="direction-btn"
-                  [class.direction-btn--selected]="selectedDirection() === 'future'"
-                  [disabled]="!hasSourcePapers()"
-                  (click)="selectDirection('future')"
+                  class="direction-btn direction-btn--coming-soon"
+                  type="button"
+                  disabled
+                  aria-disabled="true"
+                  title="Coming soon"
                 >
-                  @if (selectedDirection() === 'future') {
-                    <span class="material-symbols-outlined direction-btn__check">check_circle</span>
-                  }
+                  <span class="direction-btn__badge">Coming soon</span>
                   <div class="direction-btn__icon-wrapper direction-btn__icon-wrapper--future">
                     <span class="material-symbols-outlined">trending_up</span>
                   </div>
@@ -240,8 +281,7 @@
                   Explore
                 </button>
               </div>
-            }
-          </div>
+            </div>
 
         </div>
       </div>
@@ -720,6 +760,13 @@
                       @if (s.title) {
                         <span class="cluster-popup__summary-title">{{ s.title }}</span>
                       }
+                      @if (s.bullets.length) {
+                        <ul class="cluster-popup__bullets">
+                          @for (b of s.bullets; track b) {
+                            <li>{{ b }}</li>
+                          }
+                        </ul>
+                      }
                       <span class="cluster-popup__summary">{{ s.summary }}</span>
                     } @else if (s.status !== 'error') {
                       <span class="cluster-popup__summary cluster-popup__summary--pending">Summarizing…</span>
@@ -728,7 +775,7 @@
                     <span class="cluster-popup__summary cluster-popup__summary--pending">Summarizing…</span>
                   }
                 }
-                @if (!cluster.isMisc && currentTopLevel() >= 0) {
+                @if (!cluster.isMisc && currentTopLevel() >= 1) {
                   <button class="cluster-popup__move-btn" (click)="moveInside(cluster.id, $event)">
                     <span class="material-symbols-outlined">zoom_in</span>
                     Move Inside
@@ -900,52 +947,97 @@
                         <div class="lane-box__header">
                           <span class="lane-box__swatch" [style.background]="box.color"></span>
                           <div class="lane-box__title-group">
-                            <span class="lane-box__name">{{ box.name }}</span>
+                            <span class="lane-box__name" [title]="laneTitle(box)">{{ laneTitle(box) }}</span>
                           </div>
-                          @if (!box.isMisc && currentTopLevel() >= 0) {
+                          <div class="lane-box__aside">
+                            <div class="lane-box__counts">
+                              <span class="lane-box__count" [title]="box.paperTotal + (box.paperTotal === 1 ? ' paper' : ' papers')">
+                                <span class="material-symbols-outlined lane-box__count-icon">description</span>
+                                {{ box.paperTotal }}
+                              </span>
+                              @if (box.subClusters > 0) {
+                                <span class="lane-box__count" [title]="box.subClusters + (box.subClusters === 1 ? ' sub-cluster' : ' sub-clusters')">
+                                  <span class="material-symbols-outlined lane-box__count-icon">account_tree</span>
+                                  {{ box.subClusters }}
+                                </span>
+                              }
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- Card body: bullet points on the left, the action
+                             button column sitting on the right next to them. -->
+                        <div class="lane-box__main">
+                          <div class="lane-box__main-text">
+                            @if (!box.isMisc) {
+                              @if (box.summary; as s) {
+                                @if (s.status === 'done') {
+                                  @if (s.bullets.length) {
+                                    <ul class="lane-box__bullets">
+                                      @for (b of s.bullets; track b) {
+                                        <li [title]="b">{{ b }}</li>
+                                      }
+                                    </ul>
+                                  }
+                                } @else if (s.status !== 'error') {
+                                  <span class="lane-box__summary lane-box__summary--pending">Summarizing…</span>
+                                }
+                              } @else if (summaries.running()) {
+                                <span class="lane-box__summary lane-box__summary--pending">Summarizing…</span>
+                              }
+                            }
+                          </div>
+                          <div class="lane-box__actions">
                             <button
-                              class="lane-box__move-btn"
-                              [style.color]="box.color"
-                              (click)="moveInside(box.topCluster, $event)"
-                              title="Move inside this cluster"
+                              class="lane-box__expand-btn"
+                              (click)="expandClusterNatural(box.topCluster, $event)"
+                              title="Expand cluster (add the next papers)"
                             >
-                              <span class="material-symbols-outlined">zoom_in</span>
+                              <span class="material-symbols-outlined">unfold_more</span>
                             </button>
-                          }
-                          <button
-                            class="lane-box__delete-btn"
-                            (click)="requestRemoveCluster(box.topCluster, box.name, $event)"
-                            title="Remove this cluster from the graph"
-                          >
-                            <span class="material-symbols-outlined">delete</span>
-                          </button>
+                            <button
+                              class="lane-box__expand-btn"
+                              (click)="requestExpandClusterFull(box.topCluster, box.name, $event)"
+                              title="Expand entire cluster (show all papers)"
+                            >
+                              <span class="material-symbols-outlined">select_all</span>
+                            </button>
+                            @if (!box.isMisc && currentTopLevel() >= 1) {
+                              <button
+                                class="lane-box__move-btn"
+                                [style.color]="box.color"
+                                (click)="moveInside(box.topCluster, $event)"
+                                title="Move inside this cluster"
+                              >
+                                <span class="material-symbols-outlined">zoom_in</span>
+                              </button>
+                            }
+                            <button
+                              class="lane-box__delete-btn"
+                              (click)="requestRemoveCluster(box.topCluster, box.name, $event)"
+                              title="Remove this cluster from the graph"
+                            >
+                              <span class="material-symbols-outlined">delete</span>
+                            </button>
+                          </div>
                         </div>
 
-                        <div class="lane-box__counts">
-                          <span class="lane-box__count">
-                            <span class="material-symbols-outlined lane-box__count-icon">description</span>
-                            {{ box.paperTotal }} {{ box.paperTotal === 1 ? 'paper' : 'papers' }}
-                          </span>
-                          @if (box.subClusters > 0) {
-                            <span class="lane-box__count">
-                              <span class="material-symbols-outlined lane-box__count-icon">account_tree</span>
-                              {{ box.subClusters }} {{ box.subClusters === 1 ? 'sub-cluster' : 'sub-clusters' }}
-                            </span>
-                          }
-                        </div>
-
+                        <!-- Full-width summary toggle + expandable text below. -->
                         @if (!box.isMisc) {
                           @if (box.summary; as s) {
-                            @if (s.status === 'done') {
-                              @if (s.title) {
-                                <span class="lane-box__summary-title">{{ s.title }}</span>
+                            @if (s.status === 'done' && s.summary) {
+                              <button
+                                class="lane-box__summary-toggle"
+                                [class.lane-box__summary-toggle--open]="isSummaryExpanded(box.topCluster)"
+                                (click)="toggleSummary(box.topCluster, $event)"
+                                [title]="isSummaryExpanded(box.topCluster) ? 'Hide full summary' : 'Show full summary'"
+                              >
+                                <span class="material-symbols-outlined">expand_more</span>
+                              </button>
+                              @if (isSummaryExpanded(box.topCluster)) {
+                                <span class="lane-box__summary">{{ s.summary }}</span>
                               }
-                              <span class="lane-box__summary">{{ s.summary }}</span>
-                            } @else if (s.status !== 'error') {
-                              <span class="lane-box__summary lane-box__summary--pending">Summarizing…</span>
                             }
-                          } @else if (summaries.running()) {
-                            <span class="lane-box__summary lane-box__summary--pending">Summarizing…</span>
                           }
                         }
                       </div>
@@ -1409,3 +1501,142 @@
     </div>
   </div>
 }
+
+<!-- Expand Whole Cluster Confirmation Modal -->
+@if (clusterExpandTarget(); as target) {
+  <div class="graph-modal-overlay" (click)="cancelExpandClusterFull()">
+    <div class="graph-modal" (click)="$event.stopPropagation()">
+      <h3 class="graph-modal__title">Expand entire cluster?</h3>
+      <p class="graph-modal__text">
+        This will reveal every paper in <strong>{{ target.name }}</strong> as its own node,
+        adding <strong>{{ target.additional }}</strong> more {{ target.additional === 1 ? 'paper' : 'papers' }} to the graph.
+      </p>
+      <div class="graph-modal__actions">
+        <button class="graph-modal__btn" (click)="cancelExpandClusterFull()">Cancel</button>
+        <button class="graph-modal__btn graph-modal__btn--primary" (click)="confirmExpandClusterFull()">Expand Cluster</button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- Citation Graph Building Progress Modal -->
+@if (explorationProgress(); as prog) {
+  <div class="citgraph-modal-overlay">
+    <div class="citgraph-modal-card">
+      <div class="citgraph-modal-header">
+        <h3>Exploring Surrounding Literature</h3>
+        @if (prog.phase === 'done' || prog.phase === 'error') {
+          <button class="citgraph-modal-close-btn" (click)="closeProgressModal()">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        }
+      </div>
+
+      <div class="citgraph-modal-body">
+        <!-- Progress Bar -->
+        <div class="citgraph-progress-container">
+          <div class="citgraph-progress-bar" [style.width.%]="progressPercent()"></div>
+          <span class="citgraph-progress-text">{{ progressPercent() }}%</span>
+        </div>
+
+        <!-- Elapsed-time counter: how long the user has been waiting since the
+             process started. Freezes once the build finishes. -->
+        <div class="citgraph-elapsed" role="timer" aria-live="off">
+          <span class="citgraph-elapsed-icon material-symbols-outlined">timer</span>
+          <span class="citgraph-elapsed-label">
+            {{ prog.phase === 'done' ? 'Completed in' : 'Elapsed' }}
+          </span>
+          <span class="citgraph-elapsed-value">{{ elapsedDisplay() }}</span>
+        </div>
+
+        <!-- Phases List -->
+        <div class="citgraph-phases">
+          <!-- Phase 1: Building Citation Graph -->
+          <div class="citgraph-phase-item" [class.citgraph-phase-item--active]="prog.phase === 'building'" [class.citgraph-phase-item--done]="prog.phase !== 'building' && prog.phase !== 'idle'">
+            <span class="citgraph-phase-icon material-symbols-outlined">
+              {{ (prog.phase !== 'building' && prog.phase !== 'idle') ? 'check_circle' : 'database' }}
+            </span>
+            <div class="citgraph-phase-info">
+              <div class="citgraph-phase-name">1. Building Citation Graph</div>
+              @if (prog.phase !== 'building' && prog.phase !== 'idle') {
+                <div class="citgraph-phase-details">Completed: {{ prog.papersCount }} papers found</div>
+              } @else if (prog.phase === 'building') {
+                <div class="citgraph-phase-details">Fetching edges and papers from data source...</div>
+              }
+            </div>
+          </div>
+
+          <!-- Phase 2: Running Clustering Algorithm -->
+          <div class="citgraph-phase-item" [class.citgraph-phase-item--active]="prog.phase === 'clustering'" [class.citgraph-phase-item--done]="prog.phase !== 'building' && prog.phase !== 'clustering' && prog.phase !== 'idle'">
+            <span class="citgraph-phase-icon material-symbols-outlined">
+              {{ (prog.phase !== 'building' && prog.phase !== 'clustering' && prog.phase !== 'idle') ? 'check_circle' : 'hub' }}
+            </span>
+            <div class="citgraph-phase-info">
+              <div class="citgraph-phase-name">2. Running Clustering Algorithm</div>
+              @if (prog.phase !== 'building' && prog.phase !== 'clustering' && prog.phase !== 'idle') {
+                <div class="citgraph-phase-details">Completed: {{ prog.clustersCount }} main topics identified</div>
+              } @else if (prog.phase === 'clustering') {
+                <div class="citgraph-phase-details">Grouping papers into semantic communities...</div>
+              }
+            </div>
+          </div>
+
+          <!-- Phase 3: Summarizing the Papers -->
+          <div class="citgraph-phase-item" [class.citgraph-phase-item--active]="prog.phase === 'summarizing'" [class.citgraph-phase-item--done]="prog.phase === 'done'">
+            <span class="citgraph-phase-icon material-symbols-outlined">
+              {{ prog.phase === 'done' ? 'check_circle' : 'description' }}
+            </span>
+            <div class="citgraph-phase-info">
+              <div class="citgraph-phase-name">3. Summarizing the Papers</div>
+              @if (prog.phase === 'done') {
+                <div class="citgraph-phase-details">Completed: All cluster summaries generated</div>
+              } @else if (prog.phase === 'summarizing') {
+                <div class="citgraph-phase-details">
+                  Generating cluster summaries bottom-up ({{ summaries.progress().done }} / {{ summaries.progress().total }})...
+                </div>
+              }
+            </div>
+          </div>
+        </div>
+
+        @if (prog.phase === 'error') {
+          <div class="citgraph-modal-error">
+            <span class="material-symbols-outlined">error</span>
+            <span>{{ prog.error }}</span>
+          </div>
+        }
+      </div>
+
+      <div class="citgraph-modal-footer">
+        @if (prog.phase === 'done') {
+          <button class="citgraph-btn-primary" (click)="closeProgressModal()">
+            Done, Show Graph
+          </button>
+        } @else if (prog.phase === 'error') {
+          <button class="citgraph-btn-secondary" (click)="closeProgressModal()">
+            Close
+          </button>
+        } @else {
+          <button class="citgraph-btn-secondary" style="margin-right: auto;" (click)="cancelExploration()">
+            Cancel
+          </button>
+          <span class="citgraph-loading-spinner"></span>
+          <span class="citgraph-status-msg">Please wait while the graph is assembled...</span>
+        }
+      </div>
+    </div>
+  </div>
+}
+
+<!-- On-demand summarization model cold-start notice. Shown independently of the
+     build-progress modal so it appears even if that modal was closed. -->
+@if (summaries.warmingUp()) {
+  <div class="okgraph-warmup" role="status" aria-live="polite">
+    <span class="okgraph-warmup__icon material-symbols-outlined">hourglass_top</span>
+    <div class="okgraph-warmup__body">
+      <div class="okgraph-warmup__title">Warming up the summarization model…</div>
+      <p class="okgraph-warmup__text">{{ summaries.coldStartNotice }}</p>
+    </div>
+  </div>
+}
+

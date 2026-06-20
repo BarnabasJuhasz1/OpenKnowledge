@@ -26,6 +26,8 @@ export class PaperListComponent {
   @Input({ required: true }) papers: Paper[] = [];
   @Input({ required: true }) page = 1;
   @Input() scoresLoading = false;
+  /** When false, `papers` is already the page to show (server-paginated) — render as-is. */
+  @Input() clientPaginate = true;
 
   popupPaperTitle = signal<string | null>(null);
   popupBreakdown = signal<BreakdownEntry[]>([]);
@@ -33,6 +35,7 @@ export class PaperListComponent {
   popupMaxContrib = signal(1);
 
   get pagePapers(): Paper[] {
+    if (!this.clientPaginate) return this.papers;
     const start = (this.page - 1) * PAGE_SIZE;
     return this.papers.slice(start, start + PAGE_SIZE);
   }

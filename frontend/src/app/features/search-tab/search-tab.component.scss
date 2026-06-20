@@ -3,12 +3,58 @@
 // ============================================================================
 
 .search-tab {
+  position: relative;
   height: calc(100vh - var(--ok-topnav-height));
   overflow: hidden;
   background: var(--ok-bg);
 
+  // ── Abstract graph backdrop ────────────────────────────────────────────────
+  &__bg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 0;
+    // Kept low so it never competes with the text/input above it.
+    opacity: 0.6;
+  }
+
+  &__bg-glow {
+    fill: var(--ok-primary);
+    opacity: 0.08;
+    animation: ok-bg-float 6.5s ease-in-out infinite;
+
+    &:nth-of-type(2) {
+      animation-duration: 9s;
+      animation-direction: reverse;
+    }
+  }
+
+  // Genuine Voronoi tessellation of closed polygonal cells (generated in the
+  // component). Mostly neutral cell borders with a few accent-tinted cells.
+  // Motion comes from the soft accent glows drifting behind, not the cells.
+  &__bg-cells {
+    opacity: 0.6;
+
+    polygon {
+      fill: none;
+      stroke: var(--ok-outline-variant);
+      stroke-width: 1;
+    }
+
+    polygon.is-accent {
+      fill: rgba(var(--ok-primary-rgb), 0.06);
+      stroke: var(--ok-primary);
+      stroke-opacity: 0.55;
+      stroke-width: 1.2;
+    }
+  }
+
   &__inner {
-    max-width: 760px;
+    position: relative;
+    z-index: 1;
+    max-width: 940px;
     margin: 0 auto;
     padding: var(--ok-space-16) var(--ok-margin-desktop) var(--ok-space-12);
     text-align: center;
@@ -32,57 +78,22 @@
   }
 
   &__search {
-    max-width: 720px;
-    margin: 0 auto;
+    max-width: 900px;
+    // Sit lower, giving the subtitle room to breathe.
+    margin: var(--ok-space-12) auto 0;
     text-align: left;
   }
 
 }
 
-// ── Demo mode toggle ──
-.mode-select {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--ok-space-3);
-  margin-top: var(--ok-space-4);
-  user-select: none;
+@keyframes ok-bg-float {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(50px, -65px); }
+}
 
-  &__label {
-    font-family: var(--ok-font-label);
-    font-size: 0.78rem;
-    font-weight: 600;
-    color: var(--ok-on-surface-variant);
-    white-space: nowrap;
-  }
-
-  &__pills {
-    display: inline-flex;
-    padding: 2px;
-    background: var(--ok-surface-variant, var(--ok-outline-variant));
-    border-radius: var(--ok-radius-full);
-  }
-
-  &__pill {
-    appearance: none;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    padding: 4px 12px;
-    font-family: var(--ok-font-label);
-    font-size: 0.76rem;
-    font-weight: 600;
-    color: var(--ok-on-surface-variant);
-    border-radius: var(--ok-radius-full);
-    transition: background var(--ok-transition), color var(--ok-transition);
-
-    &:hover {
-      color: var(--ok-on-surface);
-    }
-
-    &--active {
-      background: var(--ok-primary-raw);
-      color: #fff;
-    }
+@media (prefers-reduced-motion: reduce) {
+  .search-tab__bg-glow {
+    animation: none;
   }
 }
 

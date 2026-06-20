@@ -197,6 +197,13 @@
                       @if (s.title) {
                         <p class="citgraph__summary-title">{{ s.title }}</p>
                       }
+                      @if (s.bullets.length) {
+                        <ul class="citgraph__summary-bullets">
+                          @for (b of s.bullets; track b) {
+                            <li>{{ b }}</li>
+                          }
+                        </ul>
+                      }
                       <p class="citgraph__panel-abstract">{{ s.summary }}</p>
                     } @else if (s.status === 'error') {
                       <p class="citgraph__summary-pending">Summary unavailable for this cluster.</p>

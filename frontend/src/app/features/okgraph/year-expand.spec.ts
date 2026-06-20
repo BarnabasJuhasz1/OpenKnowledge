@@ -89,6 +89,33 @@ describe('yearExpandQueues', () => {
     }));
     expect([...queues.keys()]).toEqual([11]);
   });
+
+  it('excludes permanently-removed papers from the queues', () => {
+    const removed = new Set([1]); // remove the leaf idx1 in cluster 10
+    const q = yearExpandQueues(baseOpts({ isRemoved: i => removed.has(i) })).get(10)!;
+    // idx0 (rep) remains; idx1 is gone; idx2 is 2021 (other year).
+    expect(q.map(c => c.paperIndex)).toEqual([0]);
+  });
+
+  it('skips a removed paper when choosing a community representative', () => {
+    // One cluster (comm 5), all 2020. Top rep is idx0 (score 9). Remove it: the
+    // next-best non-removed member (idx2, score 7) must inherit the top-rep slot.
+    const removed = new Set([0]);
+    const q = yearExpandQueues(baseOpts({
+      commAtLevel: [[0, 0, 0], [5, 5, 5]],
+      currentTopLevel: 1,
+      nodeYear: [2020, 2020, 2020],
+      nodeScore: [9, 5, 7],
+      laneClusterOf: [5, 5, 5],
+      inView: [true, true, true],
+      selectedYear: 2020,
+      isRemoved: i => removed.has(i),
+    })).get(5)!;
+    expect(q[0].paperIndex).toBe(2);       // idx2 promoted to the top-level rep
+    expect(q[0].level).toBe(1);
+    expect(q[0].community).toBe(5);
+    expect(q.some(c => c.paperIndex === 0)).toBe(false); // removed never appears
+  });
 });
 
 describe('middleYears', () => {

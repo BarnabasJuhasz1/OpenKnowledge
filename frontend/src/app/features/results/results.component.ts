@@ -1,7 +1,7 @@
-import { Component, OnDestroy, OnInit, inject } from '@angular/core';
+import { Component, OnDestroy, OnInit, effect, inject } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { RetrievalService } from '../../core/services/retrieval.service';
+import { RetrievalService, ScholarFiltersPayload } from '../../core/services/retrieval.service';
 import { ScoringService } from '../../core/services/scoring.service';
 import { SearchStateService } from '../../core/services/search-state.service';
 import { SearchModeService } from '../../core/services/search-mode.service';
@@ -11,8 +11,14 @@ import { ResultsMetaComponent } from './results-meta/results-meta.component';
 import { PaperListComponent } from './paper-list/paper-list.component';
 import { PaginationComponent } from './pagination/pagination.component';
 import { FiltersSidebarComponent } from './filters-sidebar/filters-sidebar.component';
+import {
+  SearchComposerComponent,
+  GeneratedKeywords,
+} from '../../shared/components/search-composer/search-composer.component';
 
 const PAGE_SIZE = 10;
+/** Scholar mode fetches and displays this many papers per server page. */
+const SCHOLAR_PAGE_SIZE = 100;
 
 /** Default weights used for auto-scoring on the results page. */
 const DEFAULT_WEIGHTS: ScoreWeights = {
@@ -28,6 +34,7 @@ const DEFAULT_WEIGHTS: ScoreWeights = {
   standalone: true,
   imports: [
     RouterLink,
+    SearchComposerComponent,
     ResultsMetaComponent,
     PaperListComponent,
     PaginationComponent,
@@ -51,24 +58,58 @@ export class ResultsComponent implements OnInit, OnDestroy {
   readonly pageSize = PAGE_SIZE;
 
   private lastQuery = '';
+  /** True once a Scholar page has loaded — gates the filter/sort refetch effect. */
+  private scholarReady = false;
+  private scholarRefetchTimer: ReturnType<typeof setTimeout> | null = null;
+  /** How many 10-result UI pages fit in one fetched {@link SCHOLAR_PAGE_SIZE} window. */
+  private readonly uiPagesPerScholarWindow = SCHOLAR_PAGE_SIZE / PAGE_SIZE;
+  /** Which server window (1-based, {@link SCHOLAR_PAGE_SIZE} results each) is loaded. */
+  private loadedScholarWindow = 0;
+
+  constructor() {
+    // Scholar mode: re-fetch page 1 from the server whenever a server-side filter or the
+    // sort order changes (so filters apply across ALL matches, not just the loaded page).
+    // Debounced because range sliders emit a burst of changes while dragging.
+    effect(() => {
+      this.state.filters();        // track
+      this.state.sortField();      // track
+      if (!this.mode.isScholar() || !this.scholarReady) return;
+      this.scheduleScholarRefetch();
+    });
+  }
+
+  private scheduleScholarRefetch(): void {
+    if (this.scholarRefetchTimer) clearTimeout(this.scholarRefetchTimer);
+    // Filters/sort changed — reload the first window from the server (force).
+    this.scholarRefetchTimer = setTimeout(() => this.loadScholarPage(1, true), 350);
+  }
+
+  /**
+   * Within the currently loaded {@link SCHOLAR_PAGE_SIZE}-result window, which
+   * {@link PAGE_SIZE}-paper slice the active UI page maps to (1-based). The
+   * paper list client-paginates the loaded window by this local page.
+   */
+  scholarLocalPage(): number {
+    return ((this.state.currentPage() - 1) % this.uiPagesPerScholarWindow) + 1;
+  }
 
   ngOnInit(): void {
     this.route.queryParams.subscribe(params => {
       const q = params['q'] ?? '';
       const page = Number(params['page']) || 1;
-      this.state.currentPage.set(page);
 
-      // Only re-fetch when the search query itself changes, not on page changes
+      // Re-fetch only when the query itself changes.
       if (q && q !== this.lastQuery) {
         this.lastQuery = q;
         this.state.rawQuery.set(q);
+        this.state.currentPage.set(page);
         this.runSearch(q);
-      }
-
-      // If returning to this route with an existing query but no lastQuery
-      // (component was freshly created), sync lastQuery to avoid re-fetch
-      if (q && !this.lastQuery) {
-        this.lastQuery = q;
+      } else if (q && this.mode.isScholar() && page !== this.state.currentPage()) {
+        // Same query, page navigation in Scholar mode → fetch that page from the server.
+        this.loadScholarPage(page);
+      } else {
+        // Live/demo modes paginate client-side: just record the page.
+        this.state.currentPage.set(page);
       }
     });
   }
@@ -78,6 +119,7 @@ export class ResultsComponent implements OnInit, OnDestroy {
     this.scoreSub?.unsubscribe();
     this.bgSub?.unsubscribe();
     this.demoSub?.unsubscribe();
+    if (this.scholarRefetchTimer) clearTimeout(this.scholarRefetchTimer);
   }
 
   onPageChange(page: number): void {
@@ -87,6 +129,26 @@ export class ResultsComponent implements OnInit, OnDestroy {
       queryParamsHandling: 'merge',
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  /**
+   * A query submitted from the inline composer at the top of the page. Pushing a
+   * new `q` (and resetting to page 1) updates the URL, which the `queryParams`
+   * subscription in {@link ngOnInit} picks up and re-runs — refreshing the list
+   * below without leaving the Results tab.
+   */
+  onComposerSearch(query: string): void {
+    if (!query.trim()) return;
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { q: query, page: 1 },
+      queryParamsHandling: 'merge',
+    });
+  }
+
+  /** AI-generated keywords fill the composer's keyword box for review (no auto-search). */
+  onKeywordsGenerated(result: GeneratedKeywords): void {
+    this.state.rawQuery.set(result.query);
   }
 
   private runSearch(query: string): void {
@@ -130,19 +192,80 @@ export class ResultsComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Semantic Scholar mode: cost-bounded boolean search over the BigQuery corpus. */
-  private runScholarSearch(keywords: string[], query: string): void {
-    this.demoSub = this.retrieval.scholarSearch({
-      keywords,
-      raw_query: query,
-    }).subscribe({
+  /** Semantic Scholar mode: server-paginated boolean search.
+   *
+   * A new search loads the first page (top {@link SCHOLAR_PAGE_SIZE} by ok-score) plus the
+   * exact total. Only the current page is held client-side; other pages are fetched on
+   * demand (see {@link loadScholarPage}). Filters/sort are applied server-side across the
+   * whole match set.
+   */
+  private runScholarSearch(_keywords: string[], _query: string): void {
+    this.scholarReady = false;
+    this.loadedScholarWindow = 0;
+    this.loadScholarPage(this.state.currentPage());
+  }
+
+  /** Map the shared filter UI state onto the server-side ScholarFilters payload.
+   *
+   * Archetype + code-only are intentionally omitted in Scholar mode: those index fields
+   * aren't backfilled yet, so sending them would match nothing. (The sidebar hides them.)
+   */
+  private buildScholarFilters(): ScholarFiltersPayload {
+    const f = this.state.filters();
+    return {
+      year_min: f.yearMin,
+      year_max: f.yearMax,
+      citation_min: f.citationMin,
+      citation_max: f.citationMax,
+      open_access_only: f.openAccessOnly,
+      peer_reviewed_only: f.peerReviewedOnly,
+      code_only: false,
+      archetypes: null,
+    };
+  }
+
+  /**
+   * Navigate to a UI page (10 results each). The server is queried
+   * {@link SCHOLAR_PAGE_SIZE} results at a time; this maps the UI page onto the
+   * containing server window and only refetches when that window changes (or
+   * when `forceFetch` is set, e.g. after a filter/sort change). Paging within an
+   * already-loaded window just updates the slice — no network round-trip.
+   */
+  private loadScholarPage(page: number, forceFetch = false): void {
+    const query = this.state.rawQuery();
+    const keywords = parseQuery(query);
+    if (!keywords.length) return;
+
+    this.state.currentPage.set(page);
+
+    const serverWindow = Math.ceil(page / this.uiPagesPerScholarWindow);
+    // Reuse the loaded 100-result window when paging within it.
+    if (!forceFetch && this.scholarReady && serverWindow === this.loadedScholarWindow) {
+      return;
+    }
+
+    this.loadedScholarWindow = serverWindow;
+    this.state.loading.set(true);
+    this.state.error.set(null);
+    this.state.sourcesQueried.set(['semantic_scholar']);
+
+    this.demoSub?.unsubscribe();
+    this.demoSub = this.retrieval.scholarSearchPage(
+      { keywords, raw_query: query },
+      serverWindow,
+      SCHOLAR_PAGE_SIZE,
+      this.state.sortField(),
+      this.buildScholarFilters(),
+    ).subscribe({
       next: (res) => {
         this.state.rawPapersBySource.set({ semantic_scholar: res.papers });
-        this.state.sourcesQueried.set(['semantic_scholar']);
         this.state.sourcesCompleted.set(['semantic_scholar']);
         this.state.queriesUsed.set(res.queries_used);
+        this.state.scholarTotal.set(res.total_found);
+        this.state.scholarHasMore.set(res.has_more);
+        this.state.scholarResultCap.set(res.result_cap);
         this.state.loading.set(false);
-        this.autoScorePapers();
+        this.scholarReady = true;
       },
       error: (err) => {
         const detail = err?.error?.detail;

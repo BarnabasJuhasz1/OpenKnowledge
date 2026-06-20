@@ -9,14 +9,15 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-from .base import PaperInput, ChildInput, ClusterSummaryResult
+from .base import PaperInput, ChildInput, SiblingInput, ClusterSummaryResult
 from .config import finest_prompt, high_level_prompt
-from .vllm import VLLMClusterSummarizer, parse_title_summary
+from .vllm import VLLMClusterSummarizer, parse_summary
 from ..llm_client import LLMError, vllm_enabled, vllm_model
 
 __all__ = [
     "PaperInput",
     "ChildInput",
+    "SiblingInput",
     "ClusterSummaryResult",
     "stream_cluster_summary",
 ]
@@ -27,7 +28,30 @@ def _truncate(text: str, n: int = 60) -> str:
     return text if len(text) <= n else text[: n - 1].rstrip() + "…"
 
 
-def _finest_user(papers: list[PaperInput], name: str) -> str:
+def _sibling_block(siblings: list[SiblingInput]) -> str:
+    """Render a compact roster of sibling clusters at the same level.
+
+    Empty string when there are no siblings, so single-cluster levels add no
+    overhead. Each line is one structural fingerprint (label, size, dominant
+    archetypes) — enough for the model to contrast against without sending whole
+    abstracts or (unavailable) sibling summaries.
+    """
+    if not siblings:
+        return ""
+    lines = [
+        "",
+        f"Other clusters at this same level ({len(siblings)}). Make THIS cluster's "
+        "summary distinct from them — emphasize its specific focus, method, or "
+        "sub-problem and do not restate themes that apply equally to these:",
+    ]
+    for i, s in enumerate(siblings, 1):
+        archetypes = ", ".join(a for a in s.archetypes if a) or "n/a"
+        count = f"{s.size} paper{'' if s.size == 1 else 's'}"
+        lines.append(f"{i}. {s.title or 'Untitled'} ({count}; archetypes: {archetypes})")
+    return "\n".join(lines)
+
+
+def _finest_user(papers: list[PaperInput], name: str, siblings: list[SiblingInput]) -> str:
     lines: list[str] = []
     if name:
         lines.append(f"Cluster label: {name}")
@@ -40,16 +64,22 @@ def _finest_user(papers: list[PaperInput], name: str) -> str:
             f"   Archetypes: {archetypes}\n"
             f"   Abstract: {abstract}"
         )
+    block = _sibling_block(siblings)
+    if block:
+        lines.append(block)
     return "\n".join(lines)
 
 
-def _higher_user(children: list[ChildInput], name: str) -> str:
+def _higher_user(children: list[ChildInput], name: str, siblings: list[SiblingInput]) -> str:
     lines: list[str] = []
     if name:
         lines.append(f"Cluster label: {name}")
     lines.append(f"Finer sub-cluster summaries ({len(children)}):")
     for i, c in enumerate(children, 1):
         lines.append(f"{i}. {c.title or 'Untitled'} — {c.summary}")
+    block = _sibling_block(siblings)
+    if block:
+        lines.append(block)
     return "\n".join(lines)
 
 
@@ -77,7 +107,10 @@ def _fallback(
             f"{'; '.join(titles)}."
         )
     title = name or _truncate(titles[0]) if (name or titles) else "Cluster"
-    return ClusterSummaryResult(title=title, summary=summary, method="fallback")
+    # Up to 3 glanceable bullets from the representative titles, so the bullet UI
+    # is never empty when the LLM is unavailable.
+    bullets = [_truncate(t, 50) for t in titles[:3]]
+    return ClusterSummaryResult(title=title, summary=summary, bullets=bullets, method="fallback")
 
 
 def _done_event(result: ClusterSummaryResult) -> dict:
@@ -85,6 +118,7 @@ def _done_event(result: ClusterSummaryResult) -> dict:
         "done": True,
         "title": result.title,
         "summary": result.summary,
+        "bullets": result.bullets,
         "method": result.method,
         "model": result.model,
     }
@@ -95,6 +129,7 @@ async def stream_cluster_summary(
     *,
     papers: list[PaperInput] | None = None,
     children: list[ChildInput] | None = None,
+    siblings: list[SiblingInput] | None = None,
     name: str = "",
 ) -> AsyncIterator[dict]:
     """Stream one cluster's summary as a sequence of events.
@@ -107,11 +142,12 @@ async def stream_cluster_summary(
     """
     papers = papers or []
     children = children or []
+    siblings = siblings or []
 
     if kind == "finest":
-        system, user = finest_prompt(), _finest_user(papers, name)
+        system, user = finest_prompt(), _finest_user(papers, name, siblings)
     else:
-        system, user = high_level_prompt(), _higher_user(children, name)
+        system, user = high_level_prompt(), _higher_user(children, name, siblings)
 
     fallback = _fallback(kind, papers, children, name)
 
@@ -133,7 +169,7 @@ async def stream_cluster_summary(
             return
         # Partial output already streamed; finalize whatever we got below.
 
-    title, summary = parse_title_summary("".join(buf))
+    title, summary, bullets = parse_summary("".join(buf))
     if not summary:
         yield _done_event(fallback)
         return
@@ -142,6 +178,7 @@ async def stream_cluster_summary(
         ClusterSummaryResult(
             title=title or fallback.title,
             summary=summary,
+            bullets=bullets or fallback.bullets,
             method="vllm",
             model=vllm_model(),
         )

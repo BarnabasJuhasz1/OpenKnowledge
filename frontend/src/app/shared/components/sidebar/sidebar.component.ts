@@ -41,7 +41,7 @@ export class SidebarComponent implements OnInit {
     { path: 'search', label: 'Search', icon: 'search' },
     { path: 'research', label: 'Results', icon: 'list_alt' },
     { path: 'graph', label: 'Graph', icon: 'hub' },
-    { path: 'library', label: 'Library', icon: 'menu_book' },
+    { path: 'library', label: 'Library', icon: 'bookmark' },
     { path: 'project-settings', label: 'Project Settings', icon: 'tune' },
   ];
 

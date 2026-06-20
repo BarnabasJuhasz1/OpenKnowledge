@@ -11,11 +11,12 @@ from app.services.retrieval.opensearch_search import (
 
 
 class _FakeClient:
-    def __init__(self, hits=None, raises=None, count=None, ping=True):
+    def __init__(self, hits=None, raises=None, count=None, ping=True, total=None):
         self._hits = hits or []
         self._raises = raises
         self._count = count
         self._ping = ping
+        self._total = total
         self.last_index = None
         self.last_body = None
 
@@ -24,7 +25,10 @@ class _FakeClient:
         self.last_body = body
         if self._raises is not None:
             raise self._raises
-        return {"hits": {"hits": [{"_source": s} for s in self._hits]}}
+        resp = {"hits": {"hits": [{"_source": s} for s in self._hits]}}
+        if self._total is not None:
+            resp["hits"]["total"] = {"value": self._total, "relation": "eq"}
+        return resp
 
     def count(self, index=None):
         if self._raises is not None:
@@ -78,6 +82,36 @@ def test_maps_hits_to_papers():
     assert p.fields_of_study == ["Computer Science"]
     assert p.is_peer_reviewed is True
     assert p.sources == ["semantic_scholar"]
+    # Archetype + code fields absent in this hit -> default-safe.
+    assert p.has_public_code is None
+    assert p.has_dataset is False
+    assert p.repo_stars == 0
+    assert p.predicted_main_archetype is None
+    assert p.predicted_second_tier_archetype is None
+
+
+def test_maps_archetype_and_code_fields_when_present():
+    """Once the corpus backfill populates them, the engine reads them onto the Paper."""
+    src = {
+        "corpusid": 9,
+        "title": "Backfilled paper",
+        "citationcount": 3,
+        "publication_types": ["Conference"],
+        "predicted_main_archetype": "The Innovator",
+        "predicted_second_tier_archetype": "The Synthesizer",
+        "has_public_code": True,
+        "code_url": "https://github.com/x/y",
+        "repo_stars": 42,
+        "has_dataset": True,
+    }
+    engine = _make_engine(_FakeClient(hits=[src]), result_limit=10)
+    p = engine.search("anything")[0]
+    assert p.predicted_main_archetype == "The Innovator"
+    assert p.predicted_second_tier_archetype == "The Synthesizer"
+    assert p.has_public_code is True
+    assert p.code_url == "https://github.com/x/y"
+    assert p.repo_stars == 42
+    assert p.has_dataset is True
 
 
 def test_forwards_compiled_dsl_and_size():
@@ -117,6 +151,105 @@ def test_searchable_count_wraps_errors():
 def test_ping_returns_client_ping():
     engine = _make_engine(_FakeClient(ping=True))
     assert engine.ping() is True
+
+
+class _CorpusFakeClient:
+    """Returns one hit per requested corpusid that exists in ``present``.
+
+    Thread-safe enough for the parallel-hydration fan-out: it only reads ``present``
+    and records call count under a lock.
+    """
+
+    def __init__(self, present, raises_on_chunk=None):
+        import threading
+
+        self._present = set(present)
+        self._raises_on_chunk = raises_on_chunk  # raise on the Nth (1-based) chunk
+        self.calls = 0
+        self._lock = threading.Lock()
+
+    def search(self, index=None, body=None):
+        with self._lock:
+            self.calls += 1
+            n = self.calls
+        if self._raises_on_chunk is not None and n == self._raises_on_chunk:
+            raise RuntimeError("chunk boom")
+        ids = body["query"]["terms"]["corpusid"]
+        hits = [{"_source": {"corpusid": c}} for c in ids if c in self._present]
+        return {"hits": {"hits": hits}}
+
+
+def test_fetch_nodes_single_chunk_no_pool():
+    engine = _make_engine(_CorpusFakeClient(present={1, 2, 3}))
+    out = engine.fetch_nodes_by_corpusid([1, 2, 3, 99])  # 99 absent -> omitted
+    assert set(out.keys()) == {1, 2, 3}
+    assert engine._client.calls == 1  # one chunk, no fan-out
+
+
+def test_fetch_nodes_multi_chunk_parallel_returns_all():
+    ids = list(range(2500))  # 3 chunks of 1000/1000/500
+    engine = _make_engine(_CorpusFakeClient(present=set(ids)))
+    out = engine.fetch_nodes_by_corpusid(ids)
+    assert set(out.keys()) == set(ids)
+    assert engine._client.calls == 3  # fanned out across chunks
+
+
+def test_fetch_nodes_multi_chunk_error_wrapped():
+    ids = list(range(2500))
+    engine = _make_engine(_CorpusFakeClient(present=set(ids), raises_on_chunk=2))
+    with pytest.raises(OpenSearchSearchError):
+        engine.fetch_nodes_by_corpusid(ids)
+
+
+def test_fetch_nodes_empty_returns_empty():
+    engine = _make_engine(_CorpusFakeClient(present=set()))
+    assert engine.fetch_nodes_by_corpusid([]) == {}
+
+
+def test_resolve_corpusids_doi_is_case_insensitive():
+    """A lowercased DOI seed must resolve against a mixed-case stored DOI.
+
+    Regression for the ok-graph "No papers found" bug: S2 stores DOIs in
+    original (often upper) case, so the old case-sensitive `terms` match on a
+    lowercased seed missed ~70% of papers and the graph came back empty.
+    """
+    client = _FakeClient(
+        hits=[{"corpusid": 42, "doi": "10.2139/SSRN.361660", "arxiv_id": None}]
+    )
+    engine = _make_engine(client)
+
+    # Seed arrives lowercased (as the frontend / old code would send it).
+    assert engine.resolve_corpusids(["10.2139/ssrn.361660"]) == {
+        "10.2139/ssrn.361660": 42
+    }
+    # And the original mixed-case seed resolves to the same corpusid.
+    assert engine.resolve_corpusids(["10.2139/SSRN.361660"]) == {
+        "10.2139/SSRN.361660": 42
+    }
+
+    # The emitted query must be case-insensitive `term` clauses, never a
+    # case-sensitive `terms` clause.
+    should = client.last_body["query"]["bool"]["should"]
+    assert any(
+        c.get("term", {}).get("doi", {}).get("case_insensitive") is True
+        for c in should
+    )
+    assert all("terms" not in c for c in should)
+
+
+def test_resolve_corpusids_bare_integer_is_direct():
+    """A numeric seed is taken as a corpusid directly — no lookup query."""
+    client = _FakeClient(hits=[])
+    engine = _make_engine(client)
+    assert engine.resolve_corpusids(["12345"]) == {"12345": 12345}
+    # No identifier/title query was issued for a bare corpusid.
+    assert client.last_body is None
+
+
+def test_resolve_corpusids_unknown_identifier_dropped():
+    """An identifier with no matching paper is silently omitted."""
+    engine = _make_engine(_FakeClient(hits=[]))
+    assert engine.resolve_corpusids(["10.0000/does.not.exist"]) == {}
 
 
 def test_client_built_with_timeout_and_retry(monkeypatch):
@@ -231,6 +364,42 @@ def test_scan_error_wrapped(monkeypatch):
         engine.search("neural")
 
 
+def test_result_limit_override_caps_an_unlimited_engine(monkeypatch):
+    """A per-call result_limit overrides an engine configured for unlimited, stopping early.
+
+    Uses a cap above the 10k window so it exercises the scroll-and-stop path.
+    """
+    def fake_scan(client, **kwargs):
+        for i in range(50_000):
+            yield {"_source": {"corpusid": i, "title": "x"}}
+
+    monkeypatch.setattr("opensearchpy.helpers.scan", fake_scan, raising=False)
+    engine = _make_engine(_FakeClient(), result_limit=None)  # engine = unlimited
+    papers = list(engine.iter_search("neural", result_limit=12_000))
+    assert len(papers) == 12_000
+
+
+def test_result_limit_override_uses_fast_path_when_small():
+    """A small override routes through the single-request BM25 path with that `size`."""
+    client = _FakeClient(hits=[{"corpusid": 1, "title": "a"}, {"corpusid": 2, "title": "b"}])
+    engine = _make_engine(client, result_limit=None)  # engine = unlimited
+    papers = list(engine.iter_search("neural", result_limit=25))
+    assert len(papers) == 2
+    assert client.last_body["size"] == 25
+
+
+def test_result_limit_override_none_means_unlimited(monkeypatch):
+    """Passing None explicitly overrides a finite engine cap with unlimited streaming."""
+    def fake_scan(client, **kwargs):
+        for i in range(5):
+            yield {"_source": {"corpusid": i, "title": "x"}}
+
+    monkeypatch.setattr("opensearchpy.helpers.scan", fake_scan, raising=False)
+    engine = _make_engine(_FakeClient(), result_limit=50)  # finite engine cap
+    papers = list(engine.iter_search("neural", result_limit=None))
+    assert len(papers) == 5  # streamed all via scan, not capped at 50
+
+
 def test_iter_search_is_lazy(monkeypatch):
     """iter_search yields without materializing everything (constant-memory streaming)."""
     started = {"n": 0}
@@ -246,6 +415,84 @@ def test_iter_search_is_lazy(monkeypatch):
     first = next(it)
     assert first.semantic_scholar_id == "0"
     assert started["n"] == 1  # only one hit pulled so far
+
+
+# ── search_page: paginated, filtered, total-bearing ──────────────────────────
+
+class _Filters:
+    """Lightweight stand-in for ScholarFilters (search_page reads attributes)."""
+    def __init__(self, **kw):
+        defaults = dict(
+            year_min=None, year_max=None, citation_min=None, citation_max=None,
+            open_access_only=False, peer_reviewed_only=False, code_only=False,
+            archetypes=None,
+        )
+        defaults.update(kw)
+        self.__dict__.update(defaults)
+
+
+def test_search_page_returns_papers_and_total():
+    client = _FakeClient(hits=[{"corpusid": 1, "title": "a"}, {"corpusid": 2, "title": "b"}],
+                         total=4242)
+    engine = _make_engine(client)
+    papers, total = engine.search_page("neural", offset=0, size=2)
+    assert [p.semantic_scholar_id for p in papers] == ["1", "2"]
+    assert total == 4242
+    body = client.last_body
+    assert body["from"] == 0 and body["size"] == 2
+    assert body["track_total_hits"] is True
+
+
+def test_search_page_relevancy_sorts_by_citations_with_tiebreak():
+    client = _FakeClient(hits=[], total=0)
+    engine = _make_engine(client)
+    engine.search_page("neural", offset=0, size=10, sort="relevancy")
+    sort = client.last_body["sort"]
+    assert sort[0]["citationcount"]["order"] == "desc"
+    assert sort[-1] == {"corpusid": {"order": "asc"}}
+
+
+def test_search_page_title_sort_uses_keyword_subfield():
+    client = _FakeClient(hits=[], total=0)
+    engine = _make_engine(client)
+    engine.search_page("neural", offset=20, size=10, sort="title_asc")
+    sort = client.last_body["sort"]
+    assert sort[0] == {"title.kw": {"order": "asc"}}
+    assert client.last_body["from"] == 20
+
+
+def test_search_page_builds_filter_clauses():
+    client = _FakeClient(hits=[], total=0)
+    engine = _make_engine(client)
+    filters = _Filters(
+        year_min=2018, year_max=2024, citation_min=10,
+        open_access_only=True, peer_reviewed_only=True, code_only=True,
+        archetypes=["The Innovator", "The Analyst"],
+    )
+    engine.search_page("neural", offset=0, size=10, filters=filters)
+    filt = client.last_body["query"]["bool"]["filter"]
+    assert {"range": {"year": {"gte": 2018, "lte": 2024}}} in filt
+    assert {"range": {"citationcount": {"gte": 10}}} in filt
+    assert {"term": {"is_open_access": True}} in filt
+    assert {"terms": {"publication_types": ["JournalArticle", "Conference"]}} in filt
+    assert {"term": {"has_public_code": True}} in filt
+    archetype_clause = next(c for c in filt if "bool" in c)
+    assert archetype_clause["bool"]["minimum_should_match"] == 1
+    assert {"terms": {"predicted_main_archetype": ["The Innovator", "The Analyst"]}} \
+        in archetype_clause["bool"]["should"]
+
+
+def test_search_page_no_filters_omits_filter_key():
+    client = _FakeClient(hits=[], total=0)
+    engine = _make_engine(client)
+    engine.search_page("neural", offset=0, size=10, filters=_Filters())
+    assert "filter" not in client.last_body["query"]["bool"]
+
+
+def test_search_page_wraps_errors():
+    engine = _make_engine(_FakeClient(raises=RuntimeError("boom"), total=0))
+    with pytest.raises(OpenSearchSearchError):
+        engine.search_page("neural", offset=0, size=10)
 
 
 # ── seed resolution & node hydration (citation graph support) ─────────────────

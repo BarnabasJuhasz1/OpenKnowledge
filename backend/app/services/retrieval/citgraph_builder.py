@@ -16,6 +16,8 @@ citers give ``(neighbor, seed)``.
 from __future__ import annotations
 
 import logging
+import os
+from collections import defaultdict
 from dataclasses import dataclass, field
 
 import anyio
@@ -29,6 +31,18 @@ from .bigquery_citations import (
 from .opensearch_search import OpenSearchError, get_engine
 
 logger = logging.getLogger(__name__)
+
+# When a per-paper top-K cap is in force and no keyword filter can drop the high-citation
+# picks, BigQuery's ranked QUALIFY (ORDER BY neighbor_citationcount) returns exactly the
+# neighbours we keep, so we push a small per-source cap down instead of fetching everything.
+# We over-fetch by this factor because OpenSearch coverage is partial: a top-by-citation
+# neighbour absent from the index is dropped at hydration, so the buffer keeps enough usable
+# candidates to still fill K. Tunable; 0/negative disables the pushdown (always fetch wide).
+def _bq_overfetch() -> int:
+    try:
+        return int(os.getenv("CITGRAPH_BQ_OVERFETCH", "10"))
+    except ValueError:
+        return 10
 
 
 class UpstreamError(Exception):
@@ -117,7 +131,18 @@ async def _traverse(
     max_per_hop: int,
     keywords: list[str],
     include_non_matching: bool,
+    top_k_per_paper: list[int | None] | int | None = None,
+    max_per_hop_total: int | None = None,
 ) -> CitGraphResult:
+    """Traverse the citation graph.
+
+    ``max_per_hop`` is the per-source-paper *fetch* cap applied at the edge source
+    (BigQuery), a cost/scan bound. ``top_k_per_paper`` then keeps each paper's K
+    highest-ok-score neighbours, and ``max_per_hop_total`` finally caps the *total*
+    number of new papers added in a hop to the globally highest-ok-score ones
+    (cumulative across all frontier papers). ok-score is proxied by
+    ``citation_count`` — see the per-paper cap comment below.
+    """
     engine = get_engine()
     bq = get_citation_graph()
 
@@ -149,24 +174,79 @@ async def _traverse(
 
     want_past = direction in ("past", "both")
     want_future = direction in ("future", "both")
+    # Keyword filtering can drop a high-citation neighbour after hydration, so the kept
+    # top-K is taken among matches — meaning we must NOT pre-cap by citation at the source
+    # when it is active. Invariant across hops.
+    keyword_filtering = (not include_non_matching) and bool(keywords)
+    overfetch = _bq_overfetch()
+
+    def _top_k_for_hop(hop: int) -> int | None:
+        """The per-paper top-K cap active for ``hop`` (None = keep all)."""
+        if top_k_per_paper is None:
+            return None
+        if isinstance(top_k_per_paper, list):
+            if not top_k_per_paper:
+                return None
+            return top_k_per_paper[hop - 1] if hop <= len(top_k_per_paper) else top_k_per_paper[-1]
+        return top_k_per_paper
 
     for hop in range(1, k + 1):
         if not frontier:
             break
 
-        # Raw (citing, cited) edges for this hop from BigQuery.
-        raw: list[tuple[int, int]] = []
-        try:
+        # Per-paper top-K cap for this hop (used both to push a cap down to BigQuery and
+        # to trim each anchor's neighbours after hydration).
+        current_top_k = _top_k_for_hop(hop)
+
+        # Push the cap down to BigQuery only when it is provably result-equivalent: a
+        # per-paper top-K is set and no keyword filter can discard the high-citation picks.
+        # We over-fetch (cap * factor) so partial OpenSearch coverage still leaves K usable
+        # neighbours; the exact top-K is then selected in Python below.
+        effective_cap = max_per_hop
+        if current_top_k is not None and not keyword_filtering and overfetch > 0:
+            effective_cap = min(max_per_hop, max(current_top_k * overfetch, current_top_k))
+
+        # This hop's edges, each tagged with its *anchor* — the frontier paper the
+        # neighbour hangs off — so a per-paper cap can be applied below. For a
+        # reference the anchor is the citing side; for a citation it's the cited
+        # side. Item shape: (anchor, neighbour, (citing, cited)). Fetch order is
+        # preserved (references then citations), matching the legacy traversal.
+        # Fetch references (past) and citations (future) concurrently: they are
+        # independent BigQuery jobs and each carries a large fixed per-job latency, so
+        # running them in parallel roughly halves a 'both'-direction hop. The helpers
+        # capture BigQuery errors instead of raising so the task group always exits
+        # cleanly; we then surface them as UpstreamError in normal control flow.
+        edge_results: dict[str, list[tuple[int, int]]] = {"refs": [], "cites": []}
+        edge_errors: list[Exception] = []
+
+        async def _fetch_edges(kind: str, fn) -> None:
+            try:
+                edge_results[kind] = await anyio.to_thread.run_sync(fn, frontier, effective_cap)
+            except (BigQueryNotConfiguredError, BigQueryCitationsError) as exc:
+                edge_errors.append(exc)
+
+        async with anyio.create_task_group() as tg:
             if want_past:
-                raw += await anyio.to_thread.run_sync(bq.references, frontier, max_per_hop)
+                tg.start_soon(_fetch_edges, "refs", bq.references)
             if want_future:
-                raw += await anyio.to_thread.run_sync(bq.citations, frontier, max_per_hop)
-        except (BigQueryNotConfiguredError, BigQueryCitationsError) as exc:
-            raise UpstreamError(f"BigQuery edge lookup failed: {exc}") from exc
+                tg.start_soon(_fetch_edges, "cites", bq.citations)
+
+        if edge_errors:
+            raise UpstreamError(
+                f"BigQuery edge lookup failed: {edge_errors[0]}"
+            ) from edge_errors[0]
+
+        # Merge in a fixed order (references then citations) so traversal stays
+        # deterministic regardless of which thread finished first.
+        tagged: list[tuple[int, int, tuple[int, int]]] = []
+        for citing, cited in edge_results["refs"]:
+            tagged.append((citing, cited, (citing, cited)))
+        for citing, cited in edge_results["cites"]:
+            tagged.append((cited, citing, (citing, cited)))
 
         # Candidate neighbours = endpoints not already known as nodes.
         candidates: set[int] = set()
-        for citing, cited in raw:
+        for _anchor, _neighbour, (citing, cited) in tagged:
             for endpoint in (citing, cited):
                 if endpoint not in nodes:
                     candidates.add(endpoint)
@@ -182,10 +262,50 @@ async def _traverse(
                 return matches_keywords(node.title, node.abstract, keywords)
             return True
 
+        usable = [t for t in tagged if _usable(t[2][0]) and _usable(t[2][1])]
+
+        # ok-score proxy: expanded neighbours are not ok-score-enriched, so their
+        # ok-score is w_c·log10(1 + citation_count) — monotonic in citation_count —
+        # and citation_count is the only signal available at expansion time.
+        def _cite_count(cid: int) -> int:
+            node = nodes.get(cid) or hop_nodes.get(cid)
+            return (node.citation_count or 0) if node else -1
+
+        # Per-paper top-K cap: keep only the K highest-ok-score neighbours taken
+        # from any single anchor paper (e.g. a foundational work's most relevant
+        # citers). ``current_top_k`` was computed above (and may already have bounded
+        # the BigQuery fetch); this trims to the exact top-K among usable neighbours.
+        if current_top_k is not None:
+            grouped: dict[int, list[tuple[int, int, tuple[int, int]]]] = defaultdict(list)
+            for t in usable:
+                grouped[t[0]].append(t)
+            capped: list[tuple[int, int, tuple[int, int]]] = []
+            for items in grouped.values():
+                # Stable sort: ties keep fetch order, so the result is deterministic.
+                items.sort(key=lambda t: _cite_count(t[1]), reverse=True)
+                capped.extend(items[:current_top_k])
+            usable = capped
+
+        # Cumulative per-hop cap: across ALL frontier papers, add at most
+        # ``max_per_hop_total`` *new* papers this hop — the globally highest-ok-score
+        # ones — so the graph cannot explode as the frontier grows. Counts distinct
+        # new nodes (not edges); edges to papers that don't make the cut are dropped,
+        # while edges to already-known papers are always kept.
+        if max_per_hop_total is not None:
+            new_scores: dict[int, int] = {}
+            for _anchor, neighbour, _edge in usable:
+                if neighbour not in nodes and neighbour not in new_scores:
+                    new_scores[neighbour] = _cite_count(neighbour)
+            if len(new_scores) > max_per_hop_total:
+                kept_new = {
+                    cid for cid, _ in sorted(
+                        new_scores.items(), key=lambda kv: kv[1], reverse=True
+                    )[:max_per_hop_total]
+                }
+                usable = [t for t in usable if t[1] in nodes or t[1] in kept_new]
+
         next_frontier: list[int] = []
-        for citing, cited in raw:
-            if not (_usable(citing) and _usable(cited)):
-                continue
+        for _anchor, _neighbour, (citing, cited) in usable:
             key = (citing, cited)
             if key in edge_set:
                 continue
@@ -205,6 +325,9 @@ async def _traverse(
     )
 
 
+_EXPLORE_FETCH_CAP = 100_000
+
+
 async def build_citation_graph(
     paper_id: str,
     k: int = 1,
@@ -222,9 +345,18 @@ async def explore_citation_graph(
     include_non_matching: bool = True,
     keywords: list[str] = [],
     k: int = 1,
-    max_per_hop: int = 20,
+    max_per_hop: int | None = None,
+    top_k_per_paper: list[int | None] | int | None = None,
 ) -> CitGraphResult:
     """Expand a citation graph from multiple seeds in a chosen direction, from hosted data."""
     return await _traverse(
-        seeds, direction, k, max_per_hop, keywords or [], include_non_matching
+        seeds,
+        direction,
+        k,
+        _EXPLORE_FETCH_CAP,
+        keywords or [],
+        include_non_matching,
+        top_k_per_paper=top_k_per_paper,
+        max_per_hop_total=max_per_hop,
     )
+

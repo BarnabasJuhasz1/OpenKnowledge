@@ -76,7 +76,7 @@ $brand: var(--ok-primary-raw);
 
     &--active {
       background: rgba(var(--ok-primary-rgb), 0.15) !important;
-      color: rgb(129, 140, 248) !important;
+      color: var(--ok-primary) !important;
       border: 1px solid rgba(var(--ok-primary-rgb), 0.3) !important;
       font-weight: 600;
     }

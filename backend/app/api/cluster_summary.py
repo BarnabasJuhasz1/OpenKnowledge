@@ -11,6 +11,7 @@ from ..services.cluster_summary import (
     stream_cluster_summary,
     PaperInput,
     ChildInput,
+    SiblingInput,
 )
 
 router = APIRouter(prefix="/clusters", tags=["clusters"])
@@ -27,11 +28,20 @@ class ChildIn(BaseModel):
     summary: str
 
 
+class SiblingIn(BaseModel):
+    title: str = ""
+    size: int = 0
+    archetypes: list[str] = []
+
+
 class SummarizeRequest(BaseModel):
     kind: str  # "finest" | "higher"
     name: str = ""
     papers: list[PaperIn] | None = None
     children: list[ChildIn] | None = None
+    # Compact structural fingerprints of the sibling clusters at the same level,
+    # used to steer the summary toward this cluster's distinct characteristics.
+    siblings: list[SiblingIn] | None = None
 
 
 def _sse(events: AsyncIterator[dict]) -> AsyncIterator[bytes]:
@@ -54,6 +64,11 @@ async def summarize(body: SummarizeRequest) -> StreamingResponse:
     if body.kind not in ("finest", "higher"):
         raise HTTPException(status_code=422, detail="kind must be 'finest' or 'higher'")
 
+    siblings = [
+        SiblingInput(title=s.title, size=s.size, archetypes=list(s.archetypes or []))
+        for s in (body.siblings or [])
+    ]
+
     if body.kind == "finest":
         papers = [
             PaperInput(
@@ -66,7 +81,9 @@ async def summarize(body: SummarizeRequest) -> StreamingResponse:
         ]
         if not papers:
             raise HTTPException(status_code=422, detail="A finest summary requires papers.")
-        events = stream_cluster_summary("finest", papers=papers, name=body.name)
+        events = stream_cluster_summary(
+            "finest", papers=papers, siblings=siblings, name=body.name
+        )
     else:
         children = [
             ChildInput(title=c.title, summary=c.summary)
@@ -77,7 +94,9 @@ async def summarize(body: SummarizeRequest) -> StreamingResponse:
             raise HTTPException(
                 status_code=422, detail="A higher-level summary requires child summaries."
             )
-        events = stream_cluster_summary("higher", children=children, name=body.name)
+        events = stream_cluster_summary(
+            "higher", children=children, siblings=siblings, name=body.name
+        )
 
     return StreamingResponse(
         _sse(events),

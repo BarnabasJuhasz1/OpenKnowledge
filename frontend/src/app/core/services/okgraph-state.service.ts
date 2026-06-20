@@ -50,6 +50,24 @@ export class OkGraphStateService {
   readonly placed = signal<PlacedNode[]>([]);
   readonly links = signal<LayoutEdge[]>([]);
 
+  /**
+   * Paper ids the user has permanently removed from this graph (individual nodes
+   * or whole (sub)clusters). Removal is irreversible: candidate generation and
+   * representative selection exclude these, so no expansion or re-seed can bring
+   * them back. Reset only on a new graph (`setHierarchy`) or `clear()`; kept
+   * across `setFilter()` re-clusters since paper ids are stable.
+   */
+  readonly removedIds = signal<Set<string>>(new Set());
+
+  /** Permanently exclude `ids` from the graph (additive). */
+  markRemoved(ids: Iterable<string>): void {
+    this.removedIds.update(cur => {
+      const next = new Set(cur);
+      for (const id of ids) next.add(id);
+      return next;
+    });
+  }
+
   /** Open/collapsed state of the right-side details panel. Defaults to true (collapsed) when no paper selected. */
   readonly panelCollapsed = signal(true);
   /** User preference tracking if the panel should automatically open on selecting a paper. Defaults to true. */
@@ -119,6 +137,7 @@ export class OkGraphStateService {
     // New dataset → drop any previous exploration; the view re-seeds top reps.
     this.placed.set([]);
     this.links.set([]);
+    this.removedIds.set(new Set());
   }
 
   /** Can the OK-Graph filter be toggled at all? */
@@ -171,6 +190,7 @@ export class OkGraphStateService {
     this.hasContent.set(false);
     this.placed.set([]);
     this.links.set([]);
+    this.removedIds.set(new Set());
     this.panelCollapsed.set(true);
     this.autoOpenEnabled.set(true);
     this.filterActive.set(false);
