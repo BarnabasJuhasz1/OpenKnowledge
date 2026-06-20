@@ -1,0 +1,6 @@
+# Minimal deps for the BigQuery -> OpenSearch ingestion (NOT the full backend).
+google-cloud-bigquery>=3.0.0
+google-cloud-bigquery-storage>=2.20.0   # parallel Storage Read API
+pyarrow>=14.0.0                          # Arrow record batches from the read streams
+opensearch-py>=2.4.0
+python-dotenv>=1.0.0

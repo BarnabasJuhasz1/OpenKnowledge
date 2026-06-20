@@ -299,6 +299,90 @@
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
               </button>
 
+              <!-- Summarization info -->
+              <div class="graph-settings">
+                <button
+                  class="graph-settings__btn"
+                  [class.graph-settings__btn--active]="infoOpen()"
+                  (click)="toggleInfo()"
+                  title="Summarization info"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                </button>
+
+                @if (infoOpen()) {
+                  <div class="graph-settings__backdrop" (click)="closeInfo()"></div>
+                  <div class="graph-settings__panel">
+                    <div class="graph-settings__header">OK-Graph Info</div>
+
+                    <div class="graph-settings__tabs">
+                      <button
+                        class="graph-settings__tab"
+                        [class.graph-settings__tab--active]="infoTab() === 'summary'"
+                        (click)="setInfoTab('summary')"
+                      >Summarization</button>
+                      <button
+                        class="graph-settings__tab"
+                        [class.graph-settings__tab--active]="infoTab() === 'config'"
+                        (click)="setInfoTab('config')"
+                      >Configuration</button>
+                    </div>
+
+                    @if (infoTab() === 'summary') {
+                      @if (summaryInfo(); as info) {
+                        <div class="graph-settings__row graph-settings__row--static">
+                          <span class="graph-settings__label">Clusters summarized</span>
+                          <span class="graph-settings__value">{{ info.clusters }}</span>
+                        </div>
+                        <div class="graph-settings__row graph-settings__row--static">
+                          <span class="graph-settings__label">Total time</span>
+                          <span class="graph-settings__value">{{ info.totalTime }}</span>
+                        </div>
+                        <div class="graph-settings__row graph-settings__row--static">
+                          <span class="graph-settings__label">Avg time / cluster</span>
+                          <span class="graph-settings__value">{{ info.avgTime }}</span>
+                        </div>
+                        <div class="graph-settings__row graph-settings__row--static">
+                          <span class="graph-settings__label">Model</span>
+                          <span class="graph-settings__value graph-settings__value--model" [title]="info.model">{{ info.model }}</span>
+                        </div>
+                      } @else if (summaries.running()) {
+                        <div class="graph-settings__empty">
+                          Generating summaries… {{ summaries.percent() }}%
+                        </div>
+                      } @else {
+                        <div class="graph-settings__empty">
+                          No cluster summaries have been generated yet.
+                        </div>
+                      }
+                    } @else {
+                      @if (graphConfig(); as cfg) {
+                        <div class="graph-settings__subhead">OK-Score weights</div>
+                        @for (w of cfg.weights; track w.label) {
+                          <div class="graph-settings__row graph-settings__row--static">
+                            <span class="graph-settings__label">{{ w.label }}</span>
+                            <span class="graph-settings__value">{{ w.value | number:'1.0-2' }}</span>
+                          </div>
+                        }
+                        <div class="graph-settings__subhead">Summarization</div>
+                        <div class="graph-settings__row graph-settings__row--static">
+                          <span class="graph-settings__label">Model</span>
+                          <span class="graph-settings__value graph-settings__value--model" [title]="cfg.model">{{ cfg.model }}</span>
+                        </div>
+                        <div class="graph-settings__row graph-settings__row--static">
+                          <span class="graph-settings__label">Concurrency</span>
+                          <span class="graph-settings__value">{{ cfg.concurrency }}</span>
+                        </div>
+                        <div class="graph-settings__row graph-settings__row--static">
+                          <span class="graph-settings__label">Top-K papers / cluster</span>
+                          <span class="graph-settings__value">{{ cfg.topK }}</span>
+                        </div>
+                      }
+                    }
+                  </div>
+                }
+              </div>
+
               <!-- Settings -->
               <div class="graph-settings">
                 <button
@@ -790,16 +874,20 @@
                   />
                 }
 
-                <!-- Horizontal swimlane info boxes on the left -->
-                @if (useInGraphCards()) {
+                <!-- Horizontal swimlane info boxes on the left. Hidden at the leaf
+                     level (currentTopLevel < 0): there the lanes are individual
+                     papers, not clusters, so a cluster card would be meaningless. -->
+                @if (useInGraphCards() && currentTopLevel() >= 0) {
                   @for (box of laneLayout().laneBoxes; track box.topCluster) {
                     <foreignObject
                       [attr.x]="box.cardX"
-                      [attr.y]="box.yStart + (box.height - cardHeight) / 2"
+                      [attr.y]="box.yStart + (box.height - cardHeightFor(box.topCluster)) / 2"
                       [attr.width]="cardWidth"
-                      [attr.height]="cardHeight"
+                      [attr.height]="cardHeightFor(box.topCluster)"
                     >
                       <div
+                        #laneBoxEl
+                        [attr.data-cluster]="box.topCluster"
                         class="lane-box"
                         [style.border-left-color]="box.color"
                         [style.border-top-color]="isClusterSelected(box.topCluster) ? box.color : null"
@@ -809,46 +897,56 @@
                         [class.lane-box--transition-fade-out]="isClusterOutsideTransitionTarget(box.topCluster)"
                         (click)="selectClusterById(box.topCluster, $event)"
                       >
-                        <div class="lane-box__body">
-                          <div class="lane-box__header">
-                            <span class="lane-box__swatch" [style.background]="box.color"></span>
-                            <div class="lane-box__title-group">
-                              <span class="lane-box__name">{{ box.name }}</span>
-                            </div>
-                            <button
-                              class="lane-box__delete-btn"
-                              (click)="requestRemoveCluster(box.topCluster, box.name, $event)"
-                              title="Remove this cluster from the graph"
-                            >
-                              <span class="material-symbols-outlined">delete</span>
-                            </button>
+                        <div class="lane-box__header">
+                          <span class="lane-box__swatch" [style.background]="box.color"></span>
+                          <div class="lane-box__title-group">
+                            <span class="lane-box__name">{{ box.name }}</span>
                           </div>
+                          @if (!box.isMisc && currentTopLevel() >= 0) {
+                            <button
+                              class="lane-box__move-btn"
+                              [style.color]="box.color"
+                              (click)="moveInside(box.topCluster, $event)"
+                              title="Move inside this cluster"
+                            >
+                              <span class="material-symbols-outlined">zoom_in</span>
+                            </button>
+                          }
+                          <button
+                            class="lane-box__delete-btn"
+                            (click)="requestRemoveCluster(box.topCluster, box.name, $event)"
+                            title="Remove this cluster from the graph"
+                          >
+                            <span class="material-symbols-outlined">delete</span>
+                          </button>
+                        </div>
 
-                          @if (!box.isMisc) {
-                            @if (box.summary; as s) {
-                              @if (s.status === 'done') {
-                                @if (s.title) {
-                                  <span class="lane-box__summary-title">{{ s.title }}</span>
-                                }
-                                <span class="lane-box__summary">{{ s.summary }}</span>
-                              } @else if (s.status !== 'error') {
-                                <span class="lane-box__summary lane-box__summary--pending">Summarizing…</span>
-                              }
-                            } @else if (summaries.running()) {
-                              <span class="lane-box__summary lane-box__summary--pending">Summarizing…</span>
-                            }
+                        <div class="lane-box__counts">
+                          <span class="lane-box__count">
+                            <span class="material-symbols-outlined lane-box__count-icon">description</span>
+                            {{ box.paperTotal }} {{ box.paperTotal === 1 ? 'paper' : 'papers' }}
+                          </span>
+                          @if (box.subClusters > 0) {
+                            <span class="lane-box__count">
+                              <span class="material-symbols-outlined lane-box__count-icon">account_tree</span>
+                              {{ box.subClusters }} {{ box.subClusters === 1 ? 'sub-cluster' : 'sub-clusters' }}
+                            </span>
                           }
                         </div>
 
-                        @if (!box.isMisc && currentTopLevel() >= 0) {
-                          <button
-                            class="lane-box__move-btn"
-                            [style.background]="box.color"
-                            (click)="moveInside(box.topCluster, $event)"
-                          >
-                            <span class="material-symbols-outlined">zoom_in</span>
-                            Move Inside
-                          </button>
+                        @if (!box.isMisc) {
+                          @if (box.summary; as s) {
+                            @if (s.status === 'done') {
+                              @if (s.title) {
+                                <span class="lane-box__summary-title">{{ s.title }}</span>
+                              }
+                              <span class="lane-box__summary">{{ s.summary }}</span>
+                            } @else if (s.status !== 'error') {
+                              <span class="lane-box__summary lane-box__summary--pending">Summarizing…</span>
+                            }
+                          } @else if (summaries.running()) {
+                            <span class="lane-box__summary lane-box__summary--pending">Summarizing…</span>
+                          }
                         }
                       </div>
                     </foreignObject>

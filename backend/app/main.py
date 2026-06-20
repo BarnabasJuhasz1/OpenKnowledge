@@ -16,6 +16,7 @@ from .api.keywords import router as keywords_router
 from .api.retrieval import router as retrieval_router
 from .api.scoring import router as scoring_router
 from .api.demo import router as demo_router
+from .api.scholar import router as scholar_router
 from .api.shelf import router as shelf_router
 from .api.bookshelf import router as bookshelf_router
 from .api.citgraph import router as citgraph_router
@@ -71,6 +72,7 @@ app.include_router(keywords_router, prefix="/api")
 app.include_router(retrieval_router, prefix="/api")
 app.include_router(scoring_router, prefix="/api")
 app.include_router(demo_router, prefix="/api")
+app.include_router(scholar_router, prefix="/api")
 app.include_router(shelf_router, prefix="/api")
 app.include_router(bookshelf_router, prefix="/api")
 app.include_router(citgraph_router, prefix="/api")

@@ -4,7 +4,7 @@ import { Subscription } from 'rxjs';
 import { RetrievalService } from '../../core/services/retrieval.service';
 import { ScoringService } from '../../core/services/scoring.service';
 import { SearchStateService } from '../../core/services/search-state.service';
-import { DemoModeService } from '../../core/services/demo-mode.service';
+import { SearchModeService } from '../../core/services/search-mode.service';
 import { ScoreWeights } from '../../core/models/paper.model';
 import { parseQuery } from '../../shared/utils/query-parser';
 import { ResultsMetaComponent } from './results-meta/results-meta.component';
@@ -42,7 +42,7 @@ export class ResultsComponent implements OnInit, OnDestroy {
   private readonly retrieval = inject(RetrievalService);
   private readonly scoring = inject(ScoringService);
   readonly state = inject(SearchStateService);
-  readonly demo = inject(DemoModeService);
+  readonly mode = inject(SearchModeService);
   private streamSub: Subscription | null = null;
   private scoreSub: Subscription | null = null;
   private bgSub: Subscription | null = null;
@@ -102,8 +102,10 @@ export class ResultsComponent implements OnInit, OnDestroy {
     // Reset state
     this.state.resetForNewSearch();
 
-    if (this.demo.enabled()) {
+    if (this.mode.isDemo()) {
       this.runDemoSearch(keywords, query);
+    } else if (this.mode.isScholar()) {
+      this.runScholarSearch(keywords, query);
     } else {
       this.runLiveSearch(keywords, query);
     }
@@ -123,6 +125,32 @@ export class ResultsComponent implements OnInit, OnDestroy {
       },
       error: () => {
         this.state.error.set('Could not reach the search API. Make sure the backend is running on port 8000.');
+        this.state.loading.set(false);
+      },
+    });
+  }
+
+  /** Semantic Scholar mode: cost-bounded boolean search over the BigQuery corpus. */
+  private runScholarSearch(keywords: string[], query: string): void {
+    this.demoSub = this.retrieval.scholarSearch({
+      keywords,
+      raw_query: query,
+    }).subscribe({
+      next: (res) => {
+        this.state.rawPapersBySource.set({ semantic_scholar: res.papers });
+        this.state.sourcesQueried.set(['semantic_scholar']);
+        this.state.sourcesCompleted.set(['semantic_scholar']);
+        this.state.queriesUsed.set(res.queries_used);
+        this.state.loading.set(false);
+        this.autoScorePapers();
+      },
+      error: (err) => {
+        const detail = err?.error?.detail;
+        this.state.error.set(
+          detail
+            ? `Semantic Scholar search failed: ${detail}`
+            : 'Could not reach the search API. Make sure the backend is running on port 8000.'
+        );
         this.state.loading.set(false);
       },
     });

@@ -1,245 +1,170 @@
-"""Unit tests for the citation graph builder normalization + BFS edge logic."""
+"""Unit tests for the hosted citation graph builder (OpenSearch nodes + BigQuery edges).
+
+No public Semantic Scholar API is involved anymore: the OpenSearch engine and the BigQuery
+edge client are both faked, so these tests pin the traversal / edge-direction / filtering logic.
+"""
 from __future__ import annotations
 
-import httpx
 import pytest
 
+import app.services.retrieval.citgraph_builder as mod
+from app.models.paper import Author, Paper
+from app.services.retrieval.bigquery_citations import BigQueryCitationsError
 from app.services.retrieval.citgraph_builder import (
-    _looks_like_identifier,
-    _normalize_node,
-    build_citation_graph,
-    CitGraphNode,
     UpstreamError,
+    build_citation_graph,
+    explore_citation_graph,
+    matches_keywords,
 )
+from app.services.retrieval.opensearch_search import OpenSearchSearchError
 
 
-class _FakeResp:
-    def __init__(self, status_code, headers=None, payload=None):
-        self.status_code = status_code
-        self.headers = headers or {}
-        self._payload = payload or {}
-
-    def json(self):
-        return self._payload
-
-
-class _FakeClient:
-    """Returns queued responses (or raises queued exceptions) on each GET."""
-
-    def __init__(self, results):
-        self._results = list(results)
-        self.calls = 0
-
-    async def get(self, url, params=None, headers=None):
-        self.calls += 1
-        result = self._results[min(self.calls - 1, len(self._results) - 1)]
-        if isinstance(result, Exception):
-            raise result
-        return result
+def _paper(cid: int, title: str = "", abstract: str | None = None) -> Paper:
+    return Paper(
+        semantic_scholar_id=str(cid),
+        title=title or f"Paper {cid}",
+        abstract=abstract,
+        authors=[Author(name="A. Researcher")],
+    )
 
 
-@pytest.mark.parametrize(
-    "value,expected",
-    [
-        ("10.1145/3292500.3330919", True),  # DOI
-        ("204e3073870fae3d05bcbc2f6a8e263d9b72e776", True),  # S2 hash
-        ("ARXIV:2103.00020", True),
-        ("SEED", True),  # single token -> id
-        ("Attention Is All You Need", False),  # title
-        ("  Deep Residual Learning  ", False),
-        ("", False),
-    ],
-)
-def test_looks_like_identifier(value, expected):
-    assert _looks_like_identifier(value) is expected
+class _FakeEngine:
+    def __init__(self, resolve: dict[str, int], papers: dict[int, Paper], *, raise_on=None):
+        self._resolve = resolve
+        self._papers = papers
+        self._raise_on = raise_on  # 'resolve' | 'fetch' | None
+
+    def resolve_corpusids(self, seeds):
+        if self._raise_on == "resolve":
+            raise OpenSearchSearchError("boom")
+        return {s: self._resolve[s] for s in seeds if s in self._resolve}
+
+    def fetch_nodes_by_corpusid(self, corpusids):
+        if self._raise_on == "fetch":
+            raise OpenSearchSearchError("boom")
+        return {c: self._papers[c] for c in corpusids if c in self._papers}
 
 
-def test_normalize_node_basic():
-    data = {
-        "paperId": "abc123",
-        "externalIds": {"DOI": "10.1/x", "ArXiv": "2401.00001"},
-        "title": "Deep Citation Networks",
-        "abstract": "An abstract.",
-        "year": 2023,
-        "citationCount": 42,
-        "referenceCount": 17,
-        "authors": [{"name": "Jane Doe"}, {"name": "John Roe"}],
-        "journal": {"name": "Nature"},
-        "isOpenAccess": True,
-        "openAccessPdf": {"url": "http://example.com/p.pdf"},
-        "fieldsOfStudy": ["Computer Science"],
-    }
-    node = _normalize_node(data, hop=1)
-    assert isinstance(node, CitGraphNode)
-    assert node.paper_id == "abc123"
-    assert node.doi == "10.1/x"
-    assert node.arxiv_id == "2401.00001"
-    assert node.title == "Deep Citation Networks"
-    assert node.citation_count == 42
-    assert node.reference_count == 17
-    assert node.authors == ["Jane Doe", "John Roe"]
-    assert node.journal == "Nature"
-    assert node.is_open_access is True
-    assert node.pdf_url == "http://example.com/p.pdf"
-    assert node.hop == 1
+class _FakeBQ:
+    def __init__(self, edges: list[tuple[int, int]], *, raise_=False):
+        self._edges = edges
+        self._raise = raise_
+
+    def references(self, corpusids, cap):
+        if self._raise:
+            raise BigQueryCitationsError("bq down")
+        s = set(corpusids)
+        return [(a, b) for (a, b) in self._edges if a in s][: cap * len(s) or None]
+
+    def citations(self, corpusids, cap):
+        if self._raise:
+            raise BigQueryCitationsError("bq down")
+        s = set(corpusids)
+        return [(a, b) for (a, b) in self._edges if b in s][: cap * len(s) or None]
 
 
-def test_normalize_node_missing_id_returns_none():
-    assert _normalize_node({"title": "no id"}, hop=0) is None
+def _wire(monkeypatch, engine, bq):
+    monkeypatch.setattr(mod, "get_engine", lambda: engine)
+    monkeypatch.setattr(mod, "get_citation_graph", lambda: bq)
 
 
-def test_normalize_node_handles_missing_fields():
-    node = _normalize_node({"paperId": "x"}, hop=2)
-    assert node is not None
-    assert node.title == ""
-    assert node.authors == []
-    assert node.journal is None
-    assert node.is_open_access is False
+def test_matches_keywords():
+    assert matches_keywords("Deep Learning", None, []) is True  # no keywords => all match
+    assert matches_keywords("Deep Learning", None, ["deep"]) is True
+    assert matches_keywords("Graphs", "about nodes", ["edge"]) is False
 
 
 @pytest.mark.asyncio
-async def test_build_graph_with_mocked_fetch(monkeypatch):
-    """k=1 BFS should produce seed + neighbors and correct edge directions."""
-    import app.services.retrieval.citgraph_builder as mod
-
-    seed = {
-        "paperId": "SEED",
-        "externalIds": {},
-        "title": "Seed Paper",
-        "year": 2020,
-        "authors": [],
-    }
-    ref_paper = {"paperId": "REF1", "title": "Older Ref", "year": 2015, "authors": []}
-    cit_paper = {"paperId": "CIT1", "title": "Newer Citer", "year": 2022, "authors": []}
-
-    async def fake_fetch_paper(client, pid, api_key):
-        return seed
-
-    async def fake_fetch_refs_and_cits(client, pid, api_key):
-        # seed references REF1; CIT1 cites seed
-        return ([{"citedPaper": ref_paper}], [{"citingPaper": cit_paper}])
-
-    monkeypatch.setattr(mod, "_fetch_paper", fake_fetch_paper)
-    monkeypatch.setattr(mod, "_fetch_refs_and_cits", fake_fetch_refs_and_cits)
+async def test_build_k1_seed_ref_and_citer(monkeypatch):
+    """k=1 build: seed cites 200 (ref) and 300 cites seed (citer); edge directions correct."""
+    papers = {100: _paper(100), 200: _paper(200), 300: _paper(300)}
+    engine = _FakeEngine({"SEED": 100}, papers)
+    bq = _FakeBQ([(100, 200), (300, 100)])  # source cites target
+    _wire(monkeypatch, engine, bq)
 
     result = await build_citation_graph("SEED", k=1, max_per_hop=20)
 
-    node_ids = {n.paper_id for n in result.nodes}
-    assert node_ids == {"SEED", "REF1", "CIT1"}
-    assert result.seed_id == "SEED"
-
-    edge_pairs = {(e.source, e.target) for e in result.edges}
-    # seed -> ref means seed cites ref
-    assert ("SEED", "REF1") in edge_pairs
-    # citer -> seed means citer cites seed
-    assert ("CIT1", "SEED") in edge_pairs
+    assert {n.paper_id for n in result.nodes} == {"100", "200", "300"}
+    assert result.seed_id == "100"
+    pairs = {(e.source, e.target) for e in result.edges}
+    assert pairs == {("100", "200"), ("300", "100")}
 
 
 @pytest.mark.asyncio
-async def test_build_graph_resolves_title_seed(monkeypatch):
-    """A free-text title seed is resolved to a paperId via the match endpoint."""
-    import app.services.retrieval.citgraph_builder as mod
+async def test_explore_direction_past_only(monkeypatch):
+    papers = {100: _paper(100), 200: _paper(200), 300: _paper(300)}
+    engine = _FakeEngine({"S": 100}, papers)
+    bq = _FakeBQ([(100, 200), (300, 100)])
+    _wire(monkeypatch, engine, bq)
 
-    seed = {"paperId": "SEED", "externalIds": {}, "title": "Seed Paper", "authors": []}
-    matched_ids: list[str] = []
-
-    async def fake_match_title(client, title, api_key):
-        matched_ids.append(title)
-        return "SEED"
-
-    async def fake_fetch_paper(client, pid, api_key):
-        assert pid == "SEED"  # must use the resolved id, not the raw title
-        return seed
-
-    async def fake_fetch_refs_and_cits(client, pid, api_key):
-        return ([], [])
-
-    monkeypatch.setattr(mod, "_match_title", fake_match_title)
-    monkeypatch.setattr(mod, "_fetch_paper", fake_fetch_paper)
-    monkeypatch.setattr(mod, "_fetch_refs_and_cits", fake_fetch_refs_and_cits)
-
-    result = await build_citation_graph("Seed Paper", k=1, max_per_hop=20)
-
-    assert matched_ids == ["Seed Paper"]
-    assert {n.paper_id for n in result.nodes} == {"SEED"}
+    result = await explore_citation_graph(["S"], "past", k=1, max_per_hop=20)
+    assert {n.paper_id for n in result.nodes} == {"100", "200"}  # citer 300 excluded
+    assert {(e.source, e.target) for e in result.edges} == {("100", "200")}
 
 
 @pytest.mark.asyncio
-async def test_get_with_retry_returns_none_on_404():
-    """A genuine 404 means 'does not exist' and must stay distinct from errors."""
-    import app.services.retrieval.citgraph_builder as mod
+async def test_explore_direction_future_only(monkeypatch):
+    papers = {100: _paper(100), 200: _paper(200), 300: _paper(300)}
+    engine = _FakeEngine({"S": 100}, papers)
+    bq = _FakeBQ([(100, 200), (300, 100)])
+    _wire(monkeypatch, engine, bq)
 
-    client = _FakeClient([_FakeResp(404)])
-    assert await mod._get_with_retry(client, "url", {}, {}) is None
+    result = await explore_citation_graph(["S"], "future", k=1, max_per_hop=20)
+    assert {n.paper_id for n in result.nodes} == {"100", "300"}  # ref 200 excluded
+    assert {(e.source, e.target) for e in result.edges} == {("300", "100")}
 
 
 @pytest.mark.asyncio
-async def test_get_with_retry_raises_on_persistent_429(monkeypatch):
-    """Exhausted rate-limit retries must raise, not masquerade as 'not found'."""
-    import app.services.retrieval.citgraph_builder as mod
+async def test_neighbor_absent_from_opensearch_is_dropped(monkeypatch):
+    """A neighbour missing from the index drops its node *and* the edge to it."""
+    papers = {100: _paper(100), 300: _paper(300)}  # 200 not indexed
+    engine = _FakeEngine({"S": 100}, papers)
+    bq = _FakeBQ([(100, 200), (300, 100)])
+    _wire(monkeypatch, engine, bq)
 
-    async def _no_sleep(_):
-        return None
+    result = await build_citation_graph("S", k=1, max_per_hop=20)
+    assert {n.paper_id for n in result.nodes} == {"100", "300"}
+    assert {(e.source, e.target) for e in result.edges} == {("300", "100")}
 
-    monkeypatch.setattr(mod.asyncio, "sleep", _no_sleep)
-    client = _FakeClient([_FakeResp(429)])
+
+@pytest.mark.asyncio
+async def test_keyword_filter_drops_non_matching_neighbours(monkeypatch):
+    papers = {
+        100: _paper(100, title="seed"),
+        200: _paper(200, title="relevant edge work"),
+        300: _paper(300, title="unrelated"),
+    }
+    engine = _FakeEngine({"S": 100}, papers)
+    bq = _FakeBQ([(100, 200), (100, 300)])
+    _wire(monkeypatch, engine, bq)
+
+    result = await explore_citation_graph(
+        ["S"], "both", include_non_matching=False, keywords=["edge"], k=1, max_per_hop=20
+    )
+    # Seed always kept; 200 matches "edge"; 300 filtered out.
+    assert {n.paper_id for n in result.nodes} == {"100", "200"}
+    assert {(e.source, e.target) for e in result.edges} == {("100", "200")}
+
+
+@pytest.mark.asyncio
+async def test_no_resolvable_seed_returns_empty(monkeypatch):
+    engine = _FakeEngine({}, {})  # nothing resolves
+    _wire(monkeypatch, engine, _FakeBQ([]))
+    result = await build_citation_graph("does-not-exist", k=1, max_per_hop=20)
+    assert result.nodes == [] and result.edges == [] and result.seed_id == ""
+
+
+@pytest.mark.asyncio
+async def test_opensearch_failure_raises_upstream(monkeypatch):
+    engine = _FakeEngine({"S": 100}, {100: _paper(100)}, raise_on="resolve")
+    _wire(monkeypatch, engine, _FakeBQ([]))
     with pytest.raises(UpstreamError):
-        await mod._get_with_retry(client, "url", {}, {}, max_retries=2)
+        await build_citation_graph("S", k=1, max_per_hop=20)
 
 
 @pytest.mark.asyncio
-async def test_get_with_retry_raises_on_network_error():
-    """A network error is transient, not a missing paper."""
-    import app.services.retrieval.citgraph_builder as mod
-
-    client = _FakeClient([httpx.ConnectError("boom")])
+async def test_bigquery_failure_raises_upstream(monkeypatch):
+    engine = _FakeEngine({"S": 100}, {100: _paper(100)})
+    _wire(monkeypatch, engine, _FakeBQ([], raise_=True))
     with pytest.raises(UpstreamError):
-        await mod._get_with_retry(client, "url", {}, {})
-
-
-@pytest.mark.asyncio
-async def test_build_graph_propagates_upstream_error_on_seed(monkeypatch):
-    """A rate-limited seed fetch propagates UpstreamError (not an empty graph)."""
-    import app.services.retrieval.citgraph_builder as mod
-
-    async def boom(client, pid, api_key):
-        raise UpstreamError("Semantic Scholar rate limit reached (HTTP 429).")
-
-    monkeypatch.setattr(mod, "_fetch_paper", boom)
-
-    with pytest.raises(UpstreamError):
-        await build_citation_graph("SEED", k=1, max_per_hop=20)
-
-
-@pytest.mark.asyncio
-async def test_fetch_refs_and_cits_tolerates_upstream_error(monkeypatch):
-    """A rate-limited neighbour fetch degrades to an empty list, not a crash."""
-    import app.services.retrieval.citgraph_builder as mod
-
-    async def boom(client, url, params, headers, max_retries=4):
-        raise UpstreamError("rate limited")
-
-    monkeypatch.setattr(mod, "_get_with_retry", boom)
-
-    refs, cits = await mod._fetch_refs_and_cits(client=None, paper_id="X", api_key=None)
-    assert refs == []
-    assert cits == []
-
-
-@pytest.mark.asyncio
-async def test_fetch_refs_and_cits_handles_null_data(monkeypatch):
-    """S2 can return {"data": null}; it must be coalesced to an empty list."""
-    import app.services.retrieval.citgraph_builder as mod
-
-    class _FakeResp:
-        def json(self):
-            return {"data": None}
-
-    async def fake_get_with_retry(client, url, params, headers, max_retries=3):
-        return _FakeResp()
-
-    monkeypatch.setattr(mod, "_get_with_retry", fake_get_with_retry)
-
-    refs, cits = await mod._fetch_refs_and_cits(client=None, paper_id="X", api_key=None)
-    assert refs == []
-    assert cits == []
+        await build_citation_graph("S", k=1, max_per_hop=20)

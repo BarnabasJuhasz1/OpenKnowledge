@@ -29,7 +29,7 @@
 
           <div class="search-loader__status-list">
             @for (source of state.sourceStatuses(); track source.name) {
-              @if (source.name !== 'demo' || demo.enabled()) {
+              @if (mode.isDemo() ? source.name === 'demo' : mode.isScholar() ? source.name === 'semantic_scholar' : source.name !== 'demo') {
                 <div
                   class="search-loader__status-item"
                   [class.search-loader__status-item--active]="source.isSearching"

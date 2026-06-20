@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { placedIdsInCluster, ClusterMember } from './cluster-ops';
+import { placedIdsInCluster, subclusterCount, ClusterMember } from './cluster-ops';
 
 /**
  * 6 base nodes across two clusters at the current view level.
@@ -37,5 +37,33 @@ describe('placedIdsInCluster', () => {
 
   it('handles an empty placed set', () => {
     expect(placedIdsInCluster([], communityAtLevel, 10)).toEqual([]);
+  });
+});
+
+describe('subclusterCount', () => {
+  /**
+   * 6 nodes. At the current (parent) level there are two clusters, 10 and 11.
+   * One level finer they split into child communities:
+   *   index:   0    1    2    3    4    5
+   *   parent:  10   10   10   11   11   11
+   *   child:   1    1    2    3    3    3
+   * So cluster 10 fans out into 2 sub-clusters (1, 2) and cluster 11 into 1 (3).
+   */
+  const parent = [10, 10, 10, 11, 11, 11];
+  const child = [1, 1, 2, 3, 3, 3];
+
+  it('counts distinct child communities within a cluster', () => {
+    expect(subclusterCount(parent, child, 10)).toBe(2);
+    expect(subclusterCount(parent, child, 11)).toBe(1);
+  });
+
+  it('returns 0 for a cluster with no members', () => {
+    expect(subclusterCount(parent, child, 99)).toBe(0);
+  });
+
+  it('counts every member as its own sub-cluster at the leaf level', () => {
+    // At the leaf level each node is its own child community (index identity).
+    const leafChild = [0, 1, 2, 3, 4, 5];
+    expect(subclusterCount(parent, leafChild, 10)).toBe(3);
   });
 });

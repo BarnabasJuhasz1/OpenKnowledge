@@ -13,9 +13,34 @@ services:
       - DATABASE_URL=sqlite+aiosqlite:////app/db-data/openknowledge.db
       - FRONTEND_URL=http://localhost:4201
       - OAUTH_REDIRECT_BASE_URL=http://localhost:4201
+      - OPENSEARCH_URL=http://opensearch:9200
+    depends_on:
+      - opensearch
     volumes:
       - backend-db:/app/db-data
       - ../archetype_classifier/models:/app/archetype_classifier/models
+
+  # Full-text search backend for Semantic Scholar mode. Single-node, security
+  # disabled — DEV ONLY. For production use a multi-node cluster with security on.
+  opensearch:
+    image: opensearchproject/opensearch:2.18.0
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - DISABLE_SECURITY_PLUGIN=true
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+      - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "9200:9200"
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
 
   frontend:
     build:
@@ -28,3 +53,4 @@ services:
 
 volumes:
   backend-db:
+  opensearch-data:

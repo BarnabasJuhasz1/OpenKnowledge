@@ -2,7 +2,7 @@ import { Component, Input, OnInit, inject, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { Paper } from '../../../core/models/paper.model';
 import { SearchStateService, paperId } from '../../../core/services/search-state.service';
-import { DemoModeService } from '../../../core/services/demo-mode.service';
+import { SearchModeService } from '../../../core/services/search-mode.service';
 import { NotificationService } from '../../../core/services/notification.service';
 import { BookshelfService } from '../../../core/services/bookshelf.service';
 import { getArchetypeIcon } from '../../../shared/utils/archetype-icons';
@@ -16,7 +16,7 @@ import { getArchetypeIcon } from '../../../shared/utils/archetype-icons';
 })
 export class PaperCardComponent implements OnInit {
   private readonly state = inject(SearchStateService);
-  private readonly demo = inject(DemoModeService);
+  private readonly mode = inject(SearchModeService);
   private readonly notify = inject(NotificationService);
   private readonly bookshelfSvc = inject(BookshelfService);
   @Input({ required: true }) paper!: Paper;
@@ -43,7 +43,7 @@ export class PaperCardComponent implements OnInit {
   }
 
   async copyBibtex(): Promise<void> {
-    if (this.demo.enabled() && !this.paper.bibtex) {
+    if (this.mode.isDemo() && !this.paper.bibtex) {
       this.notify.show('BibTeX is not available in demo mode');
       return;
     }
@@ -58,7 +58,7 @@ export class PaperCardComponent implements OnInit {
   }
 
   openPdf(): void {
-    if (this.demo.enabled()) {
+    if (this.mode.isDemo()) {
       this.notify.show('PDF viewing is not available in demo mode');
       return;
     }
@@ -74,7 +74,7 @@ export class PaperCardComponent implements OnInit {
   }
 
   get isDemo(): boolean {
-    return this.demo.enabled();
+    return this.mode.isDemo();
   }
 
   get hasPdf(): boolean {
@@ -96,7 +96,7 @@ export class PaperCardComponent implements OnInit {
   }
 
   openCode(): void {
-    if (this.demo.enabled()) {
+    if (this.mode.isDemo()) {
       this.notify.show('Code links are not available in demo mode');
       return;
     }

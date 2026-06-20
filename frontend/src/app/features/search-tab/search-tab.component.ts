@@ -6,7 +6,7 @@ import {
   GeneratedKeywords,
 } from '../../shared/components/prompt-keywords/prompt-keywords.component';
 import { SearchStateService } from '../../core/services/search-state.service';
-import { DemoModeService } from '../../core/services/demo-mode.service';
+import { SearchModeService, SEARCH_MODE_OPTIONS } from '../../core/services/search-mode.service';
 
 @Component({
   selector: 'app-search-tab',
@@ -17,7 +17,8 @@ import { DemoModeService } from '../../core/services/demo-mode.service';
 })
 export class SearchTabComponent {
   readonly state = inject(SearchStateService);
-  readonly demo = inject(DemoModeService);
+  readonly mode = inject(SearchModeService);
+  readonly modeOptions = SEARCH_MODE_OPTIONS;
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
 

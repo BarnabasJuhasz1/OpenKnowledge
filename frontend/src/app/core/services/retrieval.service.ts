@@ -26,6 +26,11 @@ export class RetrievalService {
     return this.http.post<SearchResponse>(`${this.baseUrl}/retrieval/demo/search`, request);
   }
 
+  /** Cost-bounded boolean search over the Semantic Scholar BigQuery corpus. */
+  scholarSearch(request: SearchRequest): Observable<SearchResponse> {
+    return this.http.post<SearchResponse>(`${this.baseUrl}/retrieval/scholar/search`, request);
+  }
+
   searchStream(
     request: SearchRequest
   ): Observable<
