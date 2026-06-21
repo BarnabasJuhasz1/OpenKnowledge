@@ -29,6 +29,7 @@ from ..models.paper import (
     SearchResponse,
 )
 from ..services import archetype
+from ..services.archetype import cache as archetype_cache
 from ..services.retrieval.boolean_query import BooleanQueryError, compile_to_opensearch
 from ..services.retrieval.opensearch_search import (
     _MAX_RESULT_WINDOW,
@@ -93,6 +94,31 @@ def _boolean_source(request: SearchRequest) -> str:
     return " AND ".join(f'"{k}"' if " " in k else k for k in request.keywords)
 
 
+def _paper_key(p) -> str:
+    """Stable identity matching the frontend's paperId() priority."""
+    return p.doi or p.arxiv_id or p.semantic_scholar_id or p.openalex_id or p.title
+
+
+def _archetype_hit(cached, selected: set[str]) -> bool:
+    """True if a cached ``(primary, secondary)`` intersects the selected archetypes (OR)."""
+    if not cached:
+        return False
+    primary, secondary = cached
+    return (primary in selected) or (secondary in selected)
+
+
+def _archetype_map(papers) -> dict[str, list[str | None]]:
+    """Map paper key -> [primary, secondary] for papers that have an archetype."""
+    out: dict[str, list[str | None]] = {}
+    for p in papers:
+        if p.predicted_main_archetype or p.predicted_second_tier_archetype:
+            out[_paper_key(p)] = [
+                p.predicted_main_archetype,
+                p.predicted_second_tier_archetype,
+            ]
+    return out
+
+
 @router.post("/search", response_model=SearchResponse)
 async def scholar_search(request: SearchRequest) -> SearchResponse:
     if not request.keywords and not (request.raw_query and request.raw_query.strip()):
@@ -154,6 +180,59 @@ async def scholar_search_page(request: ScholarPageRequest) -> ScholarPageRespons
     # navigable depth is capped at the smaller of the window and the safety cap.
     cap = min(_scholar_max_results(), _MAX_RESULT_WINDOW)
     offset = (page - 1) * page_size
+
+    # Archetype filtering can't be expressed as an index query (archetypes are classified
+    # live, not stored), so when an archetype subset is active we resolve membership from the
+    # classification cache: rank the corpusids in the requested order (indexable filters only),
+    # keep those whose cached archetype matches, then hydrate just this page. Papers not yet
+    # classified are excluded — the set firms up as POST /classify/stream fills the cache.
+    selected_archetypes = request.filters.archetypes
+    if selected_archetypes:
+        selected = set(selected_archetypes)
+        base_filters = request.filters.model_copy(update={"archetypes": None})
+        try:
+            corpusids, _total_all = engine.ranked_corpusids(
+                boolean_query, sort=request.sort, limit=cap, filters=base_filters,
+            )
+        except BooleanQueryError as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid boolean query: {exc}")
+        except OpenSearchNotConfiguredError as exc:
+            raise HTTPException(
+                status_code=503, detail=f"Semantic Scholar mode is not configured: {exc}"
+            )
+        except Exception as exc:  # connection / query errors
+            raise HTTPException(status_code=502, detail=f"Semantic Scholar search failed: {exc}")
+
+        matched = [
+            cid for cid in corpusids
+            if _archetype_hit(archetype_cache.get(archetype_cache.corpusid_key(cid)), selected)
+        ]
+        total = len(matched)
+        page_ids = matched[offset:offset + page_size]
+        papers_by_id = engine.fetch_nodes_by_corpusid(page_ids) if page_ids else {}
+        papers = []
+        for cid in page_ids:
+            paper = papers_by_id.get(cid)
+            if paper is None:
+                continue
+            cached = archetype_cache.get(archetype_cache.corpusid_key(cid))
+            if cached:
+                if cached[0]:
+                    paper.predicted_main_archetype = cached[0]
+                if cached[1]:
+                    paper.predicted_second_tier_archetype = cached[1]
+            papers.append(paper)
+
+        return ScholarPageResponse(
+            papers=papers,
+            total_found=total,
+            page=page,
+            page_size=page_size,
+            has_more=(offset + len(page_ids)) < total,
+            queries_used=queries_used,
+            result_cap=cap,
+        )
+
     remaining = cap - offset
     # Past the navigable window: fetch nothing (size 0) but still report the real total.
     fetch_offset = offset if remaining > 0 else 0
@@ -176,8 +255,10 @@ async def scholar_search_page(request: ScholarPageRequest) -> ScholarPageRespons
     except Exception as exc:  # connection / query errors
         raise HTTPException(status_code=502, detail=f"Semantic Scholar search failed: {exc}")
 
-    # ≤ page_size papers → classification is fast; already-archetyped (backfilled) docs skip.
-    await archetype.classify_papers(papers)
+    # Note: the page is returned WITHOUT waiting on archetype classification. Classification
+    # now runs out-of-band via POST /classify/stream (ok-score order, whole match set) and the
+    # frontend patches archetypes onto the loaded papers as they stream in — so results render
+    # immediately instead of blocking on a remote-model round-trip (incl. cold start).
 
     has_more = (offset + len(papers)) < min(total, cap)
     return ScholarPageResponse(
@@ -279,6 +360,100 @@ async def scholar_search_stream(request: SearchRequest) -> StreamingResponse:
             # True when the stream stopped at the safety cap (more matches likely exist).
             "result_cap": cap,
             "capped": total >= cap,
+        })
+
+    return StreamingResponse(
+        stream(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# Papers per classification page. Each page is a fresh from/size OpenSearch query in
+# ok-score (relevancy) order, classified via the remote model, then the running
+# archetype distribution is pushed to the client — so the panel fills in smoothly.
+_CLASSIFY_BATCH = 200
+
+
+@router.post("/classify/stream")
+async def scholar_classify_stream(request: ScholarPageRequest) -> StreamingResponse:
+    """Classify the whole Scholar match set in descending ok-score order, streaming the
+    running archetype distribution as NDJSON.
+
+    Pages through the matches (``sort="relevancy"`` == citationcount, the ok-score proxy,
+    so the highest-scoring papers are classified first), up to the same navigable cap as
+    paging. After every batch it emits:
+      * ``{"type":"archetypes","data":{paperKey:[primary,secondary]}}`` — per-paper labels
+        so loaded result cards/filters get badges.
+      * ``{"type":"distribution","counts":{archetype:n},"classified":N,"total":T}`` — the
+        cumulative distribution after this batch.
+    Terminal line: ``{"type":"done", ...}``. Classification is best-effort: a failed batch
+    is logged and skipped, never aborting the stream.
+    """
+    if not request.keywords and not (request.raw_query and request.raw_query.strip()):
+        raise HTTPException(status_code=422, detail="At least one keyword is required.")
+
+    boolean_query = _boolean_source(request)
+    engine = get_engine()
+
+    if not engine.is_configured:
+        raise HTTPException(status_code=503, detail="Semantic Scholar mode is not configured.")
+    try:
+        compile_to_opensearch(boolean_query)  # validate syntax up front
+    except BooleanQueryError as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid boolean query: {exc}")
+
+    cap = min(_scholar_max_results(), _MAX_RESULT_WINDOW)
+    filters = request.filters
+
+    async def stream() -> AsyncIterator[bytes]:
+        counts: dict[str, int] = {}
+        classified = 0
+        total = 0
+        offset = 0
+        while offset < cap:
+            size = min(_CLASSIFY_BATCH, cap - offset)
+            try:
+                papers, total = await anyio.to_thread.run_sync(
+                    lambda o=offset, s=size: engine.search_page(
+                        boolean_query, offset=o, size=s, sort="relevancy", filters=filters
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001 — report in-band; 200 already committed
+                yield _ndjson({"type": "error", "detail": f"search failed: {exc}"})
+                return
+
+            if not papers:
+                break
+
+            # Classify this ok-score-ordered batch via the remote model (best-effort).
+            await archetype.classify_papers(papers)
+
+            for p in papers:
+                primary = p.predicted_main_archetype
+                if primary and primary != "None":
+                    counts[primary] = counts.get(primary, 0) + 1
+            classified += len(papers)
+
+            arch_map = _archetype_map(papers)
+            if arch_map:
+                yield _ndjson({"type": "archetypes", "data": arch_map})
+            yield _ndjson({
+                "type": "distribution",
+                "counts": counts,
+                "classified": classified,
+                "total": min(total, cap),
+            })
+
+            offset += len(papers)
+            if offset >= min(total, cap):
+                break
+
+        yield _ndjson({
+            "type": "done",
+            "counts": counts,
+            "classified": classified,
+            "total": min(total, cap),
         })
 
     return StreamingResponse(

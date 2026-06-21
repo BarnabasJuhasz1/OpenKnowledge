@@ -3,7 +3,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { RetrievalService, ScholarFiltersPayload } from '../../core/services/retrieval.service';
 import { ScoringService } from '../../core/services/scoring.service';
-import { SearchStateService } from '../../core/services/search-state.service';
+import { SearchStateService, ALL_ARCHETYPES } from '../../core/services/search-state.service';
 import { SearchModeService } from '../../core/services/search-mode.service';
 import { ScoreWeights } from '../../core/models/paper.model';
 import { parseQuery } from '../../shared/utils/query-parser';
@@ -54,6 +54,8 @@ export class ResultsComponent implements OnInit, OnDestroy {
   private scoreSub: Subscription | null = null;
   private bgSub: Subscription | null = null;
   private demoSub: Subscription | null = null;
+  /** Scholar mode: streams the ok-score-ordered archetype distribution. */
+  private classifySub: Subscription | null = null;
 
   readonly pageSize = PAGE_SIZE;
 
@@ -61,6 +63,7 @@ export class ResultsComponent implements OnInit, OnDestroy {
   /** True once a Scholar page has loaded — gates the filter/sort refetch effect. */
   private scholarReady = false;
   private scholarRefetchTimer: ReturnType<typeof setTimeout> | null = null;
+  private scholarPageReloadTimer: ReturnType<typeof setTimeout> | null = null;
   /** How many 10-result UI pages fit in one fetched {@link SCHOLAR_PAGE_SIZE} window. */
   private readonly uiPagesPerScholarWindow = SCHOLAR_PAGE_SIZE / PAGE_SIZE;
   /** Which server window (1-based, {@link SCHOLAR_PAGE_SIZE} results each) is loaded. */
@@ -76,12 +79,34 @@ export class ResultsComponent implements OnInit, OnDestroy {
       if (!this.mode.isScholar() || !this.scholarReady) return;
       this.scheduleScholarRefetch();
     });
+
+    // Archetype selection is filtered server-side across the whole match set, but it doesn't
+    // change the (archetype-agnostic) distribution — so a change reloads the page only, with
+    // no classify restart. Debounced so toggling several archetypes coalesces into one fetch.
+    effect(() => {
+      this.state.selectedArchetypes();  // track
+      if (!this.mode.isScholar() || !this.scholarReady) return;
+      this.scheduleScholarPageReload();
+    });
   }
 
   private scheduleScholarRefetch(): void {
     if (this.scholarRefetchTimer) clearTimeout(this.scholarRefetchTimer);
-    // Filters/sort changed — reload the first window from the server (force).
-    this.scholarRefetchTimer = setTimeout(() => this.loadScholarPage(1, true), 350);
+    // Filters/sort changed — reload the first window from the server (force) and restart
+    // classification, since the match set (and thus the distribution) has changed.
+    this.scholarRefetchTimer = setTimeout(() => {
+      this.loadScholarPage(1, true);
+      this.startScholarClassify();
+    }, 350);
+  }
+
+  private scheduleScholarPageReload(): void {
+    if (this.scholarPageReloadTimer) clearTimeout(this.scholarPageReloadTimer);
+    // Archetype filter changed — reload the first window from the server (it applies the
+    // archetype filter across all matches). Classification keeps running untouched.
+    this.scholarPageReloadTimer = setTimeout(() => {
+      this.loadScholarPage(1, true);
+    }, 350);
   }
 
   /**
@@ -119,7 +144,9 @@ export class ResultsComponent implements OnInit, OnDestroy {
     this.scoreSub?.unsubscribe();
     this.bgSub?.unsubscribe();
     this.demoSub?.unsubscribe();
+    this.classifySub?.unsubscribe();
     if (this.scholarRefetchTimer) clearTimeout(this.scholarRefetchTimer);
+    if (this.scholarPageReloadTimer) clearTimeout(this.scholarPageReloadTimer);
   }
 
   onPageChange(page: number): void {
@@ -160,20 +187,26 @@ export class ResultsComponent implements OnInit, OnDestroy {
     this.scoreSub?.unsubscribe();
     this.bgSub?.unsubscribe();
     this.demoSub?.unsubscribe();
+    this.classifySub?.unsubscribe();
 
     // Reset state
     this.state.resetForNewSearch();
 
-    if (this.mode.isDemo()) {
-      this.runDemoSearch(keywords, query);
-    } else if (this.mode.isScholar()) {
+    // Scholar is the only mode reachable from the UI. The demo/live branches are kept for
+    // reference but are deprecated and effectively dead (see SearchModeService).
+    if (this.mode.isScholar()) {
       this.runScholarSearch(keywords, query);
+    } else if (this.mode.isDemo()) {
+      this.runDemoSearch(keywords, query);
     } else {
       this.runLiveSearch(keywords, query);
     }
   }
 
+  /** @deprecated Demo mode is deprecated and unreachable from the UI. */
   private runDemoSearch(keywords: string[], query: string): void {
+    // Demo holds the full result set client-side, so archetypes are filtered client-side.
+    this.state.serverSideArchetypeFilter.set(false);
     this.demoSub = this.retrieval.demoSearch({
       keywords,
       raw_query: query,
@@ -202,16 +235,76 @@ export class ResultsComponent implements OnInit, OnDestroy {
   private runScholarSearch(_keywords: string[], _query: string): void {
     this.scholarReady = false;
     this.loadedScholarWindow = 0;
+    // Scholar holds one page; archetype filtering is applied server-side across all matches.
+    this.state.serverSideArchetypeFilter.set(true);
     this.loadScholarPage(this.state.currentPage());
+    // Independently of paging, classify the whole match set (top ok-score first) so the
+    // archetype distribution fills in batch by batch across all results, not just one page.
+    this.startScholarClassify();
+  }
+
+  /**
+   * (Re)start the archetype classification stream for the current Scholar query + filters.
+   * The backend pages the match set in descending ok-score order, classifies each batch via
+   * the remote model, and streams a growing distribution + per-paper archetypes — so the
+   * distribution panel updates after every batch and loaded paper cards get their badges.
+   * Best-effort: the distribution is optional and never blocks the results list.
+   */
+  private startScholarClassify(): void {
+    this.classifySub?.unsubscribe();
+    const query = this.state.rawQuery();
+    const keywords = parseQuery(query);
+    if (!keywords.length) return;
+
+    this.state.scholarArchetypeCounts.set({});
+    // Mark the distribution panel as "classifying" immediately, before the first batch lands,
+    // so it shows an in-progress template rather than staying hidden.
+    this.state.scholarClassifyProgress.set({ status: 'running', classified: 0, total: 0 });
+    this.classifySub = this.retrieval.scholarClassifyStream(
+      { keywords, raw_query: query },
+      this.state.sortField(),
+      this.buildScholarFilters(),
+    ).subscribe({
+      next: (event) => {
+        if (event.type === 'distribution' || event.type === 'done') {
+          this.state.scholarArchetypeCounts.set(event.counts);
+          this.state.scholarClassifyProgress.set({
+            status: event.type === 'done' ? 'done' : 'running',
+            classified: event.classified,
+            total: event.total,
+          });
+        } else if (event.type === 'archetypes') {
+          this.state.applyArchetypes(event.data);
+        }
+      },
+      error: () => {
+        // Best-effort — a failed classify stream must not disturb results; just stop
+        // advertising it as in-progress so the panel settles on whatever arrived.
+        this.state.scholarClassifyProgress.update(p => ({ ...p, status: 'done' }));
+      },
+      complete: () => {
+        this.state.scholarClassifyProgress.update(p => ({ ...p, status: 'done' }));
+      },
+    });
   }
 
   /** Map the shared filter UI state onto the server-side ScholarFilters payload.
    *
-   * Archetype + code-only are intentionally omitted in Scholar mode: those index fields
-   * aren't backfilled yet, so sending them would match nothing. (The sidebar hides them.)
+   * `includeArchetypes` is set only for the results page fetch: the backend resolves
+   * archetype membership from the live classification cache and filters the whole match set.
+   * The classify stream omits archetypes so its distribution still spans every archetype.
+   * A non-strict selection (all archetypes) sends `null` so the fast index path is used.
+   * code-only stays off: that index field isn't backfilled yet.
    */
-  private buildScholarFilters(): ScholarFiltersPayload {
+  private buildScholarFilters(includeArchetypes = false): ScholarFiltersPayload {
     const f = this.state.filters();
+    let archetypes: string[] | null = null;
+    if (includeArchetypes) {
+      const selected = this.state.selectedArchetypes();
+      if (selected.size > 0 && selected.size < ALL_ARCHETYPES.length) {
+        archetypes = Array.from(selected);
+      }
+    }
     return {
       year_min: f.yearMin,
       year_max: f.yearMax,
@@ -220,7 +313,7 @@ export class ResultsComponent implements OnInit, OnDestroy {
       open_access_only: f.openAccessOnly,
       peer_reviewed_only: f.peerReviewedOnly,
       code_only: false,
-      archetypes: null,
+      archetypes,
     };
   }
 
@@ -255,7 +348,7 @@ export class ResultsComponent implements OnInit, OnDestroy {
       serverWindow,
       SCHOLAR_PAGE_SIZE,
       this.state.sortField(),
-      this.buildScholarFilters(),
+      this.buildScholarFilters(true),
     ).subscribe({
       next: (res) => {
         this.state.rawPapersBySource.set({ semantic_scholar: res.papers });
@@ -279,7 +372,10 @@ export class ResultsComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** @deprecated Live mode is deprecated and unreachable from the UI. */
   private runLiveSearch(keywords: string[], query: string): void {
+    // Live mode accumulates all streamed papers client-side; filter archetypes client-side.
+    this.state.serverSideArchetypeFilter.set(false);
     this.streamSub = this.retrieval.searchStream({
       keywords,
       raw_query: query,

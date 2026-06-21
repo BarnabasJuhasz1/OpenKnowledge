@@ -1,4 +1,5 @@
 import { Component, ElementRef, HostListener, inject, computed } from '@angular/core';
+import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ALL_SOURCES, SearchStateService, SortField, ALL_ARCHETYPES } from '../../../core/services/search-state.service';
 import { SearchModeService } from '../../../core/services/search-mode.service';
@@ -17,7 +18,7 @@ const ARCHETYPE_META: Record<string, { color: string; icon: string; gradient: st
 @Component({
   selector: 'app-filters-sidebar',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, DecimalPipe],
   templateUrl: './filters-sidebar.component.html',
   styleUrl: './filters-sidebar.component.scss',
 })
@@ -32,20 +33,35 @@ export class FiltersSidebarComponent {
     return this.mode.isScholar();
   }
 
-  /** Computed archetype distribution of scored papers. */
+  /** Computed archetype distribution.
+   *
+   * In Scholar mode the client only holds one page, so counts come from the backend
+   * classify stream ({@link SearchStateService.scholarArchetypeCounts}), which covers the
+   * whole match set in descending ok-score order and grows batch by batch. In live/demo
+   * mode the full result set is in memory, so we count the loaded scored papers directly.
+   */
   readonly archetypeDistribution = computed(() => {
-    const papers = this.state.allScoredPapers();
     const counts = ALL_ARCHETYPES.reduce((acc, arch) => {
       acc[arch] = 0;
       return acc;
     }, {} as Record<string, number>);
 
     let totalClassified = 0;
-    for (const p of papers) {
-      const arch = p.predicted_main_archetype;
-      if (arch && arch !== 'None' && arch in counts) {
-        counts[arch]++;
-        totalClassified++;
+    if (this.isScholar) {
+      const streamed = this.state.scholarArchetypeCounts();
+      for (const [arch, n] of Object.entries(streamed)) {
+        if (arch in counts) {
+          counts[arch] += n;
+          totalClassified += n;
+        }
+      }
+    } else {
+      for (const p of this.state.allScoredPapers()) {
+        const arch = p.predicted_main_archetype;
+        if (arch && arch !== 'None' && arch in counts) {
+          counts[arch]++;
+          totalClassified++;
+        }
       }
     }
 
@@ -65,6 +81,34 @@ export class FiltersSidebarComponent {
   readonly hasClassifiedPapers = computed(() => {
     return this.archetypeDistribution().some(item => item.count > 0);
   });
+
+  /** Whether the ok-score-ordered classification stream is still running (Scholar mode). */
+  readonly isClassifying = computed(
+    () => this.isScholar && this.state.scholarClassifyProgress().status === 'running',
+  );
+
+  /** Show the distribution card while classification is in progress (even before the
+   *  first batch lands, as a template) or once any papers have been classified. */
+  readonly showDistributionPanel = computed(
+    () => this.isClassifying() || this.hasClassifiedPapers(),
+  );
+
+  /** Progress of the classification stream, for the in-progress indicator. */
+  readonly classifyProgress = computed(() => this.state.scholarClassifyProgress());
+
+  /** Percentage of retrieved papers classified so far (0 until a total is known). */
+  readonly classifyPercent = computed(() => {
+    const { classified, total } = this.classifyProgress();
+    return total > 0 ? Math.min(100, Math.round((classified / total) * 100)) : 0;
+  });
+
+  /** True before the first batch arrives — show skeleton placeholder rows. */
+  readonly showSkeleton = computed(
+    () => this.isClassifying() && !this.hasClassifiedPapers(),
+  );
+
+  /** Placeholder rows rendered while waiting for the first batch. */
+  readonly skeletonRows = [0, 1, 2, 3, 4];
 
   /** Whether the databases dropdown menu is open. */
   databasesOpen = false;

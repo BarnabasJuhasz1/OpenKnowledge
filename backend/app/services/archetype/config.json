@@ -1,6 +1,8 @@
 {
   "enabled": true,
   "preload_on_startup": true,
+  "classifier_url": "",
+  "classifier_api_key": "",
   "python_executable": "/home/juhasz/miniforge3/envs/okarchetype/bin/python",
   "script_path": "archetype_classifier/scripts/classify_retrieved_papers.py",
   "checkpoint_dir": "archetype_classifier/models/fast_archetype_model/checkpoint-6402",

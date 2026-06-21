@@ -1,3 +1,10 @@
+"""DEPRECATED — live mode (real-time external-API retrieval).
+
+These endpoints back the deprecated "Live APIs" mode (OpenAlex/arXiv/PubMed fan-out,
+two-phase background fetch). Live mode is no longer offered in the UI — Semantic Scholar
+(``/retrieval/scholar/*``) is the only selectable mode. Kept for reference only; do not
+build new features on this router.
+"""
 import json
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -31,7 +38,7 @@ def _archetype_map(papers: list[Paper]) -> dict[str, list[str | None]]:
     return out
 
 
-@router.post("/search", response_model=SearchResponse)
+@router.post("/search", response_model=SearchResponse, deprecated=True)
 async def search_papers(
     request: SearchRequest,
     project_id: int = Depends(require_project),
@@ -60,7 +67,7 @@ async def search_papers(
     return response
 
 
-@router.post("/search/stream")
+@router.post("/search/stream", deprecated=True)
 async def search_papers_stream(
     request: SearchRequest,
     project_id: int = Depends(require_project),
@@ -147,7 +154,7 @@ async def search_papers_stream(
     )
 
 
-@router.get("/background/{job_id}")
+@router.get("/background/{job_id}", deprecated=True)
 async def background_progress(job_id: str) -> StreamingResponse:
     """SSE endpoint that streams progress of a background fetch job."""
     job = background_manager.get_job(job_id)
@@ -190,7 +197,7 @@ async def background_progress(job_id: str) -> StreamingResponse:
     )
 
 
-@router.delete("/background/{job_id}")
+@router.delete("/background/{job_id}", deprecated=True)
 async def cancel_background(job_id: str):
     """Cancel a running background fetch job."""
     success = background_manager.cancel_job(job_id)

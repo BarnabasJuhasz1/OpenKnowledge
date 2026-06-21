@@ -526,6 +526,53 @@ class OpenSearchEngine:
         )
         return papers, int(total)
 
+    def ranked_corpusids(
+        self,
+        boolean_query: str,
+        *,
+        sort: str = "relevancy",
+        limit: int,
+        filters=None,
+    ) -> tuple[list[int], int]:
+        """Ordered corpusids for the (filtered) match set, plus the total match count.
+
+        A lightweight ``_source=["corpusid"]`` query used to apply a filter the index can't
+        express directly (archetype membership, resolved from the classification cache): the
+        caller walks these ids in order, keeps the ones whose cached archetype matches, and
+        hydrates only the requested page. ``limit`` must stay within ``_MAX_RESULT_WINDOW``.
+
+        Returns ``(corpusids, total_matches)``.
+        """
+        client = self._get_client()
+        compiled = compile_to_opensearch(boolean_query)
+        bool_query: dict = {"must": [compiled]}
+        filter_clauses = self._build_filters(filters)
+        if filter_clauses:
+            bool_query["filter"] = filter_clauses
+
+        body = {
+            "query": {"bool": bool_query},
+            "from": 0,
+            "size": max(0, min(limit, _MAX_RESULT_WINDOW)),
+            "sort": self._build_sort(sort),
+            "_source": ["corpusid"],
+            "track_total_hits": True,
+        }
+        try:
+            resp = client.search(index=self.index, body=body)
+        except Exception as exc:
+            raise OpenSearchSearchError(f"OpenSearch ranked-id query failed: {exc}") from exc
+
+        hits = resp.get("hits", {})
+        total_raw = hits.get("total", 0)
+        total = total_raw.get("value", 0) if isinstance(total_raw, dict) else int(total_raw)
+        corpusids: list[int] = []
+        for h in hits.get("hits", []):
+            cid = h.get("_source", {}).get("corpusid")
+            if cid is not None:
+                corpusids.append(int(cid))
+        return corpusids, int(total)
+
     def _scan_all(self, client, query: dict, limit: int | None):
         """Scroll path: stream every match (or up to ``limit``) past the result window."""
         from opensearchpy import helpers

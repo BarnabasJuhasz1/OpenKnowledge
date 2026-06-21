@@ -71,7 +71,10 @@ def load_config() -> dict | None:
     if os.getenv("ARCHETYPE_ENABLED") is not None:
         cfg["enabled"] = os.getenv("ARCHETYPE_ENABLED").lower() in ("true", "1", "yes")
 
-    for key in ["python_executable", "script_path", "checkpoint_dir", "label_mapping_path", "device"]:
+    for key in [
+        "python_executable", "script_path", "checkpoint_dir", "label_mapping_path",
+        "device", "classifier_url", "classifier_api_key",
+    ]:
         env_val = os.getenv(f"ARCHETYPE_{key.upper()}")
         if env_val is not None:
             cfg[key] = env_val
@@ -79,7 +82,10 @@ def load_config() -> dict | None:
     # If config file doesn't exist and no environment variables are set, disable
     has_any_archetype_env = any(
         os.getenv(f"ARCHETYPE_{k.upper()}") is not None
-        for k in ["ENABLED", "PYTHON_EXECUTABLE", "SCRIPT_PATH", "CHECKPOINT_DIR", "LABEL_MAPPING_PATH", "DEVICE"]
+        for k in [
+            "ENABLED", "PYTHON_EXECUTABLE", "SCRIPT_PATH", "CHECKPOINT_DIR",
+            "LABEL_MAPPING_PATH", "DEVICE", "CLASSIFIER_URL", "CLASSIFIER_API_KEY",
+        ]
     )
     if not path.is_file() and not has_any_archetype_env:
         logger.info("Archetype config not found and no ARCHETYPE_* env variables set — classification disabled.")

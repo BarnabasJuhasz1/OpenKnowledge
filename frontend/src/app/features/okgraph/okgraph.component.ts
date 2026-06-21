@@ -10,7 +10,7 @@ import { citNodeToPaper, okScore } from './cit-node';
 import { clusterColor, lighten, withAlpha, blendColors, MISC_COLOR } from './community-colors';
 import { edgePath as buildEdgePath, LayoutEdge, TOP_PADDING, orderLanesByConnectivity, citationLinksBetweenPlaced } from './graph-layout';
 import { yearExpandQueues, middleYears, nearestOutwardYear } from './year-expand';
-import { baseIdsInCluster, subclusterCount, subclusterCommunities } from './cluster-ops';
+import { baseIdsInCluster, subclusterCount, subclusterCommunities, hierarchicalClusterLabels } from './cluster-ops';
 import { getArchetypeIcon } from '../../shared/utils/archetype-icons';
 import { SearchStateService, paperId } from '../../core/services/search-state.service';
 import { CitGraphService, CitGraphNode, CitGraphEdge } from '../../core/services/citgraph.service';

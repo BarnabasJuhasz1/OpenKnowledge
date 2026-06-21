@@ -20,6 +20,17 @@ function computeOkScore(p: Paper, w: ScoreWeights): number {
 
 export type SortField = 'relevancy' | 'year_desc' | 'year_asc' | 'citations_desc' | 'citations_asc' | 'title_asc';
 
+/** Progress of the Scholar archetype classification stream. */
+export interface ScholarClassifyProgress {
+  /** `idle` before any stream, `running` while batches are being classified,
+   *  `done` once the whole match set is classified (or the stream ended). */
+  status: 'idle' | 'running' | 'done';
+  /** Number of retrieved papers classified so far. */
+  classified: number;
+  /** Total number of retrieved papers to classify (the ok-score-capped match set). */
+  total: number;
+}
+
 export interface FilterState {
   yearMin: number | null;
   yearMax: number | null;
@@ -127,6 +138,28 @@ export class SearchStateService {
 
   readonly sortField = signal<SortField>('relevancy');
   readonly selectedArchetypes = signal<Set<string>>(new Set(ALL_ARCHETYPES));
+
+  /** Scholar mode: the backend filters by archetype across the whole match set (resolved
+   *  from the live classification cache), so the client-side archetype filter below is
+   *  skipped — otherwise its secondary-AND semantics would wrongly drop papers the server
+   *  already included. Live/demo modes keep filtering archetypes client-side. */
+  readonly serverSideArchetypeFilter = signal(false);
+
+  /** Scholar mode: cumulative archetype counts streamed from the backend classifier,
+   *  built batch-by-batch in descending ok-score order across the whole match set.
+   *  Drives the distribution panel in Scholar mode (loaded papers are only one page,
+   *  so the panel can't be computed client-side there). Empty until the stream runs. */
+  readonly scholarArchetypeCounts = signal<Record<string, number>>({});
+
+  /** Scholar mode: progress of the ok-score-ordered archetype classification stream.
+   *  `running` from the moment a search kicks off the stream until the backend has
+   *  classified every retrieved paper (or the stream errors out); drives the
+   *  "classifying…" template + progress indicator on the distribution panel. */
+  readonly scholarClassifyProgress = signal<ScholarClassifyProgress>({
+    status: 'idle',
+    classified: 0,
+    total: 0,
+  });
   readonly filters = signal<FilterState>({
     yearMin: null,
     yearMax: null,
@@ -211,6 +244,9 @@ export class SearchStateService {
     const f = this.filters();
     const sort = this.sortField();
     const selectedArchs = this.selectedArchetypes();
+    // Scholar mode filters archetypes server-side across the whole match set; skip the
+    // client-side pass so it doesn't second-guess the already-filtered page.
+    const archetypeFilterClientSide = !this.serverSideArchetypeFilter();
 
     let result = papers.filter(p => {
       if (f.yearMin != null && (p.year == null || p.year < f.yearMin)) return false;
@@ -220,14 +256,16 @@ export class SearchStateService {
       if (f.codeOnly && !p.has_public_code && !p.code_url) return false;
       if (f.peerReviewedOnly && !p.is_peer_reviewed) return false;
       if (f.openAccessOnly && !p.is_open_access) return false;
-      
+
       // Filter out if the paper has a main or second-tier archetype that is NOT selected.
       // If it doesn't have an archetype (null, undefined, 'None'), it shouldn't be filtered out.
-      if (p.predicted_main_archetype && p.predicted_main_archetype !== 'None' && !selectedArchs.has(p.predicted_main_archetype)) {
-        return false;
-      }
-      if (p.predicted_second_tier_archetype && p.predicted_second_tier_archetype !== 'None' && !selectedArchs.has(p.predicted_second_tier_archetype)) {
-        return false;
+      if (archetypeFilterClientSide) {
+        if (p.predicted_main_archetype && p.predicted_main_archetype !== 'None' && !selectedArchs.has(p.predicted_main_archetype)) {
+          return false;
+        }
+        if (p.predicted_second_tier_archetype && p.predicted_second_tier_archetype !== 'None' && !selectedArchs.has(p.predicted_second_tier_archetype)) {
+          return false;
+        }
       }
       return true;
     });
@@ -437,6 +475,9 @@ export class SearchStateService {
     this.scholarTotal.set(0);
     this.scholarHasMore.set(false);
     this.scholarResultCap.set(0);
+    this.scholarArchetypeCounts.set({});
+    this.scholarClassifyProgress.set({ status: 'idle', classified: 0, total: 0 });
+    this.serverSideArchetypeFilter.set(false);
     this.graphPaperIds.set(new Set());
     this.externalGraphPapers.set(new Map());
     this.graphInitialized = false;

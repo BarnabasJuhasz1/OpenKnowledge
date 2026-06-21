@@ -232,18 +232,27 @@ class ArchetypeWorker:
             self._stderr_task.cancel()
 
 
-_worker: ArchetypeWorker | None = None
+_worker = None  # ArchetypeWorker | HttpArchetypeWorker | None
 
 
-def get_worker() -> ArchetypeWorker | None:
-    """Return the process-wide worker, or ``None`` if the feature is disabled."""
+def get_worker():
+    """Return the process-wide worker, or ``None`` if the feature is disabled.
+
+    When ``classifier_url`` is configured (env ``ARCHETYPE_CLASSIFIER_URL``), the
+    remote HTTP worker is used — the deployed default, requiring no local torch.
+    Otherwise the legacy local subprocess worker is used (dev convenience).
+    """
     global _worker
     if _worker is not None:
         return _worker
     cfg = load_config()
     if cfg is None:
         return None
-    _worker = ArchetypeWorker(cfg)
+    if cfg.get("classifier_url"):
+        from .http_client import HttpArchetypeWorker
+        _worker = HttpArchetypeWorker(cfg)
+    else:
+        _worker = ArchetypeWorker(cfg)
     return _worker
 
 

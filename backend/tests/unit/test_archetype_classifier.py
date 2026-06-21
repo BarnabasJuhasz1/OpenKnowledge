@@ -6,6 +6,15 @@ import pytest
 
 from app.models.paper import Paper
 from app.services.archetype import classifier
+from app.services.archetype import cache as archetype_cache
+
+
+@pytest.fixture(autouse=True)
+def _clear_archetype_cache():
+    """The classification cache is process-wide; keep each test hermetic."""
+    archetype_cache.clear()
+    yield
+    archetype_cache.clear()
 
 
 class _FakeWorker:
@@ -67,6 +76,27 @@ async def test_classifies_only_unlabeled_papers_with_abstracts(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_cached_papers_are_not_reclassified(monkeypatch):
+    worker = _FakeWorker()
+    _patch_worker(monkeypatch, worker)
+
+    p1 = Paper(title="t1", abstract="reused abstract", semantic_scholar_id="123")
+    await classifier.classify_papers([p1])
+    assert worker.received is not None and len(worker.received) == 1
+    assert p1.predicted_main_archetype == "The Innovator"
+
+    # A different paper with the same identity is served from cache: no new worker call.
+    worker2 = _FakeWorker()
+    _patch_worker(monkeypatch, worker2)
+    p2 = Paper(title="t2", abstract="reused abstract", semantic_scholar_id="123")
+    await classifier.classify_papers([p2])
+
+    assert worker2.received is None  # cache hit — model not consulted
+    assert p2.predicted_main_archetype == "The Innovator"
+    assert p2.predicted_second_tier_archetype == "Algorithm/Architecture"
+
+
+@pytest.mark.asyncio
 async def test_disabled_worker_is_a_noop(monkeypatch):
     _patch_worker(monkeypatch, None)
     papers = [Paper(title="x", abstract="y")]
@@ -93,6 +123,14 @@ async def test_empty_list_does_not_call_worker(monkeypatch):
 
 def test_load_config_env_overrides(monkeypatch, tmp_path):
     from app.services.archetype import config as arch_config
+
+    # Hermetic: clear any ARCHETYPE_* vars a loaded .env may have set process-wide
+    # (e.g. ARCHETYPE_CLASSIFIER_URL), so "no env vars → None" holds regardless of host.
+    for key in [
+        "ENABLED", "PYTHON_EXECUTABLE", "SCRIPT_PATH", "CHECKPOINT_DIR",
+        "LABEL_MAPPING_PATH", "DEVICE", "CLASSIFIER_URL", "CLASSIFIER_API_KEY",
+    ]:
+        monkeypatch.delenv(f"ARCHETYPE_{key}", raising=False)
 
     # Mock config_path to return a non-existent file
     monkeypatch.setattr(arch_config, "config_path", lambda: tmp_path / "non_existent.json")
@@ -173,3 +211,101 @@ async def test_worker_python_fallback(monkeypatch, tmp_path):
     assert spawned_cmd is not None
     assert spawned_cmd[0] == sys.executable
     await worker.aclose()
+
+
+# ── Salvaged: ok-score helper + batched, ok-score-prioritized classification ──
+
+import asyncio
+
+import httpx
+
+
+@pytest.mark.asyncio
+async def test_compute_ok_score():
+    from app.services.archetype.classifier import compute_ok_score
+
+    p1 = Paper(title="1", citation_count=9, has_public_code=True)
+    p2 = Paper(title="2", citation_count=99, is_peer_reviewed=True)
+
+    assert compute_ok_score(p1) == 2.0
+    assert compute_ok_score(p2) == 3.0
+
+
+@pytest.mark.asyncio
+async def test_batch_classifier_orders_by_ok_score(monkeypatch):
+    from app.services.archetype.classifier import BatchClassifier
+
+    classified_batches = []
+    first_batch_started = asyncio.Event()
+    first_batch_can_complete = asyncio.Event()
+
+    async def fake_classify_papers(papers):
+        for p in papers:
+            p.predicted_main_archetype = "The Innovator"
+        classified_batches.append(list(papers))
+        if len(classified_batches) == 1:
+            first_batch_started.set()
+            await first_batch_can_complete.wait()
+
+    monkeypatch.setattr(classifier, "classify_papers", fake_classify_papers)
+
+    p_low = Paper(title="low", abstract="abstract", citation_count=0)
+    p_mid = Paper(title="mid", abstract="abstract", citation_count=9)
+    p_high = Paper(title="high", abstract="abstract", citation_count=99)
+
+    queue = BatchClassifier(batch_size=1)
+
+    await queue.add_papers([p_low, p_mid])
+    queue.start()
+
+    await first_batch_started.wait()
+
+    # A higher-scoring paper arriving mid-run jumps ahead of the queued low one.
+    await queue.add_papers([p_high])
+
+    first_batch_can_complete.set()
+    await queue.stop()
+
+    assert len(classified_batches) == 3
+    assert classified_batches[0][0].title == "mid"
+    assert classified_batches[1][0].title == "high"
+    assert classified_batches[2][0].title == "low"
+
+
+# ── HTTP transport to the Cloud Run classifier ──
+
+@pytest.mark.asyncio
+async def test_http_worker_classifies(httpx_mock):
+    from app.services.archetype.http_client import HttpArchetypeWorker
+
+    httpx_mock.add_response(
+        json={
+            "results": [
+                {
+                    "id": "0",
+                    "primary": "The Innovator",
+                    "secondary": "Algorithm/Architecture",
+                    "main_confidence": 0.9,
+                    "second_confidence": 0.8,
+                }
+            ]
+        }
+    )
+    worker = HttpArchetypeWorker({"classifier_url": "https://clf.example"})
+    res = await worker.classify([{"id": "0", "abstract": "x"}])
+    await worker.aclose()
+
+    assert res["0"]["primary"] == "The Innovator"
+    assert res["0"]["secondary"] == "Algorithm/Architecture"
+
+
+@pytest.mark.asyncio
+async def test_http_worker_swallows_errors(httpx_mock):
+    from app.services.archetype.http_client import HttpArchetypeWorker
+
+    httpx_mock.add_exception(httpx.ConnectError("boom"))
+    worker = HttpArchetypeWorker({"classifier_url": "https://clf.example"})
+    res = await worker.classify([{"id": "0", "abstract": "x"}])
+    await worker.aclose()
+
+    assert res == {}

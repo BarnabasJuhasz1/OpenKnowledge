@@ -3,7 +3,13 @@
   "enabled": true,
   "preload_on_startup": true,
 
-  "_python_executable": "Interpreter of the dedicated conda env that has torch+transformers+safetensors. Falls back to sys.executable in environments where dependencies are installed (like Docker).",
+  "_classifier_url": "Preferred transport: base URL of the archetype classifier Cloud Run service (see archetype_server/). When set (or via env ARCHETYPE_CLASSIFIER_URL), the backend POSTs batches over HTTP and needs no local torch. Leave empty to use the legacy local subprocess worker below.",
+  "classifier_url": "",
+
+  "_classifier_api_key": "Optional shared secret; sent as 'Authorization: Bearer <key>'. Must match CLASSIFIER_API_KEY on the service. Env override: ARCHETYPE_CLASSIFIER_API_KEY.",
+  "classifier_api_key": "",
+
+  "_python_executable": "Legacy local-subprocess transport only. Interpreter of the dedicated conda env that has torch+transformers+safetensors. Ignored when classifier_url is set.",
   "python_executable": "/home/<you>/miniforge3/envs/okarchetype/bin/python",
 
   "_script_path": "Path to classify_retrieved_papers.py. Relative paths resolve relative to the workspace/project root.",

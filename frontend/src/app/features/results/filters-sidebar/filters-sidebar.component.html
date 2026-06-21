@@ -1,31 +1,74 @@
-@if (!isScholar && hasClassifiedPapers()) {
+@if (showDistributionPanel()) {
   <div class="archetype-dist">
-    <h4 class="archetype-dist__title">Archetype Distribution</h4>
-    
-    <div class="archetype-bar">
-      @for (item of archetypeDistribution(); track item.name) {
-        @if (item.percentage > 0) {
-          <div 
-            class="archetype-bar__segment" 
-            [style.width.%]="item.percentage" 
-            [style.background]="item.gradient"
-            [title]="item.name + ': ' + item.percentage + '% (' + item.count + ' papers)'"
-          ></div>
-        }
+    <div class="archetype-dist__head">
+      <h4 class="archetype-dist__title">Archetype Distribution</h4>
+      @if (isClassifying()) {
+        <span class="archetype-dist__status" title="Classifying retrieved papers by ok-score">
+          <svg class="archetype-dist__spinner" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          Classifying…
+        </span>
       }
     </div>
 
-    <div class="archetype-list">
-      @for (item of archetypeDistribution(); track item.name) {
-        @if (item.count > 0) {
-          <div class="archetype-list__item" [title]="item.name + ': ' + item.count + ' papers'">
-            <span class="archetype-list__dot" [style.background-color]="item.color"></span>
-            <span class="archetype-list__name">{{ item.name }}</span>
-            <span class="archetype-list__pct">{{ item.percentage }}%</span>
+    @if (isClassifying()) {
+      <div class="archetype-dist__progress">
+        <div class="archetype-dist__progress-track">
+          <div
+            class="archetype-dist__progress-fill"
+            [class.archetype-dist__progress-fill--indeterminate]="classifyProgress().total === 0"
+            [style.width.%]="classifyProgress().total > 0 ? classifyPercent() : 100"
+          ></div>
+        </div>
+        <span class="archetype-dist__progress-text">
+          @if (classifyProgress().total > 0) {
+            {{ classifyProgress().classified | number }} / {{ classifyProgress().total | number }} papers classified
+          } @else {
+            Starting classification…
+          }
+        </span>
+      </div>
+    }
+
+    @if (showSkeleton()) {
+      <!-- Template placeholder shown until the first batch of archetypes arrives. -->
+      <div class="archetype-bar archetype-bar--skeleton">
+        <div class="archetype-bar__segment archetype-bar__segment--skeleton"></div>
+      </div>
+      <div class="archetype-list">
+        @for (row of skeletonRows; track row) {
+          <div class="archetype-list__item archetype-list__item--skeleton">
+            <span class="archetype-list__dot archetype-list__dot--skeleton"></span>
+            <span class="archetype-list__name archetype-list__name--skeleton"></span>
+            <span class="archetype-list__pct archetype-list__pct--skeleton"></span>
           </div>
         }
-      }
-    </div>
+      </div>
+    } @else {
+      <div class="archetype-bar">
+        @for (item of archetypeDistribution(); track item.name) {
+          @if (item.percentage > 0) {
+            <div
+              class="archetype-bar__segment"
+              [style.width.%]="item.percentage"
+              [style.background]="item.gradient"
+              [title]="item.name + ': ' + item.percentage + '% (' + item.count + ' papers)'"
+            ></div>
+          }
+        }
+      </div>
+
+      <div class="archetype-list">
+        @for (item of archetypeDistribution(); track item.name) {
+          @if (item.count > 0) {
+            <div class="archetype-list__item" [title]="item.name + ': ' + item.count + ' papers'">
+              <span class="archetype-list__dot" [style.background-color]="item.color"></span>
+              <span class="archetype-list__name">{{ item.name }}</span>
+              <span class="archetype-list__pct">{{ item.percentage }}%</span>
+            </div>
+          }
+        }
+      </div>
+    }
   </div>
 }
 
