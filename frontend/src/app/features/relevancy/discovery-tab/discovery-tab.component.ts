@@ -19,6 +19,9 @@ interface SliderConfig {
   key: keyof ScoreWeights;
   label: string;
   color: string;
+  /** Alpha: the backing field (code / dataset / repo-stars) is not backfilled in the live
+   *  index, so this weight has no effect. The slider is shown disabled with a notice. */
+  alpha?: boolean;
 }
 
 @Component({
@@ -42,12 +45,15 @@ export class DiscoveryTabComponent implements OnInit, OnDestroy {
   totalScored = signal(0);
   hasSearched = signal(false);
 
+  /** Shown next to alpha-disabled controls whose backing field isn't backfilled yet. */
+  readonly alphaNotice = 'Not available in the Alpha';
+
   readonly sliders: SliderConfig[] = [
     { key: 'w_c', label: 'Citations', color: '#3b82f6' },
-    { key: 'w_code', label: 'Code', color: '#10b981' },
+    { key: 'w_code', label: 'Code', color: '#10b981', alpha: true },
     { key: 'w_peer', label: 'Peer Review', color: '#8b5cf6' },
-    { key: 'w_data', label: 'Dataset', color: '#f59e0b' },
-    { key: 'w_stars', label: 'Stars', color: '#eab308' },
+    { key: 'w_data', label: 'Dataset', color: '#f59e0b', alpha: true },
+    { key: 'w_stars', label: 'Stars', color: '#eab308', alpha: true },
   ];
 
   ngOnInit(): void {

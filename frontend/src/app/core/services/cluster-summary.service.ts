@@ -323,6 +323,12 @@ export class ClusterSummaryService {
     this.clearWarmupNotice();
   }
 
+  /** User-dismissed the warm-up notice: hide it (and cancel any pending timer so
+   *  it won't reappear for the current summary run). */
+  dismissWarmupNotice(): void {
+    this.clearWarmupNotice();
+  }
+
   /** Cancel any pending warm-up timer and hide the notice. */
   private clearWarmupNotice(): void {
     if (this.warmupTimer !== null) {

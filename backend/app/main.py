@@ -24,6 +24,7 @@ from .api.cluster_summary import router as cluster_summary_router
 from .api.dashboard import router as dashboard_router
 from .api.auth import router as auth_router
 from .api.github import router as github_router
+from .api.feedback import router as feedback_router
 
 
 @asynccontextmanager
@@ -80,6 +81,7 @@ app.include_router(cluster_summary_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(github_router, prefix="/api")
+app.include_router(feedback_router, prefix="/api")
 
 
 

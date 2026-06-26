@@ -29,6 +29,7 @@ class _FakeEngine:
         self.last_limit = "<unset>"
         self.last_page_args = None
         self.last_ranked_args = None
+        self.last_facet_filters = None
 
     def search_page(self, boolean_query, *, offset, size, sort="relevancy", filters=None):
         self.last_query = boolean_query
@@ -46,6 +47,19 @@ class _FakeEngine:
             raise self._raises
         ids = list(self._ranked_ids)
         return ids[:limit], len(ids)
+
+    def field_facets(self, boolean_query, *, filters=None):
+        self.last_query = boolean_query
+        self.last_facet_filters = filters
+        if self._raises is not None:
+            raise self._raises
+        return {
+            "fields": {"Computer Science": 12, "Physics": 3},
+            "miscellaneous": 4,
+            "total": 19,
+            "year_min": 2001,
+            "year_max": 2024,
+        }
 
     def fetch_nodes_by_corpusid(self, corpusids):
         return {cid: self._papers_by_id[cid] for cid in corpusids if cid in self._papers_by_id}
@@ -197,6 +211,59 @@ def test_stream_midstream_error_emits_error_line(client, monkeypatch):
     assert "scroll boom" in records[-1]["detail"]
 
 
+# ── field-of-study facets (/facets) ───────────────────────────────────────────
+
+def test_facets_returns_field_counts_and_miscellaneous(client, monkeypatch):
+    engine = _FakeEngine()
+    _set_engine(monkeypatch, engine)
+
+    resp = client.post("/api/retrieval/scholar/facets", json={"keywords": ["LLM"]})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["fields"] == {"Computer Science": 12, "Physics": 3}
+    assert body["miscellaneous"] == 4
+    assert body["total"] == 19
+    # Year bounds come from the whole match set so the slider isn't capped to the loaded page.
+    assert body["year_min"] == 2001
+    assert body["year_max"] == 2024
+
+
+def test_facets_drops_field_and_archetype_filters(client, monkeypatch):
+    """The facet query must ignore the field + archetype selection so the option list isn't
+    pruned by the very selection it's meant to drive."""
+    engine = _FakeEngine()
+    _set_engine(monkeypatch, engine)
+
+    resp = client.post(
+        "/api/retrieval/scholar/facets",
+        json={
+            "keywords": ["LLM"],
+            "filters": {
+                "fields_of_study": ["Physics"],
+                "archetypes": ["The Analyst"],
+                "year_min": 2020,
+            },
+        },
+    )
+    assert resp.status_code == 200
+    assert engine.last_facet_filters.fields_of_study is None
+    assert engine.last_facet_filters.archetypes is None
+    # Other filters still apply.
+    assert engine.last_facet_filters.year_min == 2020
+
+
+def test_facets_empty_request_is_422(client, monkeypatch):
+    _set_engine(monkeypatch, _FakeEngine())
+    resp = client.post("/api/retrieval/scholar/facets", json={"keywords": []})
+    assert resp.status_code == 422
+
+
+def test_facets_not_configured_is_503(client, monkeypatch):
+    _set_engine(monkeypatch, _FakeEngine(raises=OpenSearchNotConfiguredError("no url")))
+    resp = client.post("/api/retrieval/scholar/facets", json={"keywords": ["LLM"]})
+    assert resp.status_code == 503
+
+
 # ── safety cap (_effective_limit) ─────────────────────────────────────────────
 
 def test_effective_limit_defaults_when_env_unset(monkeypatch):
@@ -301,6 +368,22 @@ def test_page_offset_and_sort_filters_forwarded(client, monkeypatch):
     assert args["sort"] == "year_desc"
     assert args["filters"].year_min == 2020
     assert args["filters"].open_access_only is True
+
+
+def test_page_forwards_fields_of_study_filter(client, monkeypatch):
+    papers = [Paper(title=f"P{i}") for i in range(5)]
+    engine = _FakeEngine(papers=papers, total=5)
+    _set_engine(monkeypatch, engine)
+
+    resp = client.post(
+        "/api/retrieval/scholar/search/page",
+        json={
+            "keywords": ["LLM"], "page": 1, "page_size": 10,
+            "filters": {"fields_of_study": ["Computer Science", "Medicine"]},
+        },
+    )
+    assert resp.status_code == 200
+    assert engine.last_page_args["filters"].fields_of_study == ["Computer Science", "Medicine"]
 
 
 def test_page_beyond_cap_is_empty_but_reports_total(client, monkeypatch):

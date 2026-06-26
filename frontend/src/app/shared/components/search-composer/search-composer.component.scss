@@ -8,10 +8,17 @@
   flex-direction: column;
   gap: 0.5rem;
 
+  // ── Header: mode tabs + attribution on one line ─────────────────────────────
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
   // ── Mode tabs ──────────────────────────────────────────────────────────────
   &__tabs {
     display: inline-flex;
-    align-self: flex-start;
     padding: 2px;
     background: var(--ok-surface-variant, var(--ok-outline-variant));
     border-radius: var(--ok-radius-full);
@@ -41,6 +48,15 @@
   // ── Field + actions ────────────────────────────────────────────────────────
   &__field {
     position: relative;
+  }
+
+  // Attribution riding on the same line as the mode tabs, pushed to the right.
+  &__powered {
+    margin: 0;
+    text-align: right;
+    font-family: var(--ok-font-label);
+    font-size: 0.78rem;
+    color: var(--ok-outline);
   }
 
   &__row {

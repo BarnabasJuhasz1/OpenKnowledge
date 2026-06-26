@@ -30,9 +30,19 @@ def test_paper_cache_key_falls_back_to_abstract_hash():
     assert key == archetype_cache.paper_cache_key(b)
 
 
-def test_paper_cache_key_none_without_identity_or_abstract():
-    assert archetype_cache.paper_cache_key(Paper(title="t")) is None
-    assert archetype_cache.paper_cache_key(Paper(title="t", abstract="   ")) is None
+def test_paper_cache_key_falls_back_to_title_hash():
+    # Abstract-less papers are classified from their title, so a title-only paper (no
+    # corpusid, no abstract) is keyed by a title hash rather than being uncacheable.
+    a = Paper(title="identical title")
+    b = Paper(title="identical title", abstract="   ")
+    key = archetype_cache.paper_cache_key(a)
+    assert key is not None and key.startswith("t:")
+    assert key == archetype_cache.paper_cache_key(b)
+
+
+def test_paper_cache_key_none_without_any_text():
+    # No corpusid, no abstract, blank title -> nothing stable to key on.
+    assert archetype_cache.paper_cache_key(Paper(title="   ")) is None
 
 
 def test_get_put_roundtrip_and_none_is_a_hit():

@@ -37,6 +37,13 @@ const summarySiblingCap = toPositiveInt(readEnv('SUMMARY_SIBLING_CAP', '12'), 12
 // shows a "please be patient" notice. The minute value only shapes that copy.
 const summaryColdStartNoticeSec = toPositiveInt(readEnv('SUMMARY_COLD_START_NOTICE_SEC', '6'), 6);
 const summaryWarmupMinutes = toPositiveInt(readEnv('SUMMARY_WARMUP_MINUTES', '1'), 1);
+// The archetype classifier is a separate on-demand (Cloud Run scale-to-zero) service,
+// so it warms up independently of the summarization model. Same knobs, separate values.
+const archetypeColdStartNoticeSec = toPositiveInt(readEnv('ARCHETYPE_COLD_START_NOTICE_SEC', '12'), 12);
+const archetypeWarmupMinutes = toPositiveInt(readEnv('ARCHETYPE_WARMUP_MINUTES', '1'), 1);
+// Maximum number of seed papers a user may place on the OK-Graph at once. Edit
+// SEED_LIMIT in .env (or here) to change it; the whole UI/flow reads this value.
+const seedLimit = toPositiveInt(readEnv('SEED_LIMIT', '3'), 3);
 
 // Ensure directory exists
 const envDir = path.join(__dirname, 'src', 'environments');
@@ -51,7 +58,10 @@ export const environment = {
   SUMMARY_TOP_K: ${summaryTopK},
   SUMMARY_SIBLING_CAP: ${summarySiblingCap},
   SUMMARY_COLD_START_NOTICE_SEC: ${summaryColdStartNoticeSec},
-  SUMMARY_WARMUP_MINUTES: ${summaryWarmupMinutes}
+  SUMMARY_WARMUP_MINUTES: ${summaryWarmupMinutes},
+  ARCHETYPE_COLD_START_NOTICE_SEC: ${archetypeColdStartNoticeSec},
+  ARCHETYPE_WARMUP_MINUTES: ${archetypeWarmupMinutes},
+  SEED_LIMIT: ${seedLimit}
 };
 `;
 
@@ -61,5 +71,8 @@ console.log(
   `SUMMARY_CONCURRENCY: ${summaryConcurrency}, SUMMARY_TOP_K: ${summaryTopK}, ` +
   `SUMMARY_SIBLING_CAP: ${summarySiblingCap}, ` +
   `SUMMARY_COLD_START_NOTICE_SEC: ${summaryColdStartNoticeSec}, ` +
-  `SUMMARY_WARMUP_MINUTES: ${summaryWarmupMinutes}`,
+  `SUMMARY_WARMUP_MINUTES: ${summaryWarmupMinutes}, ` +
+  `ARCHETYPE_COLD_START_NOTICE_SEC: ${archetypeColdStartNoticeSec}, ` +
+  `ARCHETYPE_WARMUP_MINUTES: ${archetypeWarmupMinutes}, ` +
+  `SEED_LIMIT: ${seedLimit}`,
 );

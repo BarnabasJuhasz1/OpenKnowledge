@@ -27,9 +27,16 @@ def _apply(obj: Any, primary: str | None, secondary: str | None) -> None:
 
 
 def _needs_classification(obj: Any) -> bool:
-    """A paper/node needs classification if it has an abstract but no primary archetype."""
+    """A paper/node needs classification if it has classifiable text but no primary archetype.
+
+    Classifiable text is the abstract when present, else the title — abstracts are
+    licensing-limited (~19% coverage), so abstract-less papers are classified from their
+    title instead of falling into the "Unknown" bucket.
+    """
     abstract = getattr(obj, "abstract", None)
-    if not abstract or not str(abstract).strip():
+    title = getattr(obj, "title", None)
+    has_text = bool((abstract and str(abstract).strip()) or (title and str(title).strip()))
+    if not has_text:
         return False
     return not getattr(obj, "predicted_main_archetype", None)
 
@@ -56,7 +63,15 @@ async def _classify(objects: list[Any]) -> None:
     if not targets or worker is None:
         return
 
-    items = [{"id": str(i), "abstract": getattr(obj, "abstract")} for i, obj in enumerate(targets)]
+    # Send both fields; the classifier uses the abstract when present, else the title.
+    items = [
+        {
+            "id": str(i),
+            "abstract": getattr(obj, "abstract", None),
+            "title": getattr(obj, "title", None),
+        }
+        for i, obj in enumerate(targets)
+    ]
     try:
         results = await worker.classify(items)
     except Exception as e:  # noqa: BLE001 — defensive; worker already guards internally

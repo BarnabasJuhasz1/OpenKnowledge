@@ -1,4 +1,21 @@
 <div class="paper-list">
+  @if (loading) {
+    <!-- The requested page maps to a server window that isn't loaded yet. Show
+         placeholder rows (subtle shimmer) instead of the stale previous window. -->
+    @for (i of skeletonRows; track i) {
+      <div class="paper-list__row paper-list__row--skeleton" aria-hidden="true">
+        <div class="paper-list__card skeleton-card">
+          <div class="skeleton-card__line skeleton-card__line--title"></div>
+          <div class="skeleton-card__line skeleton-card__line--byline"></div>
+          <div class="skeleton-card__line skeleton-card__line--text"></div>
+          <div class="skeleton-card__line skeleton-card__line--text skeleton-card__line--text-short"></div>
+        </div>
+        <div class="paper-list__score-wrap">
+          <div class="paper-list__score skeleton-score"></div>
+        </div>
+      </div>
+    }
+  } @else {
   @for (paper of pagePapers; track paper.doi ?? paper.title) {
     <div class="paper-list__row">
       <app-paper-card class="paper-list__card" [paper]="paper" />
@@ -59,5 +76,6 @@
     </div>
   } @empty {
     <p class="paper-list__empty">No papers to display.</p>
+  }
   }
 </div>

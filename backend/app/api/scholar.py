@@ -23,6 +23,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from ..models.paper import (
+    ScholarFacetsResponse,
     ScholarPageRequest,
     ScholarPageResponse,
     SearchRequest,
@@ -270,6 +271,40 @@ async def scholar_search_page(request: ScholarPageRequest) -> ScholarPageRespons
         queries_used=queries_used,
         result_cap=cap,
     )
+
+
+@router.post("/facets", response_model=ScholarFacetsResponse)
+async def scholar_field_facets(request: ScholarPageRequest) -> ScholarFacetsResponse:
+    """Field-of-study counts across the whole filtered Scholar match set.
+
+    Powers the filter dropdown so per-field counts reflect every match (not just the loaded
+    page) and no-field papers are surfaced as a Miscellaneous bucket. The field-of-study
+    filter itself is dropped from the aggregation so toggling fields never prunes the option
+    list; all other active filters still apply.
+    """
+    if not request.keywords and not (request.raw_query and request.raw_query.strip()):
+        raise HTTPException(status_code=422, detail="At least one keyword is required.")
+
+    boolean_query = _boolean_source(request)
+    engine = get_engine()
+    # Exclude the field selection from the facet so every available field stays listed.
+    facet_filters = request.filters.model_copy(
+        update={"fields_of_study": None, "archetypes": None}
+    )
+    try:
+        result = await anyio.to_thread.run_sync(
+            lambda: engine.field_facets(boolean_query, filters=facet_filters)
+        )
+    except BooleanQueryError as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid boolean query: {exc}")
+    except OpenSearchNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=503, detail=f"Semantic Scholar mode is not configured: {exc}"
+        )
+    except Exception as exc:  # connection / query errors
+        raise HTTPException(status_code=502, detail=f"Semantic Scholar search failed: {exc}")
+
+    return ScholarFacetsResponse(**result)
 
 
 def _ndjson(obj: dict) -> bytes:

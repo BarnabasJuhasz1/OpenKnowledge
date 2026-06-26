@@ -22,6 +22,10 @@ export interface LaidOutNode extends LayoutItem {
 export interface LayoutEdge {
   fromId: string;
   toId: string;
+  // True when at least one underlying citation merged into this (possibly
+  // cluster-aggregated) link is an S2 "highly influential" citation. Absent on
+  // non-citation links (e.g. manual expansion lineage).
+  isInfluential?: boolean;
 }
 
 export interface YearColumn {
@@ -273,7 +277,8 @@ export interface PlacedRef {
  * links). Each base node is mapped to the finest placed node that represents it
  * in the current view; a citation edge whose two endpoints fall in the SAME
  * current-view cluster becomes one link between those placed nodes. Cross-cluster
- * edges are dropped on purpose — they are shown as blob bridges, not node links.
+ * edges are dropped by default — they are shown as blob bridges, not node links —
+ * unless `includeCrossCluster` is set (v2 graphs draw every citation as an edge).
  * Result is undirected and de-duplicated.
  *
  * @param placed              nodes currently on the canvas (already filtered).
@@ -282,14 +287,17 @@ export interface PlacedRef {
  * @param currentComm         community id per base-node index at the view level.
  * @param communitiesAtLevel  community array for a hierarchy level (-1 = leaves).
  * @param baseCount           number of base nodes.
+ * @param includeCrossCluster when true, also draw citation links whose endpoints
+ *                            fall in different current-view clusters (default false).
  */
 export function citationLinksBetweenPlaced(
   placed: PlacedRef[],
-  rawEdges: { source: string; target: string }[],
+  rawEdges: { source: string; target: string; is_influential?: boolean }[],
   idxOf: Map<string, number>,
   currentComm: number[],
   communitiesAtLevel: (level: number) => number[],
   baseCount: number,
+  includeCrossCluster = false,
 ): LayoutEdge[] {
   // Group placed nodes by level → (community -> placed id).
   const commByLevel = new Map<number, Map<number, string>>();
@@ -312,20 +320,28 @@ export function citationLinksBetweenPlaced(
     }
   }
 
-  const seen = new Set<string>();
+  // Dedup undirected; a placed→placed link may aggregate several underlying
+  // citations, so OR-in `isInfluential` across every contributor (influential
+  // if any merged citation is influential).
+  const byKey = new Map<string, LayoutEdge>();
   const edges: LayoutEdge[] = [];
   for (const e of rawEdges) {
     const u = idxOf.get(e.source);
     const v = idxOf.get(e.target);
     if (u == null || v == null) continue;
-    if (currentComm[u] !== currentComm[v]) continue;   // intra-cluster only
+    if (!includeCrossCluster && currentComm[u] !== currentComm[v]) continue;   // intra-cluster only (unless v2)
     const fromId = baseToPlaced[u];
     const toId = baseToPlaced[v];
     if (!fromId || !toId || fromId === toId) continue;
     const key = fromId < toId ? `${fromId}|${toId}` : `${toId}|${fromId}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    edges.push({ fromId, toId });
+    const existing = byKey.get(key);
+    if (existing) {
+      if (e.is_influential) existing.isInfluential = true;
+      continue;
+    }
+    const edge: LayoutEdge = { fromId, toId, isInfluential: !!e.is_influential };
+    byKey.set(key, edge);
+    edges.push(edge);
   }
   return edges;
 }
@@ -340,4 +356,44 @@ export function edgePath(
   }
   const cx = (from.x + to.x) / 2;
   return `M ${from.x} ${from.y} C ${cx} ${from.y}, ${cx} ${to.y}, ${to.x} ${to.y}`;
+}
+
+/**
+ * A gently rippling sine wave from ``from`` to ``to`` — used to mark influential
+ * citation edges. The amplitude is tapered with sin(πt) so the wave flattens to
+ * zero at both endpoints and meets the node circles cleanly.
+ */
+export function wavyEdgePath(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+): string {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 1) return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
+
+  const ux = dx / len, uy = dy / len;   // direction
+  const px = -uy, py = ux;              // perpendicular
+  const WAVELENGTH = 28;               // px per full cycle
+  const AMPLITUDE = 5;                 // px peak offset
+  const cycles = Math.max(1, Math.round(len / WAVELENGTH));
+  const steps = cycles * 12;           // segments (smoothness)
+
+  let d = `M ${from.x.toFixed(1)} ${from.y.toFixed(1)}`;
+  for (let i = 1; i <= steps; i++) {
+    // Land the final point exactly on `to` (sin(π) is not exactly 0 in floating
+    // point, which would otherwise leave a sub-pixel kink at the endpoint).
+    if (i === steps) {
+      d += ` L ${to.x.toFixed(1)} ${to.y.toFixed(1)}`;
+      break;
+    }
+    const t = i / steps;
+    const along = t * len;
+    const taper = Math.sin(Math.PI * t);            // 0 at ends, 1 mid-edge
+    const off = AMPLITUDE * taper * Math.sin(2 * Math.PI * cycles * t);
+    const x = from.x + ux * along + px * off;
+    const y = from.y + uy * along + py * off;
+    d += ` L ${x.toFixed(1)} ${y.toFixed(1)}`;
+  }
+  return d;
 }

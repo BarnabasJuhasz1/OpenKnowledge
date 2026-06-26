@@ -45,7 +45,7 @@ def _patch_worker(monkeypatch, worker):
 
 
 @pytest.mark.asyncio
-async def test_classifies_only_unlabeled_papers_with_abstracts(monkeypatch):
+async def test_classifies_unlabeled_papers_by_abstract_or_title(monkeypatch):
     worker = _FakeWorker()
     _patch_worker(monkeypatch, worker)
 
@@ -62,15 +62,20 @@ async def test_classifies_only_unlabeled_papers_with_abstracts(monkeypatch):
 
     await classifier.classify_papers(papers)
 
-    # Only the first paper should have been sent to the worker.
+    # Every unlabeled paper is sent: abstract-less ones (blank or missing) are classified
+    # from their title; only the already-classified paper is skipped.
     assert worker.received is not None
-    assert len(worker.received) == 1
-    assert worker.received[0]["abstract"] == "a meaningful abstract"
+    assert len(worker.received) == 3
+    sent = {item["abstract"] or None: item["title"] for item in worker.received}
+    # The payload carries the title so the server can fall back to it.
+    assert "needs it" in sent.values()
+    assert all("title" in item for item in worker.received)
 
     assert papers[0].predicted_main_archetype == "The Innovator"
     assert papers[0].predicted_second_tier_archetype == "Algorithm/Architecture"
-    assert papers[1].predicted_main_archetype is None
-    assert papers[2].predicted_main_archetype is None
+    # Abstract-less papers now get a title-based classification instead of staying Unknown.
+    assert papers[1].predicted_main_archetype == "The Innovator"
+    assert papers[2].predicted_main_archetype == "The Innovator"
     # Pre-existing classification is left untouched.
     assert papers[3].predicted_main_archetype == "The Synthesizer"
 

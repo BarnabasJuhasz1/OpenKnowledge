@@ -1,33 +1,19 @@
 @if (showDistributionPanel()) {
   <div class="archetype-dist">
     <div class="archetype-dist__head">
-      <h4 class="archetype-dist__title">Archetype Distribution</h4>
+      <h4 class="archetype-dist__title">Archetypes</h4>
       @if (isClassifying()) {
-        <span class="archetype-dist__status" title="Classifying retrieved papers by ok-score">
+        <span
+          class="archetype-dist__spinner-wrap"
+          [title]="classifyProgress().total > 0 ? (classifyPercent() + '% of retrieved papers classified') : 'Classifying retrieved papers by ok-score'"
+        >
           <svg class="archetype-dist__spinner" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-          Classifying…
+          @if (classifyProgress().total > 0) {
+            <span class="archetype-dist__percent">{{ classifyPercent() }}%</span>
+          }
         </span>
       }
     </div>
-
-    @if (isClassifying()) {
-      <div class="archetype-dist__progress">
-        <div class="archetype-dist__progress-track">
-          <div
-            class="archetype-dist__progress-fill"
-            [class.archetype-dist__progress-fill--indeterminate]="classifyProgress().total === 0"
-            [style.width.%]="classifyProgress().total > 0 ? classifyPercent() : 100"
-          ></div>
-        </div>
-        <span class="archetype-dist__progress-text">
-          @if (classifyProgress().total > 0) {
-            {{ classifyProgress().classified | number }} / {{ classifyProgress().total | number }} papers classified
-          } @else {
-            Starting classification…
-          }
-        </span>
-      </div>
-    }
 
     @if (showSkeleton()) {
       <!-- Template placeholder shown until the first batch of archetypes arrives. -->
@@ -59,13 +45,15 @@
 
       <div class="archetype-list">
         @for (item of archetypeDistribution(); track item.name) {
-          @if (item.count > 0) {
-            <div class="archetype-list__item" [title]="item.name + ': ' + item.count + ' papers'">
-              <span class="archetype-list__dot" [style.background-color]="item.color"></span>
-              <span class="archetype-list__name">{{ item.name }}</span>
-              <span class="archetype-list__pct">{{ item.percentage }}%</span>
-            </div>
-          }
+          <div
+            class="archetype-list__item"
+            [class.archetype-list__item--empty]="item.count === 0"
+            [title]="item.count > 0 ? item.name + ': ' + item.count + ' papers' : item.name + ': none found'"
+          >
+            <span class="archetype-list__dot" [style.background-color]="item.color"></span>
+            <span class="archetype-list__name">{{ item.name }}</span>
+            <span class="archetype-list__pct">{{ item.percentage }}%</span>
+          </div>
         }
       </div>
     }
@@ -100,22 +88,44 @@
   <section class="sidebar__section">
     <h4 class="sidebar__label">Year range</h4>
     <div class="sidebar__range-labels">
-      <span>{{ yearMin }}</span>
-      <span>{{ yearMax }}</span>
+      <input
+        type="number"
+        class="sidebar__range-input sidebar__range-input--min"
+        [min]="state.yearRange().min"
+        [max]="yearMax"
+        [(ngModel)]="yearMin"
+        [ngModelOptions]="{ updateOn: 'blur' }"
+        (keydown.enter)="$any($event.target).blur()"
+        aria-label="Minimum year"
+      />
+      <input
+        type="number"
+        class="sidebar__range-input sidebar__range-input--max"
+        [min]="yearMin"
+        [max]="state.yearRange().max"
+        [(ngModel)]="yearMax"
+        [ngModelOptions]="{ updateOn: 'blur' }"
+        (keydown.enter)="$any($event.target).blur()"
+        aria-label="Maximum year"
+      />
     </div>
     <div class="sidebar__range-row">
+      <div class="sidebar__range-rail">
+        <div class="sidebar__range-track"></div>
+        <div class="sidebar__range-fill" [style.left.%]="yearFill.left" [style.right.%]="yearFill.right"></div>
+      </div>
       <input
         type="range"
         class="sidebar__slider"
         [min]="state.yearRange().min"
-        [max]="state.yearRange().max"
+        [max]="yearMax"
         [ngModel]="yearMin"
         (ngModelChange)="yearMin = $event"
       />
       <input
         type="range"
         class="sidebar__slider"
-        [min]="state.yearRange().min"
+        [min]="yearMin"
         [max]="state.yearRange().max"
         [ngModel]="yearMax"
         (ngModelChange)="yearMax = $event"
@@ -127,22 +137,44 @@
   <section class="sidebar__section">
     <h4 class="sidebar__label">Citation count</h4>
     <div class="sidebar__range-labels">
-      <span>{{ citationMin }}</span>
-      <span>{{ citationMax }}</span>
+      <input
+        type="number"
+        class="sidebar__range-input sidebar__range-input--min"
+        [min]="0"
+        [max]="citationMax"
+        [(ngModel)]="citationMin"
+        [ngModelOptions]="{ updateOn: 'blur' }"
+        (keydown.enter)="$any($event.target).blur()"
+        aria-label="Minimum citation count"
+      />
+      <input
+        type="number"
+        class="sidebar__range-input sidebar__range-input--max"
+        [min]="citationMin"
+        [max]="state.citationRange().max"
+        [(ngModel)]="citationMax"
+        [ngModelOptions]="{ updateOn: 'blur' }"
+        (keydown.enter)="$any($event.target).blur()"
+        aria-label="Maximum citation count"
+      />
     </div>
     <div class="sidebar__range-row">
+      <div class="sidebar__range-rail">
+        <div class="sidebar__range-track"></div>
+        <div class="sidebar__range-fill" [style.left.%]="citationFill.left" [style.right.%]="citationFill.right"></div>
+      </div>
       <input
         type="range"
         class="sidebar__slider"
         [min]="0"
-        [max]="state.citationRange().max"
+        [max]="citationMax"
         [ngModel]="citationMin"
         (ngModelChange)="citationMin = $event"
       />
       <input
         type="range"
         class="sidebar__slider"
-        [min]="0"
+        [min]="citationMin"
         [max]="state.citationRange().max"
         [ngModel]="citationMax"
         (ngModelChange)="citationMax = $event"
@@ -178,8 +210,8 @@
     </label>
   </section>
 
-  <!-- Archetype (hidden in Scholar mode until archetypes are backfilled corpus-wide) -->
-  @if (!isScholar) {
+  <!-- Archetype filter. In Scholar mode the backend filters across the whole match set,
+       resolving membership from the live classification cache. -->
   <section class="sidebar__section sidebar__section--archetypes">
     <h4 class="sidebar__label">Archetype</h4>
     <div class="arch-select" [class.arch-select--open]="archetypesOpen">
@@ -206,7 +238,45 @@
     </div>
   </section>
 
-  <!-- Databases / source filter (multi-select dropdown) -->
+  <!-- Field of study filter (multi-select dropdown). Applied server-side across the whole
+       match set in Scholar mode; client-side in the deprecated live/demo modes. -->
+  <section class="sidebar__section sidebar__section--fields">
+    <h4 class="sidebar__label">Field of study</h4>
+    <div class="arch-select" [class.arch-select--open]="fieldsOpen">
+      <button type="button" class="arch-select__toggle" (click)="toggleFieldsMenu()">
+        <span class="arch-select__summary">{{ fieldsSummary }}</span>
+        <svg class="arch-select__chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      @if (fieldsOpen) {
+        <div class="arch-select__menu">
+          <label class="arch-select__option arch-select__option--all">
+            <input type="checkbox" [checked]="allFieldsSelected" (change)="toggleAllFields($event)" />
+            <span class="arch-select__name">All fields</span>
+          </label>
+          <div class="arch-select__divider"></div>
+          @for (field of visibleFields(); track field) {
+            <label class="arch-select__option">
+              <input type="checkbox" [checked]="isFieldSelected(field)" (change)="toggleField(field)" />
+              <span class="arch-select__name">{{ field }}</span>
+              <span class="arch-select__count">{{ getFieldPaperCount(field) }}</span>
+            </label>
+          }
+          @if (showMiscField()) {
+            <!-- Papers Semantic Scholar didn't assign any field of study. -->
+            <label class="arch-select__option">
+              <input type="checkbox" [checked]="isFieldSelected(miscField)" (change)="toggleField(miscField)" />
+              <span class="arch-select__name">{{ miscField }}</span>
+              <span class="arch-select__count">{{ miscFieldCount() }}</span>
+            </label>
+          }
+        </div>
+      }
+    </div>
+  </section>
+
+  <!-- Databases / source filter (multi-select dropdown).
+       Hidden in Scholar mode — Semantic Scholar is the sole source there. -->
+  @if (!isScholar) {
   <section class="sidebar__section sidebar__section--databases">
     <h4 class="sidebar__label">Databases</h4>
     <div class="db-select" [class.db-select--open]="databasesOpen">

@@ -5,10 +5,11 @@ import { ThemeService } from './core/services/theme.service';
 import { AuthService } from './core/services/auth.service';
 import { TopNavComponent } from './shared/components/top-nav/top-nav.component';
 import { SidebarComponent } from './shared/components/sidebar/sidebar.component';
+import { FeedbackWidgetComponent } from './shared/components/feedback/feedback-widget.component';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, TopNavComponent, SidebarComponent],
+  imports: [RouterOutlet, TopNavComponent, SidebarComponent, FeedbackWidgetComponent],
   templateUrl: './app.html',
   styleUrl: './app.scss'
 })

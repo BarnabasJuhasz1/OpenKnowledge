@@ -20,16 +20,49 @@ class CitGraphRequest(BaseModel):
     max_per_hop: int = Field(default=20, ge=1, le=100000)
 
 
+class GraphNodeFilter(BaseModel):
+    """Metadata constraints enforced on EVERY node during expansion (seeds + neighbours).
+
+    Only fields available on OpenSearch-hydrated nodes live here. Code-availability,
+    peer-reviewed status, and archetype are intentionally absent — they aren't known
+    for expanded nodes, so the client pre-filters seeds for those (pass-through
+    decision), and expanded nodes are never dropped for missing that data.
+    """
+    year_min: int | None = None
+    year_max: int | None = None
+    citation_min: int | None = None
+    citation_max: int | None = None
+    open_access_only: bool = False
+    fields: list[str] = Field(default_factory=list)  # empty => no field-of-study filter
+
+
 class CitGraphExploreRequest(BaseModel):
     paper_ids: list[str]
     direction: str  # 'past', 'future', 'both'
     include_non_matching: bool = True
     keywords: list[str] = Field(default_factory=list)
+    # Boolean title+abstract query (AND/OR/NOT, "phrases", parens) — the same engine as
+    # search. When set it supersedes the legacy `keywords`/`include_non_matching` filter
+    # and gates every expanded node; non-matching neighbours are never added or expanded.
+    boolean_query: str | None = None
+    # Metadata constraints applied to every node during expansion (see GraphNodeFilter).
+    node_filter: GraphNodeFilter | None = None
     k: int = Field(default=1, ge=1, le=10)
     max_per_hop: int | None = Field(default=None, ge=1, le=100000)
     # Of the references/citers fetched per paper, keep only the top-K by ok-score
     # per hop level. None/null = keep all.
     top_k_per_paper: list[int | None] | None = Field(default=None)
+    # When true, keep only S2 "highly influential" citation edges: non-influential
+    # edges (and the papers they would have introduced) are dropped before
+    # traversal continues. Honoured by the hosted `/explore` path only; the demo
+    # corpus has no per-edge influence flag, so `/demo/explore` ignores it.
+    influential_only: bool = False
+    # v2 ("direction-pure cones") construction. When true AND direction == 'both',
+    # the graph is built as the union of a pure future cone (citations only, every
+    # hop) and a pure past cone (references only, every hop) — no node is reached by
+    # a path that mixes citation and reference hops. False (default) = v1, the mixed
+    # K-hop neighbourhood. No effect for single-direction builds.
+    directional_split: bool = False
 
 
 
@@ -63,6 +96,7 @@ class CitGraphNodeOut(BaseModel):
 class CitGraphEdgeOut(BaseModel):
     source: str
     target: str
+    is_influential: bool = False
 
 
 class CitGraphResponse(BaseModel):
@@ -140,7 +174,7 @@ def _to_response(result, enrich: dict[str, dict] | None = None) -> CitGraphRespo
             for n in result.nodes
         ],
         edges=[
-            CitGraphEdgeOut(source=e.source, target=e.target)
+            CitGraphEdgeOut(source=e.source, target=e.target, is_influential=e.is_influential)
             for e in result.edges
         ],
         seed_id=result.seed_id,
@@ -210,9 +244,13 @@ async def explore_graph(
             direction=body.direction,
             include_non_matching=body.include_non_matching,
             keywords=body.keywords,
+            boolean_query=body.boolean_query,
+            node_filter=body.node_filter,
             k=body.k,
             max_per_hop=body.max_per_hop,
             top_k_per_paper=body.top_k_per_paper,
+            influential_only=body.influential_only,
+            directional_split=body.directional_split,
         )
     except UpstreamError as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -240,9 +278,12 @@ async def explore_graph_demo(
             direction=body.direction,
             include_non_matching=body.include_non_matching,
             keywords=body.keywords,
+            boolean_query=body.boolean_query,
+            node_filter=body.node_filter,
             k=body.k,
             max_per_hop=body.max_per_hop,
             top_k_per_paper=body.top_k_per_paper,
+            directional_split=body.directional_split,
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Failed to explore graph: {e}")

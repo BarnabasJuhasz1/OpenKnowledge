@@ -114,6 +114,106 @@ def test_maps_archetype_and_code_fields_when_present():
     assert p.has_dataset is True
 
 
+def test_build_filters_fields_of_study_terms_clause():
+    """A field-of-study selection compiles to a `terms` filter (OR over the values)."""
+    from app.models.paper import ScholarFilters
+
+    clauses = OpenSearchEngine._build_filters(
+        ScholarFilters(fields_of_study=["Computer Science", "Medicine"])
+    )
+    assert {"terms": {"fields_of_study": ["Computer Science", "Medicine"]}} in clauses
+
+
+def test_build_filters_omits_empty_fields_of_study():
+    """No field-of-study constraint when the list is empty or None."""
+    from app.models.paper import ScholarFilters
+
+    for filters in (ScholarFilters(), ScholarFilters(fields_of_study=[])):
+        clauses = OpenSearchEngine._build_filters(filters)
+        assert all("fields_of_study" not in c.get("terms", {}) for c in clauses)
+
+
+def test_build_filters_miscellaneous_only_is_must_not_exists():
+    """Selecting only 'Miscellaneous' matches papers with NO field of study."""
+    from app.models.paper import ScholarFilters
+
+    clauses = OpenSearchEngine._build_filters(
+        ScholarFilters(fields_of_study=["Miscellaneous"])
+    )
+    assert {"bool": {"must_not": {"exists": {"field": "fields_of_study"}}}} in clauses
+    # No bare `terms` clause when only the synthetic bucket is selected.
+    assert all("fields_of_study" not in c.get("terms", {}) for c in clauses)
+
+
+def test_build_filters_fields_plus_miscellaneous_is_should():
+    """Real fields + 'Miscellaneous' → OR of the terms clause and the missing clause."""
+    from app.models.paper import ScholarFilters
+
+    clauses = OpenSearchEngine._build_filters(
+        ScholarFilters(fields_of_study=["Physics", "Miscellaneous"])
+    )
+    assert len(clauses) == 1
+    should = clauses[0]["bool"]["should"]
+    assert {"terms": {"fields_of_study": ["Physics"]}} in should
+    assert {"bool": {"must_not": {"exists": {"field": "fields_of_study"}}}} in should
+    assert clauses[0]["bool"]["minimum_should_match"] == 1
+
+
+def test_field_facets_parses_terms_and_missing_aggs():
+    """field_facets returns per-field counts, the Miscellaneous (missing) count, and total."""
+    class _AggClient(_FakeClient):
+        def search(self, index=None, body=None):
+            self.last_index = index
+            self.last_body = body
+            return {
+                "hits": {"total": {"value": 30, "relation": "eq"}},
+                "aggregations": {
+                    "fields": {"buckets": [
+                        {"key": "Computer Science", "doc_count": 18},
+                        {"key": "Physics", "doc_count": 7},
+                    ]},
+                    "miscellaneous": {"doc_count": 5},
+                    "year_min": {"value": 1998.0},
+                    "year_max": {"value": 2025.0},
+                },
+            }
+
+    engine = _make_engine(_AggClient())
+    result = engine.field_facets("LLM")
+    assert result == {
+        "fields": {"Computer Science": 18, "Physics": 7},
+        "miscellaneous": 5,
+        "total": 30,
+        "year_min": 1998,
+        "year_max": 2025,
+    }
+    # size:0 (aggregation-only) request with all aggs present.
+    body = engine._client.last_body
+    assert body["size"] == 0
+    assert "fields" in body["aggs"] and "miscellaneous" in body["aggs"]
+    assert "year_min" in body["aggs"] and "year_max" in body["aggs"]
+
+
+def test_field_facets_year_bounds_none_when_no_year():
+    """min/max aggs return value:None when no match carries a year -> year_min/max None."""
+    class _AggClient(_FakeClient):
+        def search(self, index=None, body=None):
+            return {
+                "hits": {"total": {"value": 4, "relation": "eq"}},
+                "aggregations": {
+                    "fields": {"buckets": []},
+                    "miscellaneous": {"doc_count": 4},
+                    "year_min": {"value": None},
+                    "year_max": {"value": None},
+                },
+            }
+
+    engine = _make_engine(_AggClient())
+    result = engine.field_facets("LLM")
+    assert result["year_min"] is None
+    assert result["year_max"] is None
+
+
 def test_forwards_compiled_dsl_and_size():
     engine = _make_engine(_FakeClient(hits=[]), result_limit=250)
     engine.search('LLM AND compression')
@@ -431,6 +531,18 @@ class _Filters:
         self.__dict__.update(defaults)
 
 
+def _bool_query(body: dict) -> dict:
+    """The ``bool`` query out of a search body, unwrapping the ``relevancy`` function_score.
+
+    The ``relevancy`` sort ranks by the ok-score via a ``function_score`` wrapper, so the
+    bool (match + filter clauses) lives one level down; other sorts use the bool directly.
+    """
+    query = body["query"]
+    if "function_score" in query:
+        return query["function_score"]["query"]["bool"]
+    return query["bool"]
+
+
 def test_search_page_returns_papers_and_total():
     client = _FakeClient(hits=[{"corpusid": 1, "title": "a"}, {"corpusid": 2, "title": "b"}],
                          total=4242)
@@ -443,13 +555,42 @@ def test_search_page_returns_papers_and_total():
     assert body["track_total_hits"] is True
 
 
-def test_search_page_relevancy_sorts_by_citations_with_tiebreak():
+def test_search_page_relevancy_ranks_by_okscore_function_score_with_tiebreak():
+    """relevancy ranks the WHOLE match set by the ok-score via a native function_score
+    (log10(1+citations) + peer bonus), sorted by _score — so paging stays globally ordered
+    without the slow per-doc Painless script the alpha dropped."""
     client = _FakeClient(hits=[], total=0)
     engine = _make_engine(client)
     engine.search_page("neural", offset=0, size=10, sort="relevancy")
-    sort = client.last_body["sort"]
-    assert sort[0]["citationcount"]["order"] == "desc"
+    body = client.last_body
+    fs = body["query"]["function_score"]
+    assert "bool" in fs["query"]
+    assert fs["score_mode"] == "sum" and fs["boost_mode"] == "replace"
+    funcs = fs["functions"]
+    # log10(1+citationcount) via the base-10 log1p modifier.
+    assert {"field_value_factor": {
+        "field": "citationcount", "modifier": "log1p", "missing": 0}} in funcs
+    # +1 weight for peer-reviewed papers (JournalArticle / Conference).
+    peer = next(f for f in funcs if "filter" in f)
+    assert peer["weight"] == 1.0
+    assert peer["filter"] == {
+        "terms": {"publication_types": ["JournalArticle", "Conference"]}}
+    # Sorted by the computed score, with corpusid as a stable-paging tiebreaker.
+    sort = body["sort"]
+    assert sort[0] == {"_score": {"order": "desc"}}
     assert sort[-1] == {"corpusid": {"order": "asc"}}
+
+
+def test_search_page_non_relevancy_uses_plain_field_sort():
+    """Non-relevancy sorts keep a plain bool query + field sort (no function_score wrapper)."""
+    client = _FakeClient(hits=[], total=0)
+    engine = _make_engine(client)
+    engine.search_page("neural", offset=0, size=10, sort="citations_desc")
+    body = client.last_body
+    assert "function_score" not in body["query"]
+    assert body["query"]["bool"]["must"]
+    assert body["sort"][0]["citationcount"]["order"] == "desc"
+    assert body["sort"][-1] == {"corpusid": {"order": "asc"}}
 
 
 def test_search_page_title_sort_uses_keyword_subfield():
@@ -470,7 +611,7 @@ def test_search_page_builds_filter_clauses():
         archetypes=["The Innovator", "The Analyst"],
     )
     engine.search_page("neural", offset=0, size=10, filters=filters)
-    filt = client.last_body["query"]["bool"]["filter"]
+    filt = _bool_query(client.last_body)["filter"]
     assert {"range": {"year": {"gte": 2018, "lte": 2024}}} in filt
     assert {"range": {"citationcount": {"gte": 10}}} in filt
     assert {"term": {"is_open_access": True}} in filt
@@ -486,13 +627,28 @@ def test_search_page_no_filters_omits_filter_key():
     client = _FakeClient(hits=[], total=0)
     engine = _make_engine(client)
     engine.search_page("neural", offset=0, size=10, filters=_Filters())
-    assert "filter" not in client.last_body["query"]["bool"]
+    assert "filter" not in _bool_query(client.last_body)
 
 
 def test_search_page_wraps_errors():
     engine = _make_engine(_FakeClient(raises=RuntimeError("boom"), total=0))
     with pytest.raises(OpenSearchSearchError):
         engine.search_page("neural", offset=0, size=10)
+
+
+def test_ranked_corpusids_relevancy_ranks_by_okscore_function_score():
+    """The archetype path ranks ids by the same global ok-score (function_score), so the
+    archetype-filtered page is ordered consistently with the unfiltered page."""
+    client = _FakeClient(
+        hits=[{"corpusid": 7}, {"corpusid": 9}], total=2,
+    )
+    engine = _make_engine(client)
+    ids, total = engine.ranked_corpusids("neural", sort="relevancy", limit=50)
+    assert ids == [7, 9] and total == 2
+    body = client.last_body
+    assert "function_score" in body["query"]
+    assert body["sort"][0] == {"_score": {"order": "desc"}}
+    assert body["_source"] == ["corpusid"]
 
 
 # ── seed resolution & node hydration (citation graph support) ─────────────────

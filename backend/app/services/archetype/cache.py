@@ -44,6 +44,12 @@ def paper_cache_key(obj: Any) -> str | None:
     if abstract and str(abstract).strip():
         digest = hashlib.sha1(str(abstract).strip().encode("utf-8")).hexdigest()
         return f"a:{digest}"
+    # Title-only fallback: abstract-less papers are classified from their title, so key
+    # them by a title hash when there's no corpusid to key on.
+    title = getattr(obj, "title", None)
+    if title and str(title).strip():
+        digest = hashlib.sha1(str(title).strip().encode("utf-8")).hexdigest()
+        return f"t:{digest}"
     return None
 
 

@@ -11,9 +11,19 @@
   font-family: var(--ok-font-label);
   font-size: 0.83rem;
   color: var(--ok-on-surface-variant);
-  padding: 0.5rem 0 1rem;
+  padding: 0.2rem 0 0.35rem;
 
   &__count {
+    font-weight: 600;
+    color: var(--ok-on-surface);
+
+    &--muted {
+      font-weight: 400;
+      color: var(--ok-on-surface-variant);
+    }
+  }
+
+  &__visible {
     font-weight: 600;
     color: var(--ok-on-surface);
   }
@@ -25,4 +35,19 @@
   &__failed {
     color: #eab308;
   }
+
+  // Mirrors the search button's "Searching…" spinner, sized/colored for inline text.
+  &__spinner {
+    display: inline-block;
+    width: 11px;
+    height: 11px;
+    border: 2px solid var(--ok-outline-variant);
+    border-top-color: var(--ok-on-surface);
+    border-radius: 50%;
+    animation: meta-spin 0.7s linear infinite;
+  }
+}
+
+@keyframes meta-spin {
+  to { transform: rotate(360deg); }
 }

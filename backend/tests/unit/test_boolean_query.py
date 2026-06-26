@@ -98,3 +98,72 @@ def test_params_are_unique_and_sequential():
 def test_invalid_queries_raise(bad):
     with pytest.raises(BooleanQueryError):
         compile_boolean_query(bad)
+
+
+# ── In-memory text predicate (compile_text_predicate) ─────────────────────────
+
+from app.services.retrieval.boolean_query import compile_text_predicate
+
+
+def _match(query: str, title: str | None, abstract: str | None = None) -> bool:
+    return compile_text_predicate(query)(title, abstract)
+
+
+@pytest.mark.parametrize("query", ["", "   "])
+def test_predicate_empty_query_matches_everything(query):
+    assert _match(query, "anything", "at all") is True
+    assert _match(query, None, None) is True
+
+
+def test_predicate_single_term_substring():
+    assert _match("neural", "Neural Nets", None) is True
+    assert _match("bayes", "Neural Nets", None) is False
+
+
+def test_predicate_is_case_insensitive():
+    assert _match("NEURAL", "neural networks", None) is True
+
+
+def test_predicate_matches_abstract_not_just_title():
+    assert _match("transformer", "A study", "uses a transformer model") is True
+    assert _match("transformer", "A study", "uses an RNN") is False
+
+
+def test_predicate_phrase_requires_contiguous_match():
+    assert _match('"large language model"', "Large Language Model survey", None) is True
+    # words present but not contiguous as a phrase
+    assert _match('"large language model"', "language is large in this model", None) is False
+
+
+def test_predicate_and_or_not():
+    assert _match("a AND b", "a b", None) is True
+    assert _match("a AND b", "a", None) is False
+    assert _match("a OR b", "only b here", None) is True
+    assert _match("a OR b", "neither", None) is False
+    assert _match("NOT rag", "retrieval methods", None) is True
+    assert _match("NOT rag", "rag pipeline", None) is False
+    assert _match("-rag", "rag pipeline", None) is False
+
+
+def test_predicate_parentheses_precedence():
+    pred = compile_text_predicate("(a OR b) AND c")
+    assert pred("a c", None) is True
+    assert pred("b c", None) is True
+    assert pred("a b", None) is False  # missing c
+    assert pred("c only", None) is False  # missing a/b
+
+
+def test_predicate_invalid_query_falls_back_to_match_all():
+    # Dangling operator is invalid -> match-all rather than emptying the graph.
+    assert _match("a AND", "totally unrelated", None) is True
+    assert _match("(a OR b", "unrelated", None) is True
+
+
+def test_predicate_full_search_example():
+    raw = '"LLM" OR "Large Language Model" AND "compression" NOT "RAG"'
+    pred = compile_text_predicate(raw)
+    # precedence: NOT > AND > OR  =>  LLM OR (LargeLanguageModel AND compression AND NOT RAG)
+    assert pred("a paper about LLM systems", None) is True
+    assert pred("Large Language Model compression study", None) is True
+    assert pred("Large Language Model compression with RAG", None) is False
+    assert pred("unrelated topic", None) is False

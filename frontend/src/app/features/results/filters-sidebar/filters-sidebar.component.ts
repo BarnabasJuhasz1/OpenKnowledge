@@ -1,7 +1,7 @@
 import { Component, ElementRef, HostListener, inject, computed } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ALL_SOURCES, SearchStateService, SortField, ALL_ARCHETYPES } from '../../../core/services/search-state.service';
+import { ALL_SOURCES, SearchStateService, SortField, ALL_ARCHETYPES, ALL_FIELDS_OF_STUDY, ALL_SELECTABLE_FIELDS, MISC_FIELD } from '../../../core/services/search-state.service';
 import { SearchModeService } from '../../../core/services/search-mode.service';
 
 const ARCHETYPE_META: Record<string, { color: string; icon: string; gradient: string }> = {
@@ -27,8 +27,9 @@ export class FiltersSidebarComponent {
   private readonly mode = inject(SearchModeService);
   private readonly host = inject(ElementRef<HTMLElement>);
 
-  /** Scholar mode: archetype + code + per-database filters aren't yet filterable across the
-   *  whole corpus (those fields aren't backfilled / it's a single source), so they're hidden. */
+  /** Scholar mode: code + per-database filters aren't yet filterable across the whole corpus
+   *  (that field isn't backfilled / it's a single source), so they're hidden. Archetype
+   *  filtering IS available — the backend resolves it from the live classification cache. */
   get isScholar(): boolean {
     return this.mode.isScholar();
   }
@@ -39,8 +40,14 @@ export class FiltersSidebarComponent {
    * classify stream ({@link SearchStateService.scholarArchetypeCounts}), which covers the
    * whole match set in descending ok-score order and grows batch by batch. In live/demo
    * mode the full result set is in memory, so we count the loaded scored papers directly.
+   *
+   * The panel reflects the archetype filter: only currently-selected archetypes are
+   * counted, and percentages are recomputed over the selected-subset total — so filtering
+   * archetypes updates the distribution accordingly. Deselected archetypes fall to 0% and
+   * render greyed (and drop out of the bar, which only draws segments with percentage > 0).
    */
   readonly archetypeDistribution = computed(() => {
+    const selected = this.state.selectedArchetypes();
     const counts = ALL_ARCHETYPES.reduce((acc, arch) => {
       acc[arch] = 0;
       return acc;
@@ -50,7 +57,7 @@ export class FiltersSidebarComponent {
     if (this.isScholar) {
       const streamed = this.state.scholarArchetypeCounts();
       for (const [arch, n] of Object.entries(streamed)) {
-        if (arch in counts) {
+        if (arch in counts && selected.has(arch)) {
           counts[arch] += n;
           totalClassified += n;
         }
@@ -58,7 +65,7 @@ export class FiltersSidebarComponent {
     } else {
       for (const p of this.state.allScoredPapers()) {
         const arch = p.predicted_main_archetype;
-        if (arch && arch !== 'None' && arch in counts) {
+        if (arch && arch !== 'None' && arch in counts && selected.has(arch)) {
           counts[arch]++;
           totalClassified++;
         }
@@ -82,15 +89,30 @@ export class FiltersSidebarComponent {
     return this.archetypeDistribution().some(item => item.count > 0);
   });
 
+  /** Whether classification produced any data at all, independent of the current
+   *  archetype selection. Unlike {@link hasClassifiedPapers} (which counts only the
+   *  selected subset), this stays true when the user deselects every archetype — so the
+   *  panel remains visible showing an empty bar with all archetypes at 0%. */
+  readonly hasAnyClassification = computed(() => {
+    if (this.isScholar) {
+      return Object.values(this.state.scholarArchetypeCounts()).some(n => n > 0);
+    }
+    return this.state.allScoredPapers().some(p => {
+      const a = p.predicted_main_archetype;
+      return !!a && a !== 'None';
+    });
+  });
+
   /** Whether the ok-score-ordered classification stream is still running (Scholar mode). */
   readonly isClassifying = computed(
     () => this.isScholar && this.state.scholarClassifyProgress().status === 'running',
   );
 
   /** Show the distribution card while classification is in progress (even before the
-   *  first batch lands, as a template) or once any papers have been classified. */
+   *  first batch lands, as a template) or once any papers have been classified — even
+   *  if the current selection is empty, so the panel never vanishes on full deselection. */
   readonly showDistributionPanel = computed(
-    () => this.isClassifying() || this.hasClassifiedPapers(),
+    () => this.isClassifying() || this.hasAnyClassification(),
   );
 
   /** Progress of the classification stream, for the in-progress indicator. */
@@ -107,14 +129,19 @@ export class FiltersSidebarComponent {
     () => this.isClassifying() && !this.hasClassifiedPapers(),
   );
 
-  /** Placeholder rows rendered while waiting for the first batch. */
-  readonly skeletonRows = [0, 1, 2, 3, 4];
+  /** Placeholder rows rendered while waiting for the first batch — one per
+   *  archetype, so the panel keeps a constant height across the skeleton →
+   *  loaded transition. */
+  readonly skeletonRows = ALL_ARCHETYPES.map((_, i) => i);
 
   /** Whether the databases dropdown menu is open. */
   databasesOpen = false;
 
   /** Whether the archetypes dropdown menu is open. */
   archetypesOpen = false;
+
+  /** Whether the fields-of-study dropdown menu is open. */
+  fieldsOpen = false;
 
   get sortField(): SortField {
     return this.state.sortField();
@@ -130,8 +157,14 @@ export class FiltersSidebarComponent {
   }
 
   set yearMin(val: number) {
+    // Typed inputs can emit null/NaN (empty field) — ignore rather than corrupt
+    // the filter; the getter then restores the displayed value to the boundary.
+    if (val == null || Number.isNaN(val)) return;
     const range = this.state.yearRange();
-    this.state.updateFilter({ yearMin: val <= range.min ? null : val });
+    // Never let the lower knob cross above the upper knob (would invert the
+    // range and crash the results list); clamp it to the current max instead.
+    const clamped = Math.max(range.min, Math.min(val, this.yearMax));
+    this.state.updateFilter({ yearMin: clamped <= range.min ? null : clamped });
   }
 
   get yearMax(): number {
@@ -139,8 +172,11 @@ export class FiltersSidebarComponent {
   }
 
   set yearMax(val: number) {
+    if (val == null || Number.isNaN(val)) return;
     const range = this.state.yearRange();
-    this.state.updateFilter({ yearMax: val >= range.max ? null : val });
+    // Never let the upper knob cross below the lower knob.
+    const clamped = Math.min(range.max, Math.max(val, this.yearMin));
+    this.state.updateFilter({ yearMax: clamped >= range.max ? null : clamped });
   }
 
   get citationMin(): number {
@@ -148,7 +184,9 @@ export class FiltersSidebarComponent {
   }
 
   set citationMin(val: number) {
-    this.state.updateFilter({ citationMin: val <= 0 ? null : val });
+    if (val == null || Number.isNaN(val)) return;
+    const clamped = Math.max(0, Math.min(val, this.citationMax));
+    this.state.updateFilter({ citationMin: clamped <= 0 ? null : clamped });
   }
 
   get citationMax(): number {
@@ -156,8 +194,31 @@ export class FiltersSidebarComponent {
   }
 
   set citationMax(val: number) {
+    if (val == null || Number.isNaN(val)) return;
     const range = this.state.citationRange();
-    this.state.updateFilter({ citationMax: val >= range.max ? null : val });
+    const clamped = Math.min(range.max, Math.max(val, this.citationMin));
+    this.state.updateFilter({ citationMax: clamped >= range.max ? null : clamped });
+  }
+
+  /** Inset percentages ({@link left}/{@link right}) for the highlighted track
+   *  segment between the year knobs. */
+  get yearFill(): { left: number; right: number } {
+    const r = this.state.yearRange();
+    const span = r.max - r.min || 1;
+    return {
+      left: ((this.yearMin - r.min) / span) * 100,
+      right: ((r.max - this.yearMax) / span) * 100,
+    };
+  }
+
+  /** Inset percentages for the highlighted track segment between the citation knobs. */
+  get citationFill(): { left: number; right: number } {
+    const max = this.state.citationRange().max;
+    const span = max || 1;
+    return {
+      left: (this.citationMin / span) * 100,
+      right: ((max - this.citationMax) / span) * 100,
+    };
   }
 
   get codeOnly(): boolean {
@@ -214,7 +275,73 @@ export class FiltersSidebarComponent {
     return `${count} of ${ALL_ARCHETYPES.length} archetypes`;
   }
 
+  /** The synthetic "no field of study" bucket, exposed to the template. */
+  readonly miscField = MISC_FIELD;
+
+  /** Whether the backend facet counts have arrived (drives count source + which fields show). */
+  private readonly hasFacets = computed(() => {
+    const f = this.state.fieldFacets();
+    return f.total > 0 || Object.keys(f.fields).length > 0;
+  });
+
+  /** Canonical fields to list: once facet counts exist, only those with ≥1 paper (so the
+   *  dropdown isn't cluttered with empty fields); before then, the full canonical list. */
+  readonly visibleFields = computed(() => {
+    if (!this.hasFacets()) return [...ALL_FIELDS_OF_STUDY];
+    const counts = this.state.fieldFacets().fields;
+    return ALL_FIELDS_OF_STUDY.filter(name => (counts[name] ?? 0) > 0);
+  });
+
+  /** Number of retrieved papers with no field of study (the Miscellaneous bucket). */
+  readonly miscFieldCount = computed(() => this.state.fieldFacets().miscellaneous);
+
+  /** Show the Miscellaneous row only when some retrieved papers lack a field of study. */
+  readonly showMiscField = computed(() => this.hasFacets() && this.miscFieldCount() > 0);
+
+  toggleFieldsMenu(): void {
+    this.fieldsOpen = !this.fieldsOpen;
+  }
+
+  get allFieldsSelected(): boolean {
+    return this.state.selectedFields().size === ALL_SELECTABLE_FIELDS.length;
+  }
+
+  isFieldSelected(name: string): boolean {
+    return this.state.selectedFields().has(name);
+  }
+
+  toggleField(name: string): void {
+    this.state.toggleField(name);
+  }
+
+  toggleAllFields(event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.state.setAllFields(checked);
+  }
+
+  get fieldsSummary(): string {
+    const count = this.state.selectedFields().size;
+    if (count === ALL_SELECTABLE_FIELDS.length) return 'All fields';
+    if (count === 0) return 'No fields';
+    return `${count} of ${ALL_SELECTABLE_FIELDS.length} fields`;
+  }
+
+  /** Per-field paper count across the whole match set, from the backend facet aggregation.
+   *  Falls back to counting the loaded page when facets haven't arrived (or in the
+   *  deprecated demo/live modes, which hold the full set client-side anyway). */
+  getFieldPaperCount(field: string): number {
+    if (this.hasFacets()) return this.state.fieldFacets().fields[field] ?? 0;
+    return this.state.allScoredPapers().filter(p =>
+      (p.fields_of_study ?? []).includes(field)
+    ).length;
+  }
+
   getArchetypePaperCount(arch: string): number {
+    // Scholar mode holds only one page client-side, so the count comes from the backend
+    // classify stream, which spans the whole match set in descending ok-score order.
+    if (this.isScholar) {
+      return this.state.scholarArchetypeCounts()[arch] ?? 0;
+    }
     return this.state.allScoredPapers().filter(p =>
       p.predicted_main_archetype === arch || p.predicted_second_tier_archetype === arch
     ).length;
@@ -233,6 +360,9 @@ export class FiltersSidebarComponent {
     }
     if (this.archetypesOpen && !this.host.nativeElement.contains(event.target)) {
       this.archetypesOpen = false;
+    }
+    if (this.fieldsOpen && !this.host.nativeElement.contains(event.target)) {
+      this.fieldsOpen = false;
     }
   }
 
@@ -267,6 +397,7 @@ export class FiltersSidebarComponent {
       || f.citationMin != null || f.citationMax != null
       || f.codeOnly || f.peerReviewedOnly || f.openAccessOnly
       || this.state.selectedArchetypes().size < ALL_ARCHETYPES.length
+      || this.state.selectedFields().size < ALL_SELECTABLE_FIELDS.length
       || this.state.sortField() !== 'relevancy'
       || !this.allSourcesSelected;
   }

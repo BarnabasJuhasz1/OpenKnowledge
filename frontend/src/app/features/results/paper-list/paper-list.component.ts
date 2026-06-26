@@ -28,6 +28,12 @@ export class PaperListComponent {
   @Input() scoresLoading = false;
   /** When false, `papers` is already the page to show (server-paginated) — render as-is. */
   @Input() clientPaginate = true;
+  /** Server-paginated mode: the requested page's window is still being fetched. Render
+   *  placeholder skeleton rows instead of the (stale) previously-loaded window. */
+  @Input() loading = false;
+
+  /** Fixed-length list used to render a full page of skeleton rows while loading. */
+  readonly skeletonRows = Array.from({ length: PAGE_SIZE }, (_, i) => i);
 
   popupPaperTitle = signal<string | null>(null);
   popupBreakdown = signal<BreakdownEntry[]>([]);

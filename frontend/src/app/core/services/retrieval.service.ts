@@ -15,6 +15,7 @@ export interface ScholarFiltersPayload {
   peer_reviewed_only?: boolean;
   code_only?: boolean;
   archetypes?: string[] | null;
+  fields_of_study?: string[] | null;
 }
 
 /** NDJSON events from the Scholar classify stream (ok-score-ordered batches). */
@@ -23,6 +24,16 @@ export type ScholarClassifyEvent =
   | { type: 'archetypes'; data: Record<string, [string | null, string | null]> }
   | { type: 'done'; counts: Record<string, number>; classified: number; total: number }
   | { type: 'error'; detail: string };
+
+/** Field-of-study counts across the whole filtered match set (not just the loaded page). */
+export interface ScholarFacetsResponse {
+  fields: Record<string, number>;
+  miscellaneous: number;
+  total: number;
+  /** Earliest/latest year across the whole match set (null when no match has a year). */
+  year_min: number | null;
+  year_max: number | null;
+}
 
 /** One page of Scholar results plus the exact total match count. */
 export interface ScholarPageResponse {
@@ -82,6 +93,23 @@ export class RetrievalService {
     return this.http.post<ScholarPageResponse>(
       `${this.baseUrl}/retrieval/scholar/search/page`,
       { ...request, page, page_size: pageSize, sort, filters },
+    );
+  }
+
+  /**
+   * Field-of-study counts for a Scholar query across the whole filtered match set. The
+   * field-of-study selection is ignored server-side so every available field stays listed;
+   * other active filters apply. Used to populate the filter dropdown's counts + the
+   * Miscellaneous (no-field) bucket.
+   */
+  scholarFieldFacets(
+    request: SearchRequest,
+    sort: string,
+    filters: ScholarFiltersPayload,
+  ): Observable<ScholarFacetsResponse> {
+    return this.http.post<ScholarFacetsResponse>(
+      `${this.baseUrl}/retrieval/scholar/facets`,
+      { ...request, sort, filters },
     );
   }
 

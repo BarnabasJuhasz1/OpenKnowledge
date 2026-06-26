@@ -3,6 +3,12 @@
 // ============================================================================
 
 .sidebar {
+  // Only this "Filters & Sort" panel scrolls; the Archetypes distribution panel
+  // above it stays pinned. The host (.results-layout__sidebar) is a flex column,
+  // so the panel grows to fill the remaining height and scrolls internally.
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   background: var(--ok-glass-bg);
   backdrop-filter: blur(var(--ok-glass-blur));
   -webkit-backdrop-filter: blur(var(--ok-glass-blur));
@@ -18,6 +24,9 @@
     align-items: center;
     justify-content: space-between;
     margin-bottom: 0.85rem;
+    // Pin to the Reset button's height so the panel doesn't shift when the
+    // button is added/removed (it only renders while filters are active).
+    min-height: 1.5rem;
   }
 
   &__title {
@@ -97,9 +106,85 @@
     margin-bottom: 0.3rem;
   }
 
+  // Editable min/max value fields. Styled to read like the plain labels until
+  // hovered/focused, when they reveal an editable affordance so a custom number
+  // can be typed instead of dragging the slider.
+  &__range-input {
+    width: 4.75ch;
+    padding: 0.1rem 0.25rem;
+    border: 1px solid transparent;
+    border-radius: var(--ok-radius-sm);
+    background: transparent;
+    font-family: var(--ok-font-label);
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--ok-primary);
+    font-variant-numeric: tabular-nums;
+    text-align: left;
+    cursor: text;
+    transition: border-color var(--ok-transition-fast), background var(--ok-transition-fast);
+
+    // Hide the native number spinner buttons — the slider covers stepping.
+    -moz-appearance: textfield;
+    appearance: textfield;
+    &::-webkit-outer-spin-button,
+    &::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
+    &:hover {
+      border-color: var(--ok-outline-variant);
+    }
+
+    &:focus {
+      outline: none;
+      border-color: var(--ok-primary-raw);
+      background: var(--ok-surface-container-lowest);
+    }
+
+    &--max {
+      text-align: right;
+    }
+  }
+
   &__range-row {
     position: relative;
     height: 28px;
+  }
+
+  // Base track and the highlighted segment between the two knobs. Rendered as
+  // plain elements (rather than the native slider tracks) so the fill can span
+  // across both overlapping range inputs.
+  //
+  // The rail is inset by half a thumb (8px) on each side so it covers exactly
+  // the thumb's travel: at its minimum the lower knob's centre sits flush on
+  // the rail's left edge, and the fill lines up with the thumb centres.
+  &__range-rail {
+    position: absolute;
+    top: 50%;
+    left: 8px;
+    right: 8px;
+    transform: translateY(-50%);
+    height: 4px;
+  }
+
+  &__range-track {
+    position: absolute;
+    inset: 0;
+    border-radius: 2px;
+    background: var(--ok-outline-variant);
+    pointer-events: none;
+  }
+
+  &__range-fill {
+    position: absolute;
+    top: 0;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--ok-primary-raw);
+    pointer-events: none;
+    z-index: 1;
   }
 
   &__slider {
@@ -127,6 +212,10 @@
       pointer-events: all;
       position: relative;
       z-index: 2;
+      // The runnable track is the full 28px input height (see below), so centre
+      // the 16px thumb on it: (28 - 16) / 2 = 6px. WebKit aligns the thumb's top
+      // with the track top, so a positive margin pulls it down to the centre.
+      margin-top: 6px;
     }
 
     &::-moz-range-thumb {
@@ -140,23 +229,17 @@
       pointer-events: all;
     }
 
+    // Native tracks are transparent and span the full input height — the
+    // visible track and the highlighted fill are drawn by .sidebar__range-track
+    // / .sidebar__range-fill instead. A full-height track makes the thumb's
+    // vertical centring deterministic (see the thumb margin-top above).
     &::-webkit-slider-runnable-track {
-      height: 4px;
-      background: var(--ok-outline-variant);
-      border-radius: 2px;
-    }
-
-    &::-moz-range-track {
-      height: 4px;
-      background: var(--ok-outline-variant);
-      border-radius: 2px;
-    }
-
-    &:first-child::-webkit-slider-runnable-track {
+      height: 28px;
       background: transparent;
     }
 
-    &:first-child::-moz-range-track {
+    &::-moz-range-track {
+      height: 28px;
       background: transparent;
     }
   }
@@ -169,13 +252,37 @@
     cursor: pointer;
     padding: 0.3rem 0;
 
+    // Custom-rendered box (appearance: none) so the unchecked state uses a
+    // theme surface colour instead of the browser's default white — which
+    // looked like a glaring clear-white chip in the dark appearance modes.
     input[type="checkbox"] {
+      appearance: none;
+      -webkit-appearance: none;
       width: 16px;
       height: 16px;
       border-radius: 4px;
-      accent-color: var(--ok-primary-raw);
+      border: 1px solid var(--ok-outline-variant);
+      background: var(--ok-surface-container-lowest);
       cursor: pointer;
       flex-shrink: 0;
+      transition: background var(--ok-transition-fast), border-color var(--ok-transition-fast);
+
+      &:hover {
+        border-color: var(--ok-outline);
+      }
+
+      &:checked {
+        background-color: var(--ok-primary-raw);
+        border-color: var(--ok-primary-raw);
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='3.5 8.5 6.5 11.5 12.5 4.5'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: center;
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--ok-primary-raw);
+        outline-offset: 1px;
+      }
     }
   }
 
@@ -334,6 +441,8 @@
 
 // ── Archetype Distribution Card Showcase ──
 .archetype-dist {
+  // Pinned at the top of the left column — does not scroll with the filters.
+  flex-shrink: 0;
   background: var(--ok-glass-bg);
   backdrop-filter: blur(var(--ok-glass-blur));
   -webkit-backdrop-filter: blur(var(--ok-glass-blur));
@@ -349,76 +458,39 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
+    gap: 0.4rem;
   }
 
   &__title {
+    // Matches the `.sidebar__title` ("Filters & Sort") styling.
     font-family: var(--ok-font-label);
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--ok-outline);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: var(--ok-on-surface);
     margin: 0;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
-  &__status {
+  &__spinner-wrap {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
-    font-family: var(--ok-font-label);
-    font-size: 0.68rem;
-    font-weight: 600;
+    gap: 0.2rem;
+    flex-shrink: 0;
     color: var(--ok-primary);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    white-space: nowrap;
   }
 
   &__spinner {
     animation: spin-arrows 1.2s linear infinite;
   }
 
-  &__progress {
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-    margin-top: -0.15rem;
-  }
-
-  &__progress-track {
-    position: relative;
-    height: 4px;
-    border-radius: var(--ok-radius-full);
-    background: var(--ok-outline-variant);
-    overflow: hidden;
-  }
-
-  &__progress-fill {
-    height: 100%;
-    border-radius: var(--ok-radius-full);
-    background: linear-gradient(90deg, var(--ok-primary-raw), #c084fc);
-    transition: width var(--ok-transition);
-
-    // No total yet: sweep an indeterminate bar so the user sees activity.
-    &--indeterminate {
-      width: 40% !important;
-      animation: archetype-indeterminate 1.1s ease-in-out infinite;
-    }
-  }
-
-  &__progress-text {
+  &__percent {
     font-family: var(--ok-font-label);
-    font-size: 0.7rem;
-    font-weight: 500;
-    color: var(--ok-on-surface-variant);
+    font-size: 0.66rem;
+    font-weight: 600;
+    color: var(--ok-primary);
     font-variant-numeric: tabular-nums;
   }
-}
-
-@keyframes archetype-indeterminate {
-  0%   { transform: translateX(-110%); }
-  100% { transform: translateX(260%); }
 }
 
 // ── Distribution skeleton placeholder (shown until the first batch lands) ──
@@ -489,6 +561,26 @@
     font-family: var(--ok-font-label);
     font-size: 0.78rem;
     color: var(--ok-on-surface-variant);
+    // Pin the row to the height of one text line so the skeleton placeholder
+    // rows (which hold thin bars instead of text) occupy exactly the same
+    // height as the populated rows — no layout shift when results land.
+    line-height: 1.2;
+    min-height: 1.2em;
+  }
+
+  // Archetypes with no papers found yet: always listed, but visibly muted
+  // so it's clear none of that type have turned up.
+  &__item--empty {
+    opacity: 0.4;
+
+    .archetype-list__dot {
+      background: var(--ok-outline-variant) !important;
+    }
+
+    .archetype-list__pct {
+      color: var(--ok-on-surface-variant);
+      font-weight: 500;
+    }
   }
 
   &__dot {
