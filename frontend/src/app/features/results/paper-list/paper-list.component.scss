@@ -124,6 +124,79 @@
   }
 }
 
+// ── Loading skeleton (shown while an unfetched page's window loads) ──
+// A subtle left-to-right shimmer over placeholder blocks — intentionally less
+// invasive than a spinner, mirroring the real card/score layout so the page
+// doesn't shift when results arrive.
+.skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  background: var(--ok-glass-bg);
+  border: 1px solid var(--ok-glass-border);
+  border-radius: var(--ok-radius-md);
+  padding: 0.9rem 1.25rem;
+
+  &__line {
+    height: 0.85rem;
+    border-radius: var(--ok-radius-sm);
+    background: linear-gradient(
+      90deg,
+      var(--ok-surface-container) 25%,
+      var(--ok-surface-container-high) 37%,
+      var(--ok-surface-container) 63%
+    );
+    background-size: 400% 100%;
+    animation: skeleton-shimmer 1.4s ease-in-out infinite;
+
+    &--title {
+      height: 1.05rem;
+      width: 68%;
+    }
+
+    &--byline {
+      width: 42%;
+    }
+
+    &--text {
+      width: 100%;
+    }
+
+    &--text-short {
+      width: 80%;
+    }
+  }
+}
+
+.skeleton-score {
+  // Inherits the .paper-list__score box dimensions; just animates a neutral fill.
+  background: linear-gradient(
+    90deg,
+    var(--ok-surface-container) 25%,
+    var(--ok-surface-container-high) 37%,
+    var(--ok-surface-container) 63%
+  );
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  border-color: var(--ok-outline-variant);
+
+  &:hover {
+    box-shadow: none;
+  }
+}
+
+@keyframes skeleton-shimmer {
+  0%   { background-position: 100% 0; }
+  100% { background-position: 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-card__line,
+  .skeleton-score {
+    animation: none;
+  }
+}
+
 // ── Score breakdown popup ──
 .score-popup {
   position: absolute;

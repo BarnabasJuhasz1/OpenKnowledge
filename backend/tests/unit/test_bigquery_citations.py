@@ -45,7 +45,7 @@ def test_is_configured():
 
 
 def test_references_query_shape_and_rows():
-    rows = [{"citingcorpusid": 100, "citedcorpusid": 200}]
+    rows = [{"citingcorpusid": 100, "citedcorpusid": 200, "isinfluential": False}]
     g = _graph(rows)
     out = g.references([100], cap=5)
 
@@ -53,24 +53,38 @@ def test_references_query_shape_and_rows():
     assert "citation_edges`" in sql
     assert "citingcorpusid IN UNNEST(@ids)" in sql
     assert "PARTITION BY citingcorpusid" in sql
-    # Cap keeps the top-K by the neighbour's citation count (ranked QUALIFY), not id order.
-    assert "ORDER BY neighbor_citationcount DESC" in sql
+    # The per-edge "highly influential" flag is selected from the clustered table.
+    assert "isinfluential" in sql
+    # Cap keeps influential edges first, then the top-K by the neighbour's citation count
+    # (ranked QUALIFY), not id order — matching the builder's per-paper top-K priority.
+    assert "ORDER BY isinfluential DESC, neighbor_citationcount DESC" in sql
     assert "<= @cap" in sql
     params = {p.name: p for p in g._client.last_config.query_parameters}
     assert params["ids"].values == [100]
     assert params["cap"].value == 5
-    assert out == [(100, 200)]
+    assert out == [(100, 200, False)]
 
 
 def test_citations_uses_by_cited_table_and_partition():
-    rows = [{"citingcorpusid": 300, "citedcorpusid": 100}]
+    rows = [{"citingcorpusid": 300, "citedcorpusid": 100, "isinfluential": False}]
     g = _graph(rows)
     out = g.citations([100], cap=10)
     sql = g._client.last_sql
     assert "citation_edges_by_cited`" in sql
     assert "citedcorpusid IN UNNEST(@ids)" in sql
     assert "PARTITION BY citedcorpusid" in sql
-    assert out == [(300, 100)]
+    assert out == [(300, 100, False)]
+
+
+def test_influential_flag_surfaced_and_null_is_false():
+    rows = [
+        {"citingcorpusid": 100, "citedcorpusid": 200, "isinfluential": True},
+        {"citingcorpusid": 100, "citedcorpusid": 300, "isinfluential": None},
+    ]
+    g = _graph(rows)
+    out = g.references([100], cap=5)
+    # True flows through; a NULL flag is normalised to False (unknown => not influential).
+    assert out == [(100, 200, True), (100, 300, False)]
 
 
 def test_empty_ids_short_circuits():

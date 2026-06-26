@@ -2,11 +2,15 @@
   <section class="discovery__controls">
     <div class="discovery__sliders">
       @for (slider of sliders; track slider.key) {
-        <div class="slider-group">
+        <div class="slider-group" [class.slider-group--alpha]="slider.alpha">
           <div class="slider-group__header">
             <span class="slider-group__dot" [style.background]="slider.color"></span>
             <label class="slider-group__label">{{ slider.label }}</label>
-            <span class="slider-group__value">{{ localWeights[slider.key] | number:'1.1-1' }}</span>
+            @if (slider.alpha) {
+              <span class="slider-group__alpha-note">{{ alphaNotice }}</span>
+            } @else {
+              <span class="slider-group__value">{{ localWeights[slider.key] | number:'1.1-1' }}</span>
+            }
           </div>
           <input
             type="range"
@@ -16,6 +20,7 @@
             [step]="0.1"
             [value]="localWeights[slider.key]"
             [style.--slider-color]="slider.color"
+            [disabled]="slider.alpha"
             (input)="onSliderChange(slider.key, $event)"
           />
           <div class="slider-group__range">

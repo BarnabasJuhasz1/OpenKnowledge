@@ -48,8 +48,39 @@ describe('OkGraphStateService', () => {
     service.markRemoved(['a']);
     service.setHierarchy({
       nodes: [], louvain: { levels: [] } as any, edges: [],
-      resolution: 1, maxLevels: 10, keywords: [], seedId: '', prefiltered: false,
+      resolution: 1, maxLevels: 10, keywords: [], booleanQuery: '', seedId: '', prefiltered: false,
     });
     expect(service.removedIds().size).toBe(0);
+  });
+
+  it('keyword filter toggles on the boolean query and re-clusters matches', () => {
+    const nodes = [
+      { paper_id: 'seed', title: 'seed paper', abstract: '' },
+      { paper_id: 'a', title: 'transformer efficiency', abstract: '' },
+      { paper_id: 'b', title: 'unrelated topic', abstract: '' },
+    ] as any[];
+    const louvainStub = { levels: [[0, 1, 2]] } as any;
+    service.setHierarchy({
+      nodes, louvain: louvainStub, edges: [],
+      resolution: 1, maxLevels: 10, keywords: [], booleanQuery: 'transformer',
+      seedId: 'seed', prefiltered: false,
+    });
+    expect(service.canToggleFilter()).toBe(true);
+    service.setFilter(true);
+    const keptIds = service.nodes().map(n => n.paper_id).sort();
+    // seed always kept + the matching node; non-matching 'b' dropped.
+    expect(keptIds).toEqual(['a', 'seed']);
+    service.setFilter(false);
+    expect(service.nodes().length).toBe(3);
+  });
+
+  it('cannot toggle the keyword filter without a boolean query', () => {
+    service.setHierarchy({
+      nodes: [{ paper_id: 'x', title: 't', abstract: '' }] as any[],
+      louvain: { levels: [[0]] } as any, edges: [],
+      resolution: 1, maxLevels: 10, keywords: [], booleanQuery: '',
+      seedId: 'x', prefiltered: false,
+    });
+    expect(service.canToggleFilter()).toBe(false);
   });
 });

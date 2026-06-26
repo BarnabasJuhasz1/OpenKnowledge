@@ -127,7 +127,7 @@
   .filter-toggles {
     display: flex;
     flex-direction: column;
-    gap: var(--ok-space-4);
+    gap: var(--ok-space-2);
   }
 
   .filter-toggle {
@@ -135,7 +135,7 @@
     align-items: flex-start;
     gap: var(--ok-space-3);
     cursor: pointer;
-    padding: var(--ok-space-3);
+    padding: var(--ok-space-2) var(--ok-space-3);
     border-radius: var(--ok-radius);
     background: rgba(255, 255, 255, 0.02);
     border: 1px solid transparent;
@@ -207,6 +207,75 @@
       font-size: 0.8rem;
       color: var(--ok-on-surface-variant);
       line-height: 1.4;
+    }
+  }
+
+  // Boolean keyword query field under the Keyword Filtering toggle. Greyed and
+  // non-interactive until the toggle is on (mirrors `[disabled]` on the input).
+  .filter-query {
+    padding: 0 var(--ok-space-3);
+    transition: opacity var(--ok-transition);
+
+    &--disabled {
+      opacity: 0.45;
+      pointer-events: none;
+    }
+
+    &__input {
+      width: 100%;
+      box-sizing: border-box;
+      font-family: var(--ok-font-mono, monospace);
+      font-size: 0.82rem;
+      color: var(--ok-on-surface);
+      background: var(--ok-surface-container-low, rgba(255, 255, 255, 0.03));
+      border: 1px solid var(--ok-outline-variant);
+      border-radius: var(--ok-radius-sm);
+      padding: var(--ok-space-2) var(--ok-space-3);
+      transition: border-color var(--ok-transition-fast);
+
+      &::placeholder { color: var(--ok-on-surface-variant); opacity: 0.6; }
+      &:focus {
+        outline: none;
+        border-color: var(--ok-primary);
+      }
+      &:disabled { cursor: not-allowed; }
+    }
+  }
+
+  // Trigger button that opens the metadata-filter popup.
+  .filter-popup-trigger {
+    display: flex;
+    align-items: center;
+    gap: var(--ok-space-2);
+    align-self: flex-start;
+    margin-left: var(--ok-space-3);
+    background: var(--ok-surface-container-low, rgba(255, 255, 255, 0.03));
+    border: 1px solid var(--ok-outline-variant);
+    border-radius: var(--ok-radius-sm);
+    color: var(--ok-on-surface);
+    font-family: var(--ok-font-label);
+    font-size: 0.82rem;
+    font-weight: 500;
+    padding: var(--ok-space-2) var(--ok-space-3);
+    cursor: pointer;
+    transition: background var(--ok-transition-fast), border-color var(--ok-transition-fast), opacity var(--ok-transition);
+
+    .material-symbols-outlined { font-size: 18px; color: var(--ok-primary); }
+
+    &:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.06);
+      border-color: var(--ok-primary);
+    }
+
+    &:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    &__summary {
+      color: var(--ok-on-surface-variant);
+      font-size: 0.75rem;
+      font-style: italic;
     }
   }
 
@@ -732,22 +801,55 @@
     }
   }
 
-  // --- Explore CTA (continues once a direction is picked) ---
-  .explore-cta {
-    display: flex;
-    flex-direction: column;
+  // --- Graph construction v2 toggle (seed mode only) ---
+  // A simple, visible checkbox: on by default (v2 direction-pure cones),
+  // uncheck to fall back to the v1 mixed K-hop neighbourhood.
+  .graph-v2-flip {
+    display: inline-flex;
     align-items: center;
     gap: var(--ok-space-2);
+    margin-top: var(--ok-space-4);
+    cursor: pointer;
+    user-select: none;
+
+    &__input {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      accent-color: var(--ok-primary);
+      cursor: pointer;
+    }
+
+    &__label {
+      font-family: var(--ok-font-label);
+      font-size: 0.78rem;
+      letter-spacing: 0.02em;
+      color: var(--ok-on-surface-variant);
+    }
+  }
+
+  // --- Explore CTA (continues once a direction is picked) ---
+  .explore-cta {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     margin-top: var(--ok-space-5);
+    // Fixed region with the button perfectly centred. The optional hint is
+    // taken out of flow (positioned, below) so neither toggling the hint nor
+    // any reflow above can ever push the Explore button down or off-centre.
+    min-height: 72px;
   }
 
   .explore-hint {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    text-align: center;
     font-size: 0.8rem;
     color: var(--ok-on-surface-variant);
     margin: 0;
-    // Always reserve one line of space so toggling the hint on/off never
-    // shifts the Explore button below it.
-    min-height: 1.2em;
   }
 
   .explore-btn {
@@ -1315,11 +1417,19 @@
     stroke-dasharray: 4 4;
   }
 
-  &__lane {
-    stroke: var(--ok-outline-variant);
-    stroke-width: 1;
-    stroke-dasharray: 6 5;
-    opacity: 0.7;
+  // Vertical rule through a seed paper: marks the past | future split. More
+  // prominent than the year dividers (the seed is the focus of the graph).
+  &__seed-line {
+    stroke: var(--ok-primary, #6750a4);
+    stroke-width: 2;
+    stroke-dasharray: 7 6;
+    opacity: 0.5;
+    pointer-events: none;
+    transition: opacity 0.4s ease-in-out;
+
+    &--transition-fade-out {
+      opacity: 0 !important;
+    }
   }
 
   &__blob {
@@ -1328,8 +1438,6 @@
     stroke-width: 1.5;
     cursor: pointer;
     transition: fill-opacity 0.15s, stroke-opacity 0.15s, stroke-width 0.15s, opacity 0.4s ease-in-out;
-
-    &:hover { fill-opacity: 0.14; }
 
     // The Miscellaneous catch-all reads as a muted, dashed lane so it is clearly
     // not one of the "real" topic clusters.
@@ -1456,9 +1564,69 @@
     .graph-svg__axis-arrow:hover & { stroke: var(--ok-primary-raw); }
   }
 
+  // Self-contained stacking context for all edges. A hovered edge applies a
+  // drop-shadow filter, which creates its own stacking context; isolating the
+  // whole edge group keeps that paint trapped here so edges can never render
+  // above the nodes group that follows them in document order.
+  &__edges-layer {
+    isolation: isolate;
+  }
+
   &__edge {
     stroke-width: 2;
-    transition: stroke 0.2s, opacity 0.4s ease-in-out, d 0.6s cubic-bezier(0.25, 0.8, 0.25, 1);
+    transition: stroke 0.2s, stroke-width 0.15s, opacity 0.4s ease-in-out, d 0.6s cubic-bezier(0.25, 0.8, 0.25, 1);
+    pointer-events: none;          // hover is handled by the wider hit path
+
+    &--highlighted { stroke-width: 2.5; }
+
+    // Influential citation: drawn as a gentle wave (see wavyEdgePath). The shape
+    // alone carries the signal; a hair more stroke keeps the ripple legible.
+    &--influential { stroke-width: 2.2; }
+
+    // Hovered highlighted edge: thicker and given a soft glow so it stands out
+    // from its sibling highlighted edges.
+    &--hovered {
+      stroke-width: 4;
+      filter: drop-shadow(0 0 3px rgba(var(--ok-primary-rgb), 0.7));
+    }
+  }
+
+  // Invisible wide stroke laid over a highlighted edge purely to catch the pointer.
+  &__edge-hit {
+    stroke: transparent;
+    stroke-width: 14;
+    cursor: pointer;
+    fill: none;
+    // Catch the pointer along the (invisible) stroke regardless of paint.
+    pointer-events: stroke;
+  }
+
+  // Chip tooltip shown at the hovered edge's midpoint.
+  &__edge-label {
+    pointer-events: none;
+
+    &-bg {
+      fill: var(--ok-surface, #1e1e24);
+      stroke: rgba(var(--ok-primary-rgb), 0.35);
+      stroke-width: 1;
+    }
+    &-text {
+      fill: var(--ok-on-surface);
+      font-size: 10px;
+      font-weight: 600;
+      font-family: inherit;
+    }
+
+    // Influential edges read with the main accent (--ok-primary) for emphasis.
+    // Background is fully opaque so edges/nodes never show through the chip.
+    &--influential {
+      .graph-svg__edge-label-bg {
+        fill: var(--ok-surface, #1e1e24);
+        fill-opacity: 1;
+        stroke: rgba(var(--ok-primary-rgb), 0.85);
+      }
+      .graph-svg__edge-label-text { fill: var(--ok-primary); }
+    }
   }
 
   &__node {
@@ -1483,12 +1651,17 @@
   }
 
   &__node-score {
-    fill: var(--ok-outline);
-    font-size: 10px;
-    font-weight: 700;
+    fill: #fff;
+    font-size: 11px;
+    font-weight: 800;
     font-family: inherit;
     pointer-events: none;
-    .graph-svg__node--selected & { fill: rgba(255, 255, 255, 0.8); }
+    // Dark halo so the score stays legible on top of any community colour.
+    paint-order: stroke;
+    stroke: rgba(0, 0, 0, 0.75);
+    stroke-width: 2.5px;
+    stroke-linejoin: round;
+    .graph-svg__node--selected & { fill: #fff; }
   }
 
   &__node-label {
@@ -1497,8 +1670,18 @@
     font-weight: 500;
     font-family: inherit;
     pointer-events: none;
+    // Soft halo in the canvas colour so the label stays legible over edges /
+    // neighbours — applied to both states so the truncated → full swap is seamless.
+    paint-order: stroke;
+    stroke: var(--ok-bg);
+    stroke-width: 3px;
+    stroke-linejoin: round;
     .graph-svg__node--dimmed & { fill: var(--ok-outline); }
   }
+
+  // Full title on hover / selection reuses .graph-svg__node-label verbatim — it is
+  // just wrapped across multiple <tspan> lines instead of a single truncated line,
+  // so the swap reads as the same label unfolding rather than a new element.
 
   // Concentric rings (one per representative level), drawn inside the node.
   &__ring {
@@ -1804,7 +1987,9 @@
   top: 50%;
   right: 360px;
   transform: translateY(-50%);
-  z-index: 21;
+  // Ride just above the detail panel (and thus above the feedback FAB) so the
+  // collapse/expand tab stays clickable on the panel's left edge.
+  z-index: 951;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1833,7 +2018,9 @@
   bottom: 0;
   width: 360px;
   max-width: 100%;
-  z-index: 20;
+  // Sit above the global feedback FAB (z-index 900, app root) so the panel's
+  // own actions (e.g. "Remove from OK-Graph") are never obscured by it.
+  z-index: 950;
   background: var(--ok-surface-container-low);
   border-left: 1px solid var(--ok-outline-variant);
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
@@ -1851,6 +2038,27 @@
     color: var(--ok-on-surface-variant);
     line-height: 1.5;
     margin: 0.5rem 0 0;
+  }
+
+  &__link-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    margin-bottom: 0.5rem;
+    padding: 0.55rem 0.85rem;
+    border: 1px solid var(--ok-primary, #6750a4);
+    border-radius: var(--ok-radius);
+    background: var(--ok-primary, #6750a4);
+    color: var(--ok-on-primary, #fff);
+    font-family: var(--ok-font-label);
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    transition: filter var(--ok-transition-fast);
+    &:hover { filter: brightness(1.08); }
   }
 
   &__remove-btn {
@@ -3096,5 +3304,24 @@
     font-size: 0.82rem;
     line-height: 1.45;
     color: var(--ok-on-surface-variant);
+  }
+
+  &__close {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    margin: -4px -4px 0 0;
+    border: none;
+    background: transparent;
+    border-radius: var(--ok-radius-sm);
+    color: var(--ok-on-surface-variant);
+    cursor: pointer;
+
+    .material-symbols-outlined { font-size: 18px; line-height: 1; }
+
+    &:hover { background: var(--ok-surface-container-highest); color: var(--ok-on-surface); }
   }
 }

@@ -133,6 +133,7 @@ class ScholarFilters(BaseModel):
     peer_reviewed_only: bool = False
     code_only: bool = False
     archetypes: list[str] | None = None  # None/empty = no archetype constraint
+    fields_of_study: list[str] | None = None  # None/empty = no field-of-study constraint
 
 
 class ScholarPageRequest(SearchRequest):
@@ -151,6 +152,20 @@ class ScholarPageResponse(BaseModel):
     has_more: bool                 # another page is available within the navigable window
     queries_used: dict[str, str] = {}
     result_cap: int                # max number of results reachable via paging
+
+
+class ScholarFacetsResponse(BaseModel):
+    """Field-of-study distribution across the whole (filtered) Scholar match set.
+
+    Counts come from an OpenSearch aggregation, so they reflect every match — not just the
+    loaded page. A paper may carry several fields (membership counts), and papers with no
+    field land in ``miscellaneous``.
+    """
+    fields: dict[str, int] = {}   # field name -> paper count
+    miscellaneous: int = 0        # papers with no field of study
+    total: int = 0                # total matches
+    year_min: int | None = None   # earliest year across the whole match set
+    year_max: int | None = None   # latest year across the whole match set
 
 
 class BackgroundProgress(BaseModel):

@@ -15,6 +15,24 @@ export interface ScholarFiltersPayload {
   peer_reviewed_only?: boolean;
   code_only?: boolean;
   archetypes?: string[] | null;
+  fields_of_study?: string[] | null;
+}
+
+/** NDJSON events from the Scholar classify stream (ok-score-ordered batches). */
+export type ScholarClassifyEvent =
+  | { type: 'distribution'; counts: Record<string, number>; classified: number; total: number }
+  | { type: 'archetypes'; data: Record<string, [string | null, string | null]> }
+  | { type: 'done'; counts: Record<string, number>; classified: number; total: number }
+  | { type: 'error'; detail: string };
+
+/** Field-of-study counts across the whole filtered match set (not just the loaded page). */
+export interface ScholarFacetsResponse {
+  fields: Record<string, number>;
+  miscellaneous: number;
+  total: number;
+  /** Earliest/latest year across the whole match set (null when no match has a year). */
+  year_min: number | null;
+  year_max: number | null;
 }
 
 /** One page of Scholar results plus the exact total match count. */
@@ -41,15 +59,21 @@ export class RetrievalService {
     return `${url}${url.includes('?') ? '&' : '?'}project_id=${id}`;
   }
 
+  /** @deprecated Live mode is deprecated and unreachable from the UI. Use {@link scholarSearchPage}. */
   search(request: SearchRequest): Observable<SearchResponse> {
     return this.http.post<SearchResponse>(`${this.baseUrl}/retrieval/search`, request);
   }
 
+  /** @deprecated Demo mode is deprecated and unreachable from the UI. Use {@link scholarSearchPage}. */
   demoSearch(request: SearchRequest): Observable<SearchResponse> {
     return this.http.post<SearchResponse>(`${this.baseUrl}/retrieval/demo/search`, request);
   }
 
-  /** Cost-bounded boolean search over the Semantic Scholar BigQuery corpus. */
+  /**
+   * @deprecated Buffered Scholar search — superseded by {@link scholarSearchPage} (paginated,
+   * non-blocking) + {@link scholarClassifyStream}. This endpoint classifies inline and is no
+   * longer called by the app. Kept only for reference.
+   */
   scholarSearch(request: SearchRequest): Observable<SearchResponse> {
     return this.http.post<SearchResponse>(`${this.baseUrl}/retrieval/scholar/search`, request);
   }
@@ -72,6 +96,93 @@ export class RetrievalService {
     );
   }
 
+  /**
+   * Field-of-study counts for a Scholar query across the whole filtered match set. The
+   * field-of-study selection is ignored server-side so every available field stays listed;
+   * other active filters apply. Used to populate the filter dropdown's counts + the
+   * Miscellaneous (no-field) bucket.
+   */
+  scholarFieldFacets(
+    request: SearchRequest,
+    sort: string,
+    filters: ScholarFiltersPayload,
+  ): Observable<ScholarFacetsResponse> {
+    return this.http.post<ScholarFacetsResponse>(
+      `${this.baseUrl}/retrieval/scholar/facets`,
+      { ...request, sort, filters },
+    );
+  }
+
+  /**
+   * Stream the archetype distribution for a Scholar query. The backend pages the whole
+   * match set in descending ok-score order, classifies each batch via the remote model,
+   * and emits NDJSON lines: a cumulative `distribution`, per-paper `archetypes`, and a
+   * terminal `done`. The result page subscribes to this to fill the distribution panel
+   * live, batch by batch.
+   */
+  scholarClassifyStream(
+    request: SearchRequest,
+    sort: string,
+    filters: ScholarFiltersPayload,
+  ): Observable<ScholarClassifyEvent> {
+    const body = JSON.stringify({ ...request, sort, filters });
+    return new Observable<ScholarClassifyEvent>(subscriber => {
+      const controller = new AbortController();
+
+      fetch(this.withProject(`${this.baseUrl}/retrieval/scholar/classify/stream`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        signal: controller.signal,
+      })
+        .then(response => {
+          if (!response.ok) {
+            subscriber.error(new Error(`HTTP ${response.status}`));
+            return;
+          }
+          const reader = response.body!.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+
+          const read = (): void => {
+            reader.read().then(({ done, value }) => {
+              if (done) {
+                subscriber.complete();
+                return;
+              }
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop() ?? '';
+
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+                try {
+                  subscriber.next(JSON.parse(trimmed) as ScholarClassifyEvent);
+                } catch {
+                  // skip non-JSON lines
+                }
+              }
+              read();
+            }).catch(err => {
+              if (err.name !== 'AbortError') subscriber.error(err);
+            });
+          };
+
+          read();
+        })
+        .catch(err => {
+          if (err.name !== 'AbortError') subscriber.error(err);
+        });
+
+      return () => controller.abort();
+    });
+  }
+
+  /**
+   * @deprecated Live-mode SSE search stream. Live mode is deprecated and unreachable from the
+   * UI; Scholar mode uses {@link scholarSearchPage} + {@link scholarClassifyStream} instead.
+   */
   searchStream(
     request: SearchRequest
   ): Observable<
@@ -157,6 +268,8 @@ export class RetrievalService {
    * Subscribe to background fetch progress via SSE.
    * Emits BackgroundProgress events as the background job continues paginating.
    * Also emits a final 'papers' event with the accumulated results.
+   *
+   * @deprecated Background fetch belongs to the deprecated live mode (see {@link searchStream}).
    */
   backgroundProgress(jobId: string): Observable<{ type: 'progress'; data: BackgroundProgress } | { type: 'papers'; data: { papers: Paper[]; total_background: number } }> {
     return new Observable(subscriber => {
@@ -230,6 +343,7 @@ export class RetrievalService {
     });
   }
 
+  /** @deprecated Cancels a deprecated live-mode background fetch (see {@link backgroundProgress}). */
   cancelBackground(jobId: string): Observable<{ status: string; job_id: string }> {
     return this.http.delete<{ status: string; job_id: string }>(
       `${this.baseUrl}/retrieval/background/${jobId}`

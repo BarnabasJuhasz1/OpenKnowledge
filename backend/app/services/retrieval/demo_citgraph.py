@@ -9,7 +9,15 @@ from pathlib import Path
 
 import pandas as pd
 
-from .citgraph_builder import CitGraphEdge, CitGraphNode, CitGraphResult, matches_keywords
+from .citgraph_builder import (
+    CitGraphEdge,
+    CitGraphNode,
+    CitGraphResult,
+    matches_keywords,
+    merge_cit_graph_results,
+    node_matches_filter,
+)
+from .boolean_query import compile_text_predicate
 
 logger = logging.getLogger(__name__)
 
@@ -275,8 +283,50 @@ class DemoCitGraphStore:
         k: int = 1,
         max_per_hop: int | None = None,
         top_k_per_paper: list[int | None] | int | None = None,
+        boolean_query: str | None = None,
+        node_filter: object | None = None,
+        directional_split: bool = False,
+    ) -> CitGraphResult:
+        """Explore the demo citation graph.
+
+        When ``directional_split`` (v2) is set and ``direction == 'both'``, the
+        graph is the union of a pure future cone and a pure past cone, so no node
+        is reachable by a path that mixes citation and reference hops (mirrors the
+        hosted builder). Otherwise the single-frontier traversal is used (v1).
+        """
+        if directional_split and direction == "both":
+            past = await self._explore_single(
+                seeds, "past", include_non_matching, keywords, k,
+                max_per_hop, top_k_per_paper, boolean_query, node_filter,
+            )
+            future = await self._explore_single(
+                seeds, "future", include_non_matching, keywords, k,
+                max_per_hop, top_k_per_paper, boolean_query, node_filter,
+            )
+            return merge_cit_graph_results(past, future)
+        return await self._explore_single(
+            seeds, direction, include_non_matching, keywords, k,
+            max_per_hop, top_k_per_paper, boolean_query, node_filter,
+        )
+
+    async def _explore_single(
+        self,
+        seeds: list[str],
+        direction: str,  # 'past', 'future', 'both'
+        include_non_matching: bool = True,
+        keywords: list[str] = [],
+        k: int = 1,
+        max_per_hop: int | None = None,
+        top_k_per_paper: list[int | None] | int | None = None,
+        boolean_query: str | None = None,
+        node_filter: object | None = None,
     ) -> CitGraphResult:
         index = await self._ensure_loaded()
+
+        # Advanced filter (boolean query + metadata) supersedes the legacy keyword path,
+        # mirroring the hosted traversal. Built once; empty/invalid query => match-all.
+        text_pred = compile_text_predicate(boolean_query) if boolean_query else None
+        advanced_filtering = text_pred is not None or node_filter is not None
 
         resolved_seeds = []
         for s in seeds:
@@ -309,7 +359,15 @@ class DemoCitGraphStore:
                 ):
                     if neighbour not in index.meta:
                         continue
-                    if not include_non_matching:
+                    if advanced_filtering:
+                        # Gate non-seed neighbours on the boolean query + metadata filter,
+                        # so a dropped node is never visited or expanded from on later hops.
+                        cand = self._node(index, neighbour, hop)
+                        if text_pred is not None and not text_pred(cand.title, cand.abstract):
+                            continue
+                        if node_filter is not None and not node_matches_filter(cand, node_filter):
+                            continue
+                    elif not include_non_matching:
                         m = index.meta[neighbour]
                         if not matches_keywords(m.get("title"), m.get("abstract"), keywords):
                             continue

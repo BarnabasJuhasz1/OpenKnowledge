@@ -131,9 +131,14 @@
           Seed paper
         </span>
       } @else {
-        <button class="card__graph-btn" (click)="addToGraph()" title="Mark as seed paper">
+        <button
+          class="card__graph-btn"
+          (click)="addToGraph()"
+          [disabled]="atSeedLimit"
+          [title]="atSeedLimit ? 'Seed limit reached (' + seedLimit + ')' : 'Mark as seed paper'"
+        >
           <span class="material-symbols-outlined card__graph-icon">eco</span>
-          Mark as seed paper
+          {{ atSeedLimit ? 'Seed limit reached' : 'Mark as seed paper' }}
         </button>
       }
       <button

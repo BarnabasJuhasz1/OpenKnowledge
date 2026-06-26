@@ -1,18 +1,23 @@
 <div class="composer">
-  <!-- Mode tabs: Keywords / Description / BibTeX -->
-  <div class="composer__tabs" role="tablist" aria-label="Research input mode">
-    @for (t of tabs; track t.id) {
-      <button
-        type="button"
-        role="tab"
-        class="composer__tab"
-        [class.composer__tab--active]="mode() === t.id"
-        [attr.aria-selected]="mode() === t.id"
-        (click)="setMode(t.id)"
-      >
-        {{ t.label }}
-      </button>
-    }
+  <!-- Header row: mode tabs on the left, data-source attribution on the right. -->
+  <div class="composer__header">
+    <!-- Mode tabs: Keywords / Description / BibTeX -->
+    <div class="composer__tabs" role="tablist" aria-label="Research input mode">
+      @for (t of tabs; track t.id) {
+        <button
+          type="button"
+          role="tab"
+          class="composer__tab"
+          [class.composer__tab--active]="mode() === t.id"
+          [attr.aria-selected]="mode() === t.id"
+          (click)="setMode(t.id)"
+        >
+          {{ t.label }}
+        </button>
+      }
+    </div>
+
+    <p class="composer__powered">Powered by Semantic Scholar</p>
   </div>
 
   <!-- Body: swaps with the selected mode -->

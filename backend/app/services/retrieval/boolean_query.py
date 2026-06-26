@@ -18,6 +18,7 @@ which binds tighter than ``OR``. Adjacent terms with no operator are an implicit
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 
 _OPERATORS = {"AND", "OR", "NOT"}
@@ -232,6 +233,46 @@ def parse_boolean_query(raw: str) -> object:
     if not tokens:
         raise BooleanQueryError("Query contains no search terms.")
     return _Parser(tokens).parse()
+
+
+# ── In-memory text predicate target ──────────────────────────────────────────
+# Same parser/AST, evaluated directly against a node's title+abstract text. Used by
+# the citation-graph filter (client/offline) which needs a `(title, abstract) -> bool`
+# predicate rather than a database query. A leaf term matches as a case-insensitive
+# substring of the combined "title abstract" haystack — mirroring match_phrase intent
+# (a contiguous phrase) and the existing `citgraph_builder.matches_keywords` convention.
+
+def _eval_node(node: object, haystack: str) -> bool:
+    if isinstance(node, _Term):
+        return node.text.lower() in haystack
+    if isinstance(node, _Not):
+        return not _eval_node(node.operand, haystack)
+    if isinstance(node, _BinOp):
+        left = _eval_node(node.left, haystack)
+        right = _eval_node(node.right, haystack)
+        return (left and right) if node.op == "AND" else (left or right)
+    raise BooleanQueryError("Internal error: unknown AST node.")
+
+
+def compile_text_predicate(raw: str) -> Callable[[str | None, str | None], bool]:
+    """Parse ``raw`` once and return a predicate matching a node's title+abstract.
+
+    An empty/whitespace query returns a match-everything predicate (filter no-op).
+    A syntactically invalid query also degrades to match-all so a malformed filter
+    never silently empties the graph — callers should validate the query separately
+    (e.g. surface a UI hint) if they want to reject bad input.
+    """
+    if not raw or not raw.strip():
+        return lambda title, abstract: True
+    try:
+        ast = parse_boolean_query(raw)
+    except BooleanQueryError:
+        return lambda title, abstract: True
+
+    def predicate(title: str | None, abstract: str | None) -> bool:
+        return _eval_node(ast, f"{title or ''} {abstract or ''}".lower())
+
+    return predicate
 
 
 def _node_to_opensearch(node: object, fields: tuple[str, ...]) -> dict:

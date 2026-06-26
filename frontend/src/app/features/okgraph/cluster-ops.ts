@@ -88,3 +88,75 @@ export function subclusterCommunities(
   }
   return [...subs];
 }
+
+/** Member count of each community in a level's base-node→community assignment. */
+function communitySizes(comm: readonly number[]): Map<number, number> {
+  const sizes = new Map<number, number>();
+  for (const c of comm) sizes.set(c, (sizes.get(c) ?? 0) + 1);
+  return sizes;
+}
+
+/**
+ * Natural, hierarchical display labels for every cluster in a Louvain dendrogram.
+ *
+ * `communitiesByLevel[level][i]` is base node `i`'s community at hierarchy `level`,
+ * for `level` 0 (finest) up to the top (coarsest, last entry). The returned array is
+ * indexed the same way: `result[level]` maps a community id at that level to its
+ * label.
+ *
+ * Numbering mirrors how the view is navigated, top-down:
+ *   - the top-level clusters are "1", "2", … in DESCENDING size order (the biggest
+ *     cluster is "1"), ties broken by ascending community id for stable output;
+ *   - the sub-clusters one level finer inside parent "k" are "k.1", "k.2", … again
+ *     by descending size within that parent — and so on, level by level, so a label
+ *     like "2.3.1" reads as the largest sub-sub-cluster of the 3rd sub-cluster of
+ *     the 2nd main cluster.
+ *
+ * The disconnected "Miscellaneous" top cluster (`miscTopCluster`, when present) is
+ * pulled out of the 1..n numbering — it carries its own name in the UI — and given
+ * the label "M" so any of its (rare) descendants still compose as "M.k".
+ *
+ * Labels are purely presentational; the numeric community ids stay the keys for
+ * colours, summaries and selection.
+ */
+export function hierarchicalClusterLabels(
+  communitiesByLevel: readonly (readonly number[])[],
+  miscTopCluster: number | null = null,
+): Map<number, string>[] {
+  const top = communitiesByLevel.length - 1;
+  const maps: Map<number, string>[] = communitiesByLevel.map(() => new Map<number, string>());
+  if (top < 0) return maps;
+
+  // Top level: number the non-misc clusters 1..n by descending size.
+  const topSizes = communitySizes(communitiesByLevel[top]);
+  const ranked = [...topSizes.keys()]
+    .filter(c => c !== miscTopCluster)
+    .sort((a, b) => (topSizes.get(b)! - topSizes.get(a)!) || (a - b));
+  ranked.forEach((c, i) => maps[top].set(c, String(i + 1)));
+  if (miscTopCluster != null) maps[top].set(miscTopCluster, 'M');
+
+  // Finer levels: number each cluster within its parent by descending size, so the
+  // label extends the parent's (e.g. parent "2" → children "2.1", "2.2", …).
+  for (let lvl = top - 1; lvl >= 0; lvl--) {
+    const comm = communitiesByLevel[lvl];
+    const parentComm = communitiesByLevel[lvl + 1];
+    const sizes = communitySizes(comm);
+    const parentOf = new Map<number, number>();
+    for (let i = 0; i < comm.length; i++) parentOf.set(comm[i], parentComm[i]);
+
+    const kidsByParent = new Map<number, number[]>();
+    for (const child of sizes.keys()) {
+      const parent = parentOf.get(child)!;
+      let arr = kidsByParent.get(parent);
+      if (!arr) { arr = []; kidsByParent.set(parent, arr); }
+      arr.push(child);
+    }
+
+    for (const [parent, kids] of kidsByParent) {
+      kids.sort((a, b) => (sizes.get(b)! - sizes.get(a)!) || (a - b));
+      const parentLabel = maps[lvl + 1].get(parent) ?? String(parent);
+      kids.forEach((c, i) => maps[lvl].set(c, `${parentLabel}.${i + 1}`));
+    }
+  }
+  return maps;
+}

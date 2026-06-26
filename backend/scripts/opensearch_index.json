@@ -17,6 +17,7 @@
       "title":                    { "type": "text", "analyzer": "english",
                                     "fields": { "kw": { "type": "keyword", "ignore_above": 512 } } },
       "abstract":                 { "type": "text", "analyzer": "english" },
+      "abstract_source":          { "type": "keyword" },
       "year":                     { "type": "integer" },
       "publicationdate":          { "type": "date", "ignore_malformed": true },
       "citationcount":            { "type": "integer" },

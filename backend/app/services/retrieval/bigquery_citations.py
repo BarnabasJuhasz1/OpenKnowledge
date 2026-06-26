@@ -84,26 +84,31 @@ class BigQueryCitationGraph:
     def _table(self, name: str) -> str:
         return f"`{self.dataset_ref}.{name}`"
 
-    def _run(self, table: str, partition_col: str, corpusids: list[int], cap: int) -> list[tuple[int, int]]:
-        """Run a capped edge lookup and return (citing, cited) tuples.
+    def _run(self, table: str, partition_col: str, corpusids: list[int], cap: int) -> list[tuple[int, int, bool]]:
+        """Run a capped edge lookup and return (citing, cited, is_influential) tuples.
 
         ``partition_col`` is the leading cluster column of ``table`` (so the scan is pruned)
-        and also the column the ``cap`` per-source limit partitions on.
+        and also the column the ``cap`` per-source limit partitions on. ``is_influential`` is
+        S2's per-edge "highly influential citation" flag (NULL is treated as ``False``).
         """
         if not corpusids:
             return []
         from google.cloud import bigquery
 
         other_col = "citedcorpusid" if partition_col == "citingcorpusid" else "citingcorpusid"
-        # Rank each source paper's edges by the *neighbour's* citation count (the ok-score
-        # proxy, denormalized into ``neighbor_citationcount`` on both edge tables) so the
-        # per-source ``cap`` keeps the top-K most-cited neighbours instead of an arbitrary
-        # id order. ``{other_col}`` is a deterministic tie-break.
+        # Rank each source paper's edges influential-first, then by the *neighbour's*
+        # citation count (the ok-score proxy, denormalized into ``neighbor_citationcount`` on
+        # both edge tables), so the per-source ``cap`` keeps the highly-influential neighbours
+        # plus the top non-influential ones — matching the builder's per-paper top-K priority.
+        # Without the leading ``isinfluential DESC`` a low-citation influential neighbour could
+        # be truncated out of the over-fetch buffer before the builder's Python sort sees it.
+        # ``{other_col}`` is a deterministic tie-break. ``isinfluential`` is already in the
+        # clustered tables, so ordering by it adds no scan cost.
         sql = (
-            f"SELECT citingcorpusid, citedcorpusid FROM {self._table(table)} "
+            f"SELECT citingcorpusid, citedcorpusid, isinfluential FROM {self._table(table)} "
             f"WHERE {partition_col} IN UNNEST(@ids) "
             f"QUALIFY ROW_NUMBER() OVER (PARTITION BY {partition_col} "
-            f"ORDER BY neighbor_citationcount DESC, {other_col}) <= @cap"
+            f"ORDER BY isinfluential DESC, neighbor_citationcount DESC, {other_col}) <= @cap"
         )
         job_config = bigquery.QueryJobConfig(
             query_parameters=[
@@ -114,23 +119,26 @@ class BigQueryCitationGraph:
         client = self._get_client()
         try:
             rows = client.query(sql, job_config=job_config).result()
-            return [(int(r["citingcorpusid"]), int(r["citedcorpusid"])) for r in rows]
+            return [
+                (int(r["citingcorpusid"]), int(r["citedcorpusid"]), bool(r["isinfluential"]))
+                for r in rows
+            ]
         except Exception as exc:
             raise BigQueryCitationsError(f"BigQuery citation lookup failed: {exc}") from exc
 
-    def references(self, corpusids: list[int], cap: int) -> list[tuple[int, int]]:
+    def references(self, corpusids: list[int], cap: int) -> list[tuple[int, int, bool]]:
         """Edges where the given papers are the *citing* side (their references / past).
 
-        Returns ``(citing, cited)`` tuples with ``citing`` in ``corpusids``, at most ``cap``
-        per citing paper.
+        Returns ``(citing, cited, is_influential)`` tuples with ``citing`` in ``corpusids``,
+        at most ``cap`` per citing paper.
         """
         return self._run(self.edges_table, "citingcorpusid", corpusids, cap)
 
-    def citations(self, corpusids: list[int], cap: int) -> list[tuple[int, int]]:
+    def citations(self, corpusids: list[int], cap: int) -> list[tuple[int, int, bool]]:
         """Edges where the given papers are the *cited* side (their citers / future).
 
-        Returns ``(citing, cited)`` tuples with ``cited`` in ``corpusids``, at most ``cap``
-        per cited paper.
+        Returns ``(citing, cited, is_influential)`` tuples with ``cited`` in ``corpusids``,
+        at most ``cap`` per cited paper.
         """
         return self._run(self.edges_by_cited_table, "citedcorpusid", corpusids, cap)
 

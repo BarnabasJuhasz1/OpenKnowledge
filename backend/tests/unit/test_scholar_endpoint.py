@@ -17,15 +17,19 @@ from app.services.retrieval.opensearch_search import (
 
 class _FakeEngine:
     def __init__(self, *, papers=None, raises=None, is_configured=True, iter_raises=None,
-                 total=None):
+                 total=None, ranked_ids=None, papers_by_id=None):
         self._papers = papers or []
         self._raises = raises
         self._iter_raises = iter_raises
         self._total = total
+        self._ranked_ids = ranked_ids or []
+        self._papers_by_id = papers_by_id or {}
         self.is_configured = is_configured
         self.last_query = None
         self.last_limit = "<unset>"
         self.last_page_args = None
+        self.last_ranked_args = None
+        self.last_facet_filters = None
 
     def search_page(self, boolean_query, *, offset, size, sort="relevancy", filters=None):
         self.last_query = boolean_query
@@ -35,6 +39,30 @@ class _FakeEngine:
         total = self._total if self._total is not None else len(self._papers)
         page = self._papers[offset:offset + size] if size > 0 else []
         return page, total
+
+    def ranked_corpusids(self, boolean_query, *, sort="relevancy", limit, filters=None):
+        self.last_query = boolean_query
+        self.last_ranked_args = {"sort": sort, "limit": limit, "filters": filters}
+        if self._raises is not None:
+            raise self._raises
+        ids = list(self._ranked_ids)
+        return ids[:limit], len(ids)
+
+    def field_facets(self, boolean_query, *, filters=None):
+        self.last_query = boolean_query
+        self.last_facet_filters = filters
+        if self._raises is not None:
+            raise self._raises
+        return {
+            "fields": {"Computer Science": 12, "Physics": 3},
+            "miscellaneous": 4,
+            "total": 19,
+            "year_min": 2001,
+            "year_max": 2024,
+        }
+
+    def fetch_nodes_by_corpusid(self, corpusids):
+        return {cid: self._papers_by_id[cid] for cid in corpusids if cid in self._papers_by_id}
 
     def search(self, boolean_query):  # legacy convenience; endpoints use iter_search now
         return list(self.iter_search(boolean_query))
@@ -183,6 +211,59 @@ def test_stream_midstream_error_emits_error_line(client, monkeypatch):
     assert "scroll boom" in records[-1]["detail"]
 
 
+# ── field-of-study facets (/facets) ───────────────────────────────────────────
+
+def test_facets_returns_field_counts_and_miscellaneous(client, monkeypatch):
+    engine = _FakeEngine()
+    _set_engine(monkeypatch, engine)
+
+    resp = client.post("/api/retrieval/scholar/facets", json={"keywords": ["LLM"]})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["fields"] == {"Computer Science": 12, "Physics": 3}
+    assert body["miscellaneous"] == 4
+    assert body["total"] == 19
+    # Year bounds come from the whole match set so the slider isn't capped to the loaded page.
+    assert body["year_min"] == 2001
+    assert body["year_max"] == 2024
+
+
+def test_facets_drops_field_and_archetype_filters(client, monkeypatch):
+    """The facet query must ignore the field + archetype selection so the option list isn't
+    pruned by the very selection it's meant to drive."""
+    engine = _FakeEngine()
+    _set_engine(monkeypatch, engine)
+
+    resp = client.post(
+        "/api/retrieval/scholar/facets",
+        json={
+            "keywords": ["LLM"],
+            "filters": {
+                "fields_of_study": ["Physics"],
+                "archetypes": ["The Analyst"],
+                "year_min": 2020,
+            },
+        },
+    )
+    assert resp.status_code == 200
+    assert engine.last_facet_filters.fields_of_study is None
+    assert engine.last_facet_filters.archetypes is None
+    # Other filters still apply.
+    assert engine.last_facet_filters.year_min == 2020
+
+
+def test_facets_empty_request_is_422(client, monkeypatch):
+    _set_engine(monkeypatch, _FakeEngine())
+    resp = client.post("/api/retrieval/scholar/facets", json={"keywords": []})
+    assert resp.status_code == 422
+
+
+def test_facets_not_configured_is_503(client, monkeypatch):
+    _set_engine(monkeypatch, _FakeEngine(raises=OpenSearchNotConfiguredError("no url")))
+    resp = client.post("/api/retrieval/scholar/facets", json={"keywords": ["LLM"]})
+    assert resp.status_code == 503
+
+
 # ── safety cap (_effective_limit) ─────────────────────────────────────────────
 
 def test_effective_limit_defaults_when_env_unset(monkeypatch):
@@ -289,6 +370,22 @@ def test_page_offset_and_sort_filters_forwarded(client, monkeypatch):
     assert args["filters"].open_access_only is True
 
 
+def test_page_forwards_fields_of_study_filter(client, monkeypatch):
+    papers = [Paper(title=f"P{i}") for i in range(5)]
+    engine = _FakeEngine(papers=papers, total=5)
+    _set_engine(monkeypatch, engine)
+
+    resp = client.post(
+        "/api/retrieval/scholar/search/page",
+        json={
+            "keywords": ["LLM"], "page": 1, "page_size": 10,
+            "filters": {"fields_of_study": ["Computer Science", "Medicine"]},
+        },
+    )
+    assert resp.status_code == 200
+    assert engine.last_page_args["filters"].fields_of_study == ["Computer Science", "Medicine"]
+
+
 def test_page_beyond_cap_is_empty_but_reports_total(client, monkeypatch):
     monkeypatch.setenv("SCHOLAR_MAX_RESULTS", "50")
     papers = [Paper(title=f"P{i}") for i in range(50)]
@@ -333,3 +430,105 @@ def test_page_not_configured_is_503(client, monkeypatch):
     _set_engine(monkeypatch, _FakeEngine(raises=OpenSearchNotConfiguredError("no url")))
     resp = client.post("/api/retrieval/scholar/search/page", json={"keywords": ["LLM"]})
     assert resp.status_code == 503
+
+
+def test_classify_stream_emits_growing_distribution(client, monkeypatch):
+    """The classify stream pages the match set and pushes a cumulative distribution."""
+    papers = [
+        Paper(title=f"p{i}", abstract="abstract text", citation_count=100 - i)
+        for i in range(5)
+    ]
+    engine = _FakeEngine(papers=papers)
+    _set_engine(monkeypatch, engine)
+    # Small batch so 5 papers span 3 pages (2 + 2 + 1).
+    monkeypatch.setattr(scholar_api, "_CLASSIFY_BATCH", 2)
+
+    async def fake_classify(batch):
+        for p in batch:
+            p.predicted_main_archetype = "The Innovator"
+
+    monkeypatch.setattr(scholar_api.archetype, "classify_papers", fake_classify)
+
+    resp = client.post("/api/retrieval/scholar/classify/stream", json={"keywords": ["LLM"]})
+    assert resp.status_code == 200
+
+    lines = _ndjson_lines(resp)
+    dist = [l for l in lines if l["type"] == "distribution"]
+    arch = [l for l in lines if l["type"] == "archetypes"]
+    done = [l for l in lines if l["type"] == "done"]
+
+    # Cumulative classified counts grow 2 -> 4 -> 5 across the three batches.
+    assert [d["classified"] for d in dist] == [2, 4, 5]
+    assert dist[-1]["counts"]["The Innovator"] == 5
+    assert dist[-1]["total"] == 5
+    assert arch, "expected per-paper archetype events"
+    assert len(done) == 1 and done[0]["classified"] == 5
+
+
+def test_classify_stream_empty_request_is_422(client, monkeypatch):
+    _set_engine(monkeypatch, _FakeEngine())
+    resp = client.post("/api/retrieval/scholar/classify/stream", json={"keywords": []})
+    assert resp.status_code == 422
+
+
+def test_classify_stream_not_configured_is_503(client, monkeypatch):
+    _set_engine(monkeypatch, _FakeEngine(is_configured=False))
+    resp = client.post("/api/retrieval/scholar/classify/stream", json={"keywords": ["LLM"]})
+    assert resp.status_code == 503
+
+
+# ── Server-side archetype filtering across the whole match set ──
+
+def test_page_archetype_filter_uses_cache_across_match_set(client, monkeypatch):
+    """An archetype subset filters the whole ranked match set via the classification cache,
+    returning only matching papers (correct total) with archetypes patched on."""
+    from app.services.archetype import cache as archetype_cache
+
+    archetype_cache.clear()
+    # Cache classifications for the ranked corpusids (as the classify stream would populate).
+    archetype_cache.put(archetype_cache.corpusid_key(1), "The Innovator", None)
+    archetype_cache.put(archetype_cache.corpusid_key(2), "The Evaluator", None)
+    archetype_cache.put(archetype_cache.corpusid_key(3), None, "The Innovator")
+    # cid 4 is ranked but never classified -> excluded from an archetype-filtered set.
+
+    papers_by_id = {
+        1: Paper(title="one", semantic_scholar_id="1"),
+        2: Paper(title="two", semantic_scholar_id="2"),
+        3: Paper(title="three", semantic_scholar_id="3"),
+        4: Paper(title="four", semantic_scholar_id="4"),
+    }
+    engine = _FakeEngine(ranked_ids=[1, 2, 3, 4], papers_by_id=papers_by_id)
+    _set_engine(monkeypatch, engine)
+
+    resp = client.post(
+        "/api/retrieval/scholar/search/page",
+        json={"keywords": ["LLM"], "filters": {"archetypes": ["The Innovator"]}},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+
+    # Only cids 1 (primary) and 3 (secondary) match The Innovator; 2 and 4 are excluded.
+    assert data["total_found"] == 2
+    titles = [p["title"] for p in data["papers"]]
+    assert titles == ["one", "three"]
+    assert data["papers"][0]["predicted_main_archetype"] == "The Innovator"
+    assert data["papers"][1]["predicted_second_tier_archetype"] == "The Innovator"
+    assert data["has_more"] is False
+    # The ranked scan must drop the archetype constraint (the index can't express it).
+    assert engine.last_ranked_args["filters"].archetypes is None
+
+    archetype_cache.clear()
+
+
+def test_page_without_archetype_filter_uses_index_path(client, monkeypatch):
+    """No archetype subset -> the fast from/size index path (search_page), not the scan."""
+    engine = _FakeEngine(papers=[Paper(title="A"), Paper(title="B")])
+    _set_engine(monkeypatch, engine)
+
+    resp = client.post(
+        "/api/retrieval/scholar/search/page",
+        json={"keywords": ["LLM"], "page_size": 10},
+    )
+    assert resp.status_code == 200
+    assert engine.last_page_args is not None       # index path was taken
+    assert engine.last_ranked_args is None         # scan path was not

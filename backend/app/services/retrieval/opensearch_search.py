@@ -68,6 +68,10 @@ def _env_bool(name: str, default: bool) -> bool:
 # must scroll. Kept conservative so we never trip the window even if the index lowers it.
 _MAX_RESULT_WINDOW = 10000
 
+# Synthetic field-of-study bucket for papers carrying no `fields_of_study`. Selecting it in
+# the filter matches docs where the field is absent; in facets it's the `missing` count.
+MISC_FIELD = "Miscellaneous"
+
 # Sentinel for "caller did not pass result_limit" — distinct from an explicit None, which
 # the caller may pass to mean "unlimited".
 _UNSET = object()
@@ -441,6 +445,29 @@ class OpenSearchEngine:
         if _attr("code_only"):
             clauses.append({"term": {"has_public_code": True}})
 
+        fields_of_study = _attr("fields_of_study")
+        if fields_of_study:
+            # OR semantics: a paper matches if it carries any of the selected fields. The
+            # synthetic `Miscellaneous` bucket selects papers with NO field of study (the
+            # `missing`/`must_not exists` case), so it can be combined with real fields.
+            selected = list(fields_of_study)
+            real = [f for f in selected if f != MISC_FIELD]
+            include_misc = MISC_FIELD in selected
+            missing_clause = {
+                "bool": {"must_not": {"exists": {"field": "fields_of_study"}}}
+            }
+            if real and include_misc:
+                clauses.append({
+                    "bool": {
+                        "should": [{"terms": {"fields_of_study": real}}, missing_clause],
+                        "minimum_should_match": 1,
+                    }
+                })
+            elif include_misc:
+                clauses.append(missing_clause)
+            elif real:
+                clauses.append({"terms": {"fields_of_study": real}})
+
         archetypes = _attr("archetypes")
         if archetypes:
             clauses.append({
@@ -472,6 +499,50 @@ class OpenSearchEngine:
         field, order = field_orders.get(sort, field_orders["relevancy"])
         return [{field: {"order": order, "missing": "_last"}}, tiebreak]
 
+    def _paged_query_and_sort(self, compiled: dict, filters, sort: str) -> tuple[dict, list[dict]]:
+        """Build the ``(query, sort)`` pair for a from/size page or ranked-id scan.
+
+        For ``relevancy`` the whole match set is ranked by the ok-score using a native
+        ``function_score`` (no Painless): ``log10(1 + citationcount)`` via a
+        ``field_value_factor`` with the ``log1p`` modifier, plus a ``+1`` weight when the
+        paper is peer-reviewed (``publication_types`` ∈ JournalArticle/Conference). The
+        functions are summed and ``boost_mode=replace`` drops the BM25 component, then we
+        sort by ``_score`` (with a ``corpusid`` tiebreaker for stable paging). This keeps
+        paging *globally* ok-score ordered while staying fast — the old citationcount-proxy
+        field sort partitioned windows by a different key than the client displayed.
+
+        Alpha note: this mirrors ``computeOkScore`` in the client exactly *for the alpha*.
+        The code/dataset/repo-star terms of the full ok-score are omitted here because those
+        fields are not backfilled in the live index (they would contribute 0 and force a
+        slow per-doc Painless script). ``log1p`` is base-10 ``log10(1 + value)``, matching
+        the client; ``missing: 0`` yields ``log10(1) = 0`` for docs without a citation count.
+
+        Every other sort (year/citations/title) is a plain field sort over the same bool query.
+        """
+        bool_query: dict = {"must": [compiled]}
+        filter_clauses = self._build_filters(filters)
+        if filter_clauses:
+            bool_query["filter"] = filter_clauses
+        base = {"bool": bool_query}
+        if sort == "relevancy":
+            query = {
+                "function_score": {
+                    "query": base,
+                    "functions": [
+                        {"field_value_factor": {
+                            "field": "citationcount", "modifier": "log1p", "missing": 0,
+                        }},
+                        {"filter": {"terms": {"publication_types": self._PEER_REVIEWED_TYPES}},
+                         "weight": 1.0},
+                    ],
+                    "score_mode": "sum",
+                    "boost_mode": "replace",
+                }
+            }
+            sort_clauses = [{"_score": {"order": "desc"}}, {"corpusid": {"order": "asc"}}]
+            return query, sort_clauses
+        return base, self._build_sort(sort)
+
     def search_page(
         self,
         boolean_query: str,
@@ -497,16 +568,13 @@ class OpenSearchEngine:
         """
         client = self._get_client()
         compiled = compile_to_opensearch(boolean_query)
-        bool_query: dict = {"must": [compiled]}
-        filter_clauses = self._build_filters(filters)
-        if filter_clauses:
-            bool_query["filter"] = filter_clauses
+        query, sort_clauses = self._paged_query_and_sort(compiled, filters, sort)
 
         body = {
-            "query": {"bool": bool_query},
+            "query": query,
             "from": offset,
             "size": size,
-            "sort": self._build_sort(sort),
+            "sort": sort_clauses,
             "_source": _SOURCE_FIELDS,
             "track_total_hits": True,
         }
@@ -525,6 +593,111 @@ class OpenSearchEngine:
             len(papers), total, offset, size, sort,
         )
         return papers, int(total)
+
+    def ranked_corpusids(
+        self,
+        boolean_query: str,
+        *,
+        sort: str = "relevancy",
+        limit: int,
+        filters=None,
+    ) -> tuple[list[int], int]:
+        """Ordered corpusids for the (filtered) match set, plus the total match count.
+
+        A lightweight ``_source=["corpusid"]`` query used to apply a filter the index can't
+        express directly (archetype membership, resolved from the classification cache): the
+        caller walks these ids in order, keeps the ones whose cached archetype matches, and
+        hydrates only the requested page. ``limit`` must stay within ``_MAX_RESULT_WINDOW``.
+
+        Returns ``(corpusids, total_matches)``.
+        """
+        client = self._get_client()
+        compiled = compile_to_opensearch(boolean_query)
+        query, sort_clauses = self._paged_query_and_sort(compiled, filters, sort)
+
+        body = {
+            "query": query,
+            "from": 0,
+            "size": max(0, min(limit, _MAX_RESULT_WINDOW)),
+            "sort": sort_clauses,
+            "_source": ["corpusid"],
+            "track_total_hits": True,
+        }
+        try:
+            resp = client.search(index=self.index, body=body)
+        except Exception as exc:
+            raise OpenSearchSearchError(f"OpenSearch ranked-id query failed: {exc}") from exc
+
+        hits = resp.get("hits", {})
+        total_raw = hits.get("total", 0)
+        total = total_raw.get("value", 0) if isinstance(total_raw, dict) else int(total_raw)
+        corpusids: list[int] = []
+        for h in hits.get("hits", []):
+            cid = h.get("_source", {}).get("corpusid")
+            if cid is not None:
+                corpusids.append(int(cid))
+        return corpusids, int(total)
+
+    def field_facets(self, boolean_query: str, *, filters=None) -> dict:
+        """Field-of-study counts across the whole (filtered) match set.
+
+        A ``size: 0`` aggregation request — so it scans no documents into memory — returning:
+          * ``fields``       — ``{field: doc_count}`` from a ``terms`` agg (a paper with
+            several fields contributes to each, so these are membership counts).
+          * ``miscellaneous`` — the ``missing`` count: papers carrying no field of study.
+          * ``total``        — exact total matches.
+          * ``year_min`` / ``year_max`` — the earliest / latest ``year`` across the whole
+            match set (``None`` when no match carries a year), so the year-range slider
+            bounds reflect every match rather than just the loaded page.
+
+        The caller should pass ``filters`` with ``fields_of_study=None`` so the field options
+        aren't pruned by the field selection itself (other filters still apply).
+
+        Raises:
+            BooleanQueryError / OpenSearchNotConfiguredError / OpenSearchSearchError.
+        """
+        client = self._get_client()
+        compiled = compile_to_opensearch(boolean_query)
+        bool_query: dict = {"must": [compiled]}
+        filter_clauses = self._build_filters(filters)
+        if filter_clauses:
+            bool_query["filter"] = filter_clauses
+
+        body = {
+            "query": {"bool": bool_query},
+            "size": 0,
+            "track_total_hits": True,
+            "aggs": {
+                # size 30 comfortably covers the 23 canonical S2 categories.
+                "fields": {"terms": {"field": "fields_of_study", "size": 30}},
+                "miscellaneous": {"missing": {"field": "fields_of_study"}},
+                "year_min": {"min": {"field": "year"}},
+                "year_max": {"max": {"field": "year"}},
+            },
+        }
+        try:
+            resp = client.search(index=self.index, body=body)
+        except Exception as exc:
+            raise OpenSearchSearchError(f"OpenSearch facet query failed: {exc}") from exc
+
+        aggs = resp.get("aggregations", {})
+        buckets = aggs.get("fields", {}).get("buckets", [])
+        counts = {b["key"]: int(b["doc_count"]) for b in buckets}
+        misc = int(aggs.get("miscellaneous", {}).get("doc_count", 0))
+        total_raw = resp.get("hits", {}).get("total", 0)
+        total = total_raw.get("value", 0) if isinstance(total_raw, dict) else int(total_raw)
+        # min/max aggs return {"value": <float|null>}; null when no match carries a year.
+        year_min_raw = aggs.get("year_min", {}).get("value")
+        year_max_raw = aggs.get("year_max", {}).get("value")
+        year_min = int(year_min_raw) if year_min_raw is not None else None
+        year_max = int(year_max_raw) if year_max_raw is not None else None
+        return {
+            "fields": counts,
+            "miscellaneous": misc,
+            "total": int(total),
+            "year_min": year_min,
+            "year_max": year_max,
+        }
 
     def _scan_all(self, client, query: dict, limit: int | None):
         """Scroll path: stream every match (or up to ``limit``) past the result window."""

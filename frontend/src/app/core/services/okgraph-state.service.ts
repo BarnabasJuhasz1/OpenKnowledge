@@ -3,7 +3,7 @@ import { CitGraphNode, CitGraphEdge } from './citgraph.service';
 import { louvain, LouvainResult } from '../../features/citgraph/louvain';
 import { LayoutEdge } from '../../features/okgraph/graph-layout';
 import { Paper } from '../models/paper.model';
-import { matchesNodeKeywords } from '../../shared/utils/keyword-match';
+import { compileNodePredicate } from '../../shared/utils/boolean-query';
 
 /** A node placed on the OK-Graph: the representative of a Louvain cluster. */
 export interface PlacedNode {
@@ -23,10 +23,12 @@ export interface HierarchyPayload {
   edges: CitGraphEdge[];      // citation edges (paper_id form), used to re-cluster a filtered subset
   resolution: number;         // Louvain params, so a re-cluster matches the original run
   maxLevels: number;
-  keywords: string[];         // flattened keyword query for title+abstract matching
+  keywords: string[];         // flattened keyword query (legacy; kept for any remaining consumers)
+  booleanQuery: string;       // boolean title+abstract query used for the keyword filter
   seedId: string;             // origin paper — always kept so the filter matches the Cit-Graph stage
   prefiltered: boolean;       // true → the Cit-Graph already dropped non-matching papers
   initialSeedIds?: string[];  // paper IDs initially selected to construct this graph
+  directionalSplit?: boolean; // true → graph built with the v2 "direction-pure cones" construction
 }
 
 /**
@@ -79,9 +81,19 @@ export class OkGraphStateService {
   readonly prefiltered = signal(false);
   /** Flattened keyword query; empty → nothing to filter (toggle disabled). */
   readonly keywords = signal<string[]>([]);
+  /** Boolean title+abstract query backing the keyword filter; empty → nothing to filter. */
+  readonly booleanQuery = signal<string>('');
 
   /** Paper IDs initially selected for constructing this graph. */
   readonly initialSeedIds = signal<Set<string>>(new Set());
+
+  /**
+   * True when the displayed graph was built with the v2 "direction-pure cones"
+   * construction. Gates v2-only layout behaviour (e.g. the seed-year column
+   * split), since the live `graphVersion` toggle reflects the *next* build, not
+   * the graph currently on screen.
+   */
+  readonly directionalSplit = signal(false);
 
   /**
    * The raw citation graph (base nodes + edges) the current hierarchy was built
@@ -113,6 +125,7 @@ export class OkGraphStateService {
     this.maxLevels = p.maxLevels;
     this.seedId = p.seedId;
     this.keywords.set(p.keywords);
+    this.booleanQuery.set(p.booleanQuery);
     this.prefiltered.set(p.prefiltered);
     // If the Cit-Graph already prefiltered, the OK-Graph filter starts on and
     // cannot be turned off (the discarded papers were never sent).
@@ -123,6 +136,8 @@ export class OkGraphStateService {
     } else {
       this.initialSeedIds.set(new Set(p.seedId ? [p.seedId] : []));
     }
+
+    this.directionalSplit.set(!!p.directionalSplit);
 
     this.nodes.set(p.nodes);
     this.louvain.set(p.louvain);
@@ -142,7 +157,7 @@ export class OkGraphStateService {
 
   /** Can the OK-Graph filter be toggled at all? */
   canToggleFilter(): boolean {
-    return !this.prefiltered() && this.keywords().length > 0;
+    return !this.prefiltered() && this.booleanQuery().trim().length > 0;
   }
 
   /**
@@ -152,8 +167,8 @@ export class OkGraphStateService {
    * on when the Cit-Graph already prefiltered.
    */
   setFilter(on: boolean): void {
-    if (this.prefiltered()) return;           // locked on
-    if (!this.keywords().length) return;      // nothing to filter
+    if (this.prefiltered()) return;                       // locked on
+    if (!this.booleanQuery().trim().length) return;       // nothing to filter
     if (on === this.filterActive()) return;
     this.filterActive.set(on);
 
@@ -162,10 +177,10 @@ export class OkGraphStateService {
       this.nodes.set(this.allNodes);
       this.louvain.set(this.originalLouvain);
     } else {
-      // Re-cluster the matching subset only.
-      const kw = this.keywords();
+      // Re-cluster the matching subset only, using the same boolean engine as search.
+      const pred = compileNodePredicate(this.booleanQuery());
       const kept = this.allNodes.filter(
-        n => n.paper_id === this.seedId || matchesNodeKeywords(n, kw),
+        n => n.paper_id === this.seedId || pred(n),
       );
       const indexOf = new Map(kept.map((n, i) => [n.paper_id, i]));
       const edges = this.allEdges
@@ -196,7 +211,9 @@ export class OkGraphStateService {
     this.filterActive.set(false);
     this.prefiltered.set(false);
     this.keywords.set([]);
+    this.booleanQuery.set('');
     this.initialSeedIds.set(new Set());
+    this.directionalSplit.set(false);
     this.rawGraph.set(null);
     this.allNodes = [];
     this.allEdges = [];

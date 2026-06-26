@@ -213,8 +213,9 @@
 
   &__archetypes-stack {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
     gap: 0.35rem;
     flex-shrink: 0;
   }
@@ -318,6 +319,19 @@
     &:hover {
       background: rgba(var(--ok-primary-rgb), 0.2);
       border-color: rgba(var(--ok-primary-rgb), 0.5);
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+      color: var(--ok-on-surface-variant);
+      border-color: var(--ok-outline-variant);
+      background: var(--ok-surface-container);
+    }
+
+    &:disabled:hover {
+      background: var(--ok-surface-container);
+      border-color: var(--ok-outline-variant);
     }
   }
 

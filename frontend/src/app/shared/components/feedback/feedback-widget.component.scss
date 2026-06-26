@@ -1,0 +1,270 @@
+:host {
+  display: contents;
+}
+
+.feedback-fab {
+  position: fixed;
+  right: var(--ok-space-4, 1rem);
+  bottom: var(--ok-space-4, 1rem);
+  z-index: 900;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 1.1rem;
+  border: 1px solid var(--ok-outline-variant);
+  border-radius: var(--ok-radius-full, 999px);
+  background: var(--ok-surface);
+  color: var(--ok-on-surface);
+  font-family: var(--ok-font-label);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 10px 28px -10px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition: background var(--ok-transition), border-color var(--ok-transition),
+    transform var(--ok-transition);
+
+  &:hover {
+    background: var(--ok-hover-overlay-strong, var(--ok-hover-overlay));
+    border-color: var(--ok-outline);
+    transform: translateY(-1px);
+  }
+  &:active { transform: translateY(0); }
+
+  .material-symbols-outlined { font-size: 20px; }
+}
+
+.feedback-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--ok-space-4, 1rem);
+  background: rgba(8, 11, 20, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: feedback-fade 0.18s ease-out;
+}
+
+.feedback-card {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 2rem 1.85rem 1.6rem;
+  border-radius: var(--ok-radius-lg, 18px);
+  background: var(--ok-surface);
+  border: 1px solid var(--ok-outline-variant);
+  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.45);
+  animation: feedback-pop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+
+  &__close {
+    position: absolute;
+    top: 0.85rem;
+    right: 0.85rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border: none;
+    border-radius: var(--ok-radius-full);
+    background: transparent;
+    color: var(--ok-on-surface-variant);
+    cursor: pointer;
+    transition: background var(--ok-transition), color var(--ok-transition);
+
+    &:hover {
+      background: var(--ok-hover-overlay);
+      color: var(--ok-on-surface);
+    }
+    .material-symbols-outlined { font-size: 20px; }
+  }
+
+  &__title {
+    margin: 0 0 0.3rem;
+    font-family: var(--ok-font-headline);
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--ok-on-surface);
+  }
+
+  &__subtitle {
+    margin: 0 0 1.1rem;
+    font-size: 0.9rem;
+    color: var(--ok-on-surface-variant);
+  }
+}
+
+.feedback-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 1.2rem;
+  padding: 0.25rem;
+  border-radius: var(--ok-radius-full, 999px);
+  background: var(--ok-surface-variant, var(--ok-hover-overlay));
+}
+
+.feedback-tab {
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.55rem 0.75rem;
+  border: none;
+  border-radius: var(--ok-radius-full, 999px);
+  background: transparent;
+  color: var(--ok-on-surface-variant);
+  font-family: var(--ok-font-label);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--ok-transition), color var(--ok-transition);
+
+  .material-symbols-outlined { font-size: 18px; }
+
+  &:hover { color: var(--ok-on-surface); }
+
+  &--active {
+    background: var(--ok-primary, #4f6bed);
+    color: var(--ok-on-primary, #fff);
+    box-shadow: 0 2px 8px -3px rgba(0, 0, 0, 0.35);
+  }
+}
+
+.feedback-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.feedback-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+
+  &__labelrow {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  &__label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--ok-on-surface);
+  }
+
+  &__count {
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--ok-on-surface-variant);
+    opacity: 0.8;
+    transition: color var(--ok-transition);
+
+    &--warn {
+      color: var(--ok-on-error-container, #d33);
+      opacity: 1;
+      font-weight: 600;
+    }
+  }
+
+  &__opt {
+    font-weight: 400;
+    color: var(--ok-on-surface-variant);
+  }
+
+  &__input {
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    border-radius: var(--ok-radius-md, 12px);
+    border: 1px solid var(--ok-outline-variant);
+    background: var(--ok-surface-variant, var(--ok-hover-overlay));
+    color: var(--ok-on-surface);
+    font-family: var(--ok-font-body, inherit);
+    font-size: 0.9rem;
+    transition: border-color var(--ok-transition), background var(--ok-transition);
+
+    &::placeholder { color: var(--ok-on-surface-variant); opacity: 0.7; }
+
+    &:focus {
+      outline: none;
+      border-color: var(--ok-primary, var(--ok-outline));
+      background: var(--ok-surface);
+    }
+  }
+
+  &__textarea {
+    resize: vertical;
+    min-height: 72px;
+  }
+}
+
+.feedback-note {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ok-on-surface-variant);
+  opacity: 0.85;
+}
+
+.feedback-error {
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--ok-radius-md, 12px);
+  background: var(--ok-error-container, rgba(220, 60, 60, 0.12));
+  color: var(--ok-on-error-container, #d33);
+  font-size: 0.82rem;
+}
+
+.feedback-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 0.3rem;
+}
+
+.feedback-btn {
+  padding: 0.6rem 1.2rem;
+  border-radius: var(--ok-radius-full, 999px);
+  font-family: var(--ok-font-label);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--ok-transition), border-color var(--ok-transition),
+    transform var(--ok-transition), opacity var(--ok-transition);
+
+  &:disabled { opacity: 0.55; cursor: not-allowed; }
+
+  &--ghost {
+    border: 1px solid var(--ok-outline-variant);
+    background: transparent;
+    color: var(--ok-on-surface);
+
+    &:not(:disabled):hover { background: var(--ok-hover-overlay); }
+  }
+
+  &--primary {
+    border: 1px solid transparent;
+    background: var(--ok-primary, #4f6bed);
+    color: var(--ok-on-primary, #fff);
+
+    &:not(:disabled):hover { transform: translateY(-1px); }
+    &:not(:disabled):active { transform: translateY(0); }
+  }
+}
+
+@keyframes feedback-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes feedback-pop {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}

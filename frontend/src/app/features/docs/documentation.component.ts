@@ -21,7 +21,7 @@ export class DocumentationComponent {
     {
       icon: 'search',
       title: 'Research',
-      body: 'Query OpenAlex, Semantic Scholar, arXiv, PubMed, DBLP, CrossRef, Europe PMC and CORE at once. Results are deduplicated across sources and streamed in as each database responds.',
+      body: 'Run a boolean search over the Semantic Scholar corpus. Results are ranked by OK-score and paginated as you browse. (This alpha searches Semantic Scholar; more sources are planned.)',
     },
     {
       icon: 'analytics',

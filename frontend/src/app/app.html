@@ -14,6 +14,9 @@
   </div>
 </div>
 
+<!-- Global feedback launcher + form (bug report / feature request) -->
+<app-feedback-widget />
+
 <!-- Toast notifications -->
 @for (toast of notifications.toasts(); track toast.id) {
   <div class="toast" (click)="notifications.dismiss(toast.id)">

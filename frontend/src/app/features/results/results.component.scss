@@ -63,6 +63,18 @@
     font-size: 0.95rem;
   }
 
+  // ── Filters narrowed real matches down to zero ──
+  &__filtered-empty {
+    margin-top: var(--ok-space-8);
+    padding: var(--ok-space-8) var(--ok-space-5);
+    text-align: center;
+    color: var(--ok-on-surface-variant);
+    font-size: 0.95rem;
+    border: 1px dashed var(--ok-outline-variant);
+    border-radius: var(--ok-radius);
+    background: var(--ok-surface-container);
+  }
+
   // ── Empty "no results yet" prompt ──
   &__welcome {
     flex: 1 1 auto;
@@ -414,10 +426,14 @@ app-results-meta {
   grid-template-columns: 220px 1fr;
   gap: var(--ok-space-4);
 
+  // The left column itself does not scroll; the Archetypes distribution panel
+  // stays pinned at the top and only the "Filters & Sort" panel scrolls (see
+  // .sidebar in filters-sidebar.component.scss).
   &__sidebar {
     min-height: 0;
-    overflow-y: auto;
-    padding-bottom: var(--ok-space-4);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
   &__content {
@@ -473,7 +489,8 @@ app-results-meta {
     grid-template-columns: 1fr;
 
     &__sidebar {
-      overflow-y: visible;
+      display: block;
+      overflow: visible;
     }
 
     &__content app-paper-list {
@@ -493,4 +510,78 @@ app-results-meta {
       font-size: 1.5rem;
     }
   }
+}
+
+// ── On-demand archetype-classifier cold-start notice ──
+// Floating card mirroring the OK-Graph summarization warm-up notice, shown while the
+// archetype classifier is cold-starting. Independent of that notice.
+.results-warmup {
+  position: fixed;
+  right: var(--ok-space-5, 20px);
+  bottom: var(--ok-space-5, 20px);
+  z-index: 3100;
+  display: flex;
+  gap: var(--ok-space-3, 12px);
+  align-items: flex-start;
+  max-width: 360px;
+  padding: var(--ok-space-4, 16px);
+  background: var(--ok-glass-bg-floating, var(--ok-surface-container-high));
+  backdrop-filter: blur(var(--ok-glass-blur-floating, 12px));
+  border: 1px solid var(--ok-glass-border, var(--ok-outline-variant));
+  border-radius: var(--ok-radius-lg, 16px);
+  box-shadow: var(--ok-shadow-primary, 0 8px 24px rgba(0, 0, 0, 0.25));
+  color: var(--ok-on-surface);
+
+  &__icon {
+    flex: 0 0 auto;
+    font-size: 22px;
+    line-height: 1.2;
+    color: var(--ok-primary);
+    animation: results-warmup-pulse 2.4s ease-in-out infinite;
+  }
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ok-space-1, 4px);
+  }
+
+  &__title {
+    font-family: var(--ok-font-label, inherit);
+    font-weight: 600;
+    font-size: 0.92rem;
+    color: var(--ok-on-surface);
+  }
+
+  &__text {
+    margin: 0;
+    font-family: var(--ok-font-body, inherit);
+    font-size: 0.82rem;
+    line-height: 1.45;
+    color: var(--ok-on-surface-variant);
+  }
+
+  &__close {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    margin: -4px -4px 0 0;
+    border: none;
+    background: transparent;
+    border-radius: var(--ok-radius-sm);
+    color: var(--ok-on-surface-variant);
+    cursor: pointer;
+
+    .material-symbols-outlined { font-size: 18px; line-height: 1; }
+
+    &:hover { background: var(--ok-surface-container-highest); color: var(--ok-on-surface); }
+  }
+}
+
+@keyframes results-warmup-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
 }

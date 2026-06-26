@@ -1,6 +1,16 @@
 import { Injectable, computed, signal } from '@angular/core';
 
-export type SearchMode = 'scholar' | 'live' | 'demo';
+/**
+ * Retrieval mode.
+ *
+ * Only `'scholar'` is in active use — it is the default and the only mode reachable
+ * from the UI (there is no mode-selector component). `'live'` and `'demo'` are
+ * **DEPRECATED**: kept for reference / possible future revival, but unselectable and
+ * unsupported. Do not build new features against them.
+ *
+ * @see SEARCH_MODE_OPTIONS
+ */
+export type SearchMode = 'scholar' | /** @deprecated unselectable, unsupported */ 'live' | /** @deprecated unselectable, unsupported */ 'demo';
 
 const STORAGE_KEY = 'ok_search_mode';
 const LEGACY_DEMO_KEY = 'ok_demo_mode';
@@ -12,10 +22,16 @@ export interface SearchModeOption {
   hint: string;
 }
 
+/**
+ * Selectable retrieval modes. Currently scholar-only: there is no mode-selector UI,
+ * so this list is effectively reference data. The `'live'` and `'demo'` options are
+ * intentionally omitted — those modes are deprecated and must not be offered to users.
+ */
 export const SEARCH_MODE_OPTIONS: SearchModeOption[] = [
   { id: 'scholar', label: 'Semantic Scholar', hint: 'Boolean search over the Semantic Scholar corpus' },
-  { id: 'live', label: 'Live APIs', hint: 'Query OpenAlex, arXiv, PubMed and more in real time' },
-  { id: 'demo', label: 'Demo', hint: 'Bundled sample dataset — no network required' },
+  // DEPRECATED — do not re-add to the UI:
+  //   { id: 'live', label: 'Live APIs', hint: 'Query OpenAlex, arXiv, PubMed and more in real time' },
+  //   { id: 'demo', label: 'Demo', hint: 'Bundled sample dataset — no network required' },
 ];
 
 /**
@@ -27,7 +43,9 @@ export class SearchModeService {
   readonly mode = signal<SearchMode>(this.loadInitial());
 
   readonly isScholar = computed(() => this.mode() === 'scholar');
+  /** @deprecated Live mode is unselectable/unsupported; always false in practice. */
   readonly isLive = computed(() => this.mode() === 'live');
+  /** @deprecated Demo mode is unselectable/unsupported; always false in practice. */
   readonly isDemo = computed(() => this.mode() === 'demo');
 
   setMode(next: SearchMode): void {

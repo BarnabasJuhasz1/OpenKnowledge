@@ -1,4 +1,4 @@
-import { AfterViewInit, Component, ElementRef, HostListener, NgZone, OnDestroy, OnInit, QueryList, ViewChildren, computed, effect, inject, signal, untracked } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, HostListener, NgZone, OnDestroy, OnInit, QueryList, ViewChild, ViewChildren, computed, effect, inject, signal, untracked } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -8,18 +8,23 @@ import { getCommunitiesAtLevel, louvain } from '../citgraph/louvain';
 import { Paper, ScoreWeights } from '../../core/models/paper.model';
 import { citNodeToPaper, okScore } from './cit-node';
 import { clusterColor, lighten, withAlpha, blendColors, MISC_COLOR } from './community-colors';
-import { edgePath as buildEdgePath, LayoutEdge, TOP_PADDING, orderLanesByConnectivity, citationLinksBetweenPlaced } from './graph-layout';
+import { edgePath as buildEdgePath, wavyEdgePath as buildWavyEdgePath, LayoutEdge, TOP_PADDING, orderLanesByConnectivity, citationLinksBetweenPlaced } from './graph-layout';
+import { computeSeedYearSplit, SeedRole } from './seed-year-split';
 import { yearExpandQueues, middleYears, nearestOutwardYear } from './year-expand';
-import { baseIdsInCluster, subclusterCount, subclusterCommunities } from './cluster-ops';
+import { baseIdsInCluster, subclusterCount, subclusterCommunities, hierarchicalClusterLabels } from './cluster-ops';
+import { seedsOnlyGuardMessage } from './graph-build-guard';
 import { getArchetypeIcon } from '../../shared/utils/archetype-icons';
 import { SearchStateService, paperId } from '../../core/services/search-state.service';
+import { GraphFilterService } from '../../core/services/graph-filter.service';
+import { GraphPostFilterService } from '../../core/services/graph-post-filter.service';
+import { GraphFiltersPopupComponent } from './graph-filters-popup/graph-filters-popup.component';
+import { InGraphFilterPanelComponent } from './in-graph-filter-panel/in-graph-filter-panel.component';
 import { CitGraphService, CitGraphNode, CitGraphEdge } from '../../core/services/citgraph.service';
 import { SearchModeService } from '../../core/services/search-mode.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { parseQuery } from '../../shared/utils/query-parser';
-import { matchesNodeKeywords } from '../../shared/utils/keyword-match';
 import { ProjectContextService } from '../../core/services/project-context.service';
-import { ADMIN_GRAPH_CONFIG } from '../../core/config/admin-graph-config';
+import { ADMIN_GRAPH_CONFIG, ADMIN_GRAPH_CONFIG_V2, INFLUENTIAL_CITATIONS_ONLY } from '../../core/config/admin-graph-config';
 import { ProjectScoringService } from '../../core/services/project-scoring.service';
 import { BookshelfService, BookshelfItem } from '../../core/services/bookshelf.service';
 import { RetrievalService } from '../../core/services/retrieval.service';
@@ -95,16 +100,31 @@ interface TransitionState {
 }
 
 const YEAR_GAP = 180;
+const SUBLANE_GAP = 110;       // horizontal gap between sub-columns of a v2 split year
 const LEFT_PADDING = 80;
 const LANE_NODE_VGAP = 64;     // vertical gap between stacked nodes in one lane
 const LANE_MIN_HEIGHT = 220;
 const LANE_PAD = 40;           // extra vertical breathing room per lane
+// Blob padding around the node-centre extent of a cluster (also gates how far
+// apart two stacked clusters must sit so their blobs never overlap).
+const BLOB_PAD_X = 38;
+const BLOB_PAD_TOP = 40;
+const BLOB_PAD_BOTTOM = 50;
+// Fixed-level layout: vertical spacing between adjacent cluster levels (must
+// exceed BLOB_PAD_TOP + BLOB_PAD_BOTTOM so neighbouring blobs never overlap).
+const BAND_SPACING = 160;
+// Half-height the cluster blobs neck down to where a seed's vertical line crosses
+// them, so the bands merge into (and back out of) the seed paper.
+const SEED_PINCH_HALF = 26;
+// How far off either end of a cluster's x-span a seed line can sit and still pull
+// the band into it (so clusters that start/end near the seed also emanate from it).
+const MERGE_REACH = 260;
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 @Component({
   selector: 'app-ok-graph',
   standalone: true,
-  imports: [DecimalPipe, FormsModule],
+  imports: [DecimalPipe, FormsModule, GraphFiltersPopupComponent, InGraphFilterPanelComponent],
   templateUrl: './okgraph.component.html',
   styleUrl: './okgraph.component.scss',
 })
@@ -121,11 +141,32 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
   private readonly router = inject(Router);
   private readonly bookshelf = inject(BookshelfService);
   private readonly retrieval = inject(RetrievalService);
+  readonly graphFilter = inject(GraphFilterService);
+  readonly postFilter = inject(GraphPostFilterService);
+
+  /** Whether the left-side in-graph (post-construction) filter panel is open. */
+  readonly inGraphFilterOpen = signal(false);
+  toggleInGraphFilter(): void { this.inGraphFilterOpen.update(v => !v); }
+  closeInGraphFilter(): void { this.inGraphFilterOpen.set(false); }
 
   // Setup options
   readonly useOnlySelected = signal(true);
-  readonly keywordFiltering = signal(false);
+  /** Max seed papers allowed on the graph (configurable via SEED_LIMIT) + whether
+   *  capacity remains, surfaced to the template for the "Seed (X/Y)" label and to
+   *  gate the add controls. */
+  readonly seedLimit = this.searchState.seedLimit;
+  readonly canAddSeed = this.searchState.canAddSeed;
+  /** Alias of the shared graph-filter keyword toggle, so build paths and the
+   *  post-build in-graph filter read one source of truth. */
+  readonly keywordFiltering = this.graphFilter.keywordFilterActive;
+  /** Whether the metadata-filter popup is open. */
+  readonly metadataPopupOpen = signal(false);
   readonly savedItems = signal<BookshelfItem[]>([]);
+
+  /** Handle an edit to the boolean keyword query input (marks it user-owned). */
+  onBooleanQueryInput(value: string): void {
+    this.graphFilter.setBooleanQuery(value);
+  }
 
   // --- Seed source pickers (Seed mode only) ---
   // Which bottom-middle picker popover is open, if any.
@@ -190,8 +231,8 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
   addTitleResult(paper: Paper): void {
     if (this.searchState.isInGraph(paper)) {
       this.searchState.removeFromGraph(paperId(paper));
-    } else {
-      this.searchState.addExternalGraphPapers([paper]);
+    } else if (this.searchState.addExternalGraphPapers([paper]) === 0) {
+      this.notify.show(`Seed limit reached (${this.seedLimit}). Remove a seed paper to add another.`);
     }
   }
 
@@ -207,6 +248,9 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
   // The on-graph cluster cards (one per lane). Watched so each is measured for
   // its content-driven height (see measureCards).
   @ViewChildren('laneBoxEl') laneBoxEls?: QueryList<ElementRef<HTMLElement>>;
+
+  // The graph SVG, used to measure the viewport when auto-centring on the seed.
+  @ViewChild('graphSvgEl') graphSvgEl?: ElementRef<SVGSVGElement>;
 
   ngOnInit(): void {
     this.loadBookshelf();
@@ -236,6 +280,7 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    if (this.centerRafId != null) cancelAnimationFrame(this.centerRafId);
     this.cardResizeObserver?.disconnect();
     this.stopElapsedTimer();
     if (this.progressIntervalId) {
@@ -298,8 +343,8 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     const id = paperId(paper);
     if (this.searchState.graphPaperIds().has(id)) {
       this.searchState.removeFromGraph(id);
-    } else {
-      this.searchState.addToGraph(paper);
+    } else if (!this.searchState.addToGraph(paper)) {
+      this.notify.show(`Seed limit reached (${this.seedLimit}). Remove a seed paper to add another.`);
     }
   }
 
@@ -409,6 +454,21 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     this.selectedDirection.update(cur => (cur === direction ? null : direction));
   }
 
+  /**
+   * Which ok-graph construction to use (seed mode only):
+   *  - 'v1': the current K-hop neighbourhood expanded in every direction each
+   *    hop (citation/reference hops mix along a path).
+   *  - 'v2': direction-pure cones — a pure future cone (citations only, every
+   *    hop) and a pure past cone (references only, every hop), unioned; no node
+   *    is reached by a mixed citation/reference path. Maps to the backend's
+   *    `directional_split` flag. Defaults to v2 (direction-pure cones).
+   */
+  readonly graphVersion = signal<'v1' | 'v2'>('v2');
+
+  selectGraphVersion(version: 'v1' | 'v2'): void {
+    this.graphVersion.set(version);
+  }
+
   /** True once the user can proceed: a direction is chosen and seeds exist. */
   readonly canExplore = computed(() => this.selectedDirection() !== null && this.hasSourcePapers());
 
@@ -464,10 +524,32 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   exploreSurrounding(direction: 'past' | 'future' | 'both'): void {
-    const seeds = this.useOnlySelected() ? this.selectedPapers() : this.searchState.filteredPapers();
-    if (!seeds.length) {
+    const useSelected = this.useOnlySelected();
+    const rawSeeds = useSelected ? this.selectedPapers() : this.searchState.filteredPapers();
+    if (!rawSeeds.length) {
       this.notify.show('No seed papers available to build from.');
       return;
+    }
+
+    let seeds: Paper[];
+    if (useSelected) {
+      // Seed papers are EXEMPT from the active graph filter — the user hand-picked
+      // them, so they are always included regardless of the keyword / metadata filter.
+      // The filter only gates the expanded (non-seed) neighbours, enforced on the
+      // backend (see citgraph_builder._traverse, which already exempts seeds). The
+      // seeds-only guard below then refuses a graph that ends up with nothing else.
+      seeds = rawSeeds;
+    } else {
+      // 'All retrieved papers' mode has no seed/neighbour distinction: every node is a
+      // retrieved paper, so the active filter applies to all of them. Seeds carry full
+      // metadata, so the seed-scope predicate enforces code / peer-reviewed / archetype
+      // too (see GraphFilterService.nodePredicate).
+      const keep = this.graphFilter.nodePredicate(true);
+      seeds = rawSeeds.filter(p => keep(p));
+      if (!seeds.length) {
+        this.notify.show('No papers pass the active filter.');
+        return;
+      }
     }
 
     this.explorationProgress.set({
@@ -485,7 +567,17 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     // is intentionally no UI control or per-project override here. The config
     // is split per construction mode: 'seed' (expand from selected seeds) vs
     // 'all' (build from every retrieved paper).
-    const cfg = ADMIN_GRAPH_CONFIG[this.useOnlySelected() ? 'seed' : 'all'];
+    // v2 ('both' only) builds two direction-pure cones, each receiving the
+    // per-paper / per-hop caps in full and independently, whereas v1's mixed
+    // 'both' traversal shares one budget across references and citations. So v2
+    // uses its own budget-matched config (ADMIN_GRAPH_CONFIG_V2 — the v1 caps
+    // halved) instead of ADMIN_GRAPH_CONFIG. Guard on direction === 'both' to
+    // mirror the backend, where directional_split is a no-op for single-direction
+    // builds (v2 === v1, so the v1 config applies).
+    const splitV2 = this.graphVersion() === 'v2' && direction === 'both';
+    const cfg = (splitV2 ? ADMIN_GRAPH_CONFIG_V2 : ADMIN_GRAPH_CONFIG)[
+      this.useOnlySelected() ? 'seed' : 'all'
+    ];
     const kHops = cfg.K_HOPS;
     const maxPerHop = cfg.MAX_PER_HOP;
     const topKPerPaper = cfg.TOP_K_PER_PAPER;
@@ -548,16 +640,11 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
         }
       }
 
-      let finalNodes = nodes;
-      let finalEdges = edges;
-      const hasKeywords = keywords.length > 0;
-      if (this.keywordFiltering() && hasKeywords) {
-        finalNodes = nodes.filter(
-          n => matchesNodeKeywords(n, keywords)
-        );
-        const kept = new Set(finalNodes.map(n => n.paper_id));
-        finalEdges = edges.filter(e => kept.has(e.source) && kept.has(e.target));
-      }
+      // Seeds were already filtered up front (this whole path is client-side with no
+      // expansion), so every node here passes the active filter — nothing more to prune.
+      const finalNodes = nodes;
+      const finalEdges = edges;
+      const booleanQuery = this.graphFilter.keywordFilterEffective() ? this.graphFilter.booleanQuery() : '';
 
       this.explorationProgress.set({
         phase: 'clustering',
@@ -593,9 +680,11 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
         resolution: resolution,
         maxLevels: 10,
         keywords,
+        booleanQuery,
         seedId: '',
-        prefiltered: this.keywordFiltering() && hasKeywords,
+        prefiltered: booleanQuery.length > 0,
         initialSeedIds: [],
+        directionalSplit: false, // client-side 'all' build is never v2 (seed-mode only)
       });
 
       this.notify.show(`Successfully built surrounding graph with ${finalNodes.length} nodes!`);
@@ -617,25 +706,31 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     }, 500);
 
+    // The boolean keyword query + metadata filter gate every expanded node on the
+    // backend (non-matching neighbours are never added or expanded). When a boolean
+    // query is active it supersedes the legacy keyword path, so we neutralise that
+    // path (keywords: [] + include_non_matching: true) and send the boolean query.
+    const backendBooleanQuery = this.graphFilter.backendBooleanQuery();
+    const backendNodeFilter = this.graphFilter.backendNodeFilter();
+    const exploreReq = {
+      paper_ids: seedIds,
+      direction,
+      include_non_matching: backendBooleanQuery ? true : !this.keywordFiltering(),
+      keywords: backendBooleanQuery ? [] : keywords,
+      boolean_query: backendBooleanQuery,
+      node_filter: backendNodeFilter,
+      k: kHops,
+      max_per_hop: maxPerHop,
+      top_k_per_paper: topKPerPaper,
+      influential_only: INFLUENTIAL_CITATIONS_ONLY,
+      // v2 construction: union of direction-pure cones (no mixed citation/
+      // reference paths). Only meaningful with direction 'both'; v1 is the
+      // mixed K-hop neighbourhood. Seed mode only — see graphVersion.
+      directional_split: this.graphVersion() === 'v2',
+    };
     const req = this.mode.isDemo()
-      ? this.citgraphSvc.exploreDemo({
-          paper_ids: seedIds,
-          direction,
-          include_non_matching: !this.keywordFiltering(),
-          keywords,
-          k: kHops,
-          max_per_hop: maxPerHop,
-          top_k_per_paper: topKPerPaper
-        })
-      : this.citgraphSvc.explore({
-          paper_ids: seedIds,
-          direction,
-          include_non_matching: !this.keywordFiltering(),
-          keywords,
-          k: kHops,
-          max_per_hop: maxPerHop,
-          top_k_per_paper: topKPerPaper
-        });
+      ? this.citgraphSvc.exploreDemo(exploreReq)
+      : this.citgraphSvc.explore(exploreReq);
 
     if (this.exploreSub) {
       this.exploreSub.unsubscribe();
@@ -651,12 +746,20 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
         const baseNodes = res.nodes;
         const edges = res.edges;
 
-        if (!baseNodes.length) {
+        // The ok-graph must contain at least one expanded (non-seed) paper — a graph of
+        // nothing but the hand-picked seeds carries no discovery value. If the filters
+        // (or a lack of citation links) left us with only seeds, refuse to build and
+        // tell the user; when a filter is active, point them at loosening it.
+        const filtering = this.graphFilter.keywordFilterEffective()
+          || (this.graphFilter.metadataFilterActive() && this.graphFilter.hasActiveMetadataFilter());
+        const guardMsg = seedsOnlyGuardMessage(baseNodes, filtering);
+        if (guardMsg) {
           this.explorationProgress.set({
             phase: 'error',
             percent: 0,
-            error: 'An unexpected error occurred.'
+            error: guardMsg,
           });
+          this.notify.show(guardMsg);
           return;
         }
 
@@ -691,6 +794,7 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
           clustersCount,
         });
 
+        const booleanQuery = this.graphFilter.keywordFilterEffective() ? this.graphFilter.booleanQuery() : '';
         this.state.setHierarchy({
           nodes: baseNodes,
           louvain: louvainResult,
@@ -698,9 +802,11 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
           resolution: resolution,
           maxLevels: 10,
           keywords,
+          booleanQuery,
           seedId: res.seed_id || (baseNodes[0]?.paper_id ?? ''),
-          prefiltered: this.keywordFiltering() && keywords.length > 0,
+          prefiltered: booleanQuery.length > 0,
           initialSeedIds: seedIds,
+          directionalSplit: splitV2, // v2 "direction-pure cones" build → enable seed-year split
         });
 
         this.notify.show(`Successfully built surrounding graph with ${baseNodes.length} nodes!`);
@@ -870,6 +976,9 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
   readonly showGoldStars = signal(true);
   readonly showSilverStars = signal(true);
   readonly showSeedMarkers = signal(true);
+  // When on (default), every influential-citation edge is drawn with a gold
+  // glow (instead of a text badge) so it reads as "highly influential".
+  readonly highlightInfluentialEdges = signal(true);
   // Node filters: restrict the canvas to a star tier (re-lays out when on).
   readonly onlyGoldNodes = signal(false);
   readonly onlySilverNodes = signal(false);
@@ -935,11 +1044,14 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
   readonly cardAlignedX = 20;
   // Horizontal gap (px) between a staggered card's right edge and its cluster's
   // left-most node center. Wide enough that the node's centered title label
-  // (which extends left of the node) never overlaps the card.
-  readonly staggerCardGap = 115;
-  // Left edge where the first year column / left-most node sits. With in-graph
-  // cards the card occupies x=20..320, so this also sets the gap to the nodes.
-  readonly leftPadding = computed(() => this.useInGraphCards() ? 420 : 80);
+  // (which extends ~100px left of the node center at the 28-char clamp) never
+  // overlaps the card.
+  readonly staggerCardGap = 135;
+  // Left edge where the first year column / left-most node center sits. With
+  // in-graph cards the card occupies x=20..380 (cardAlignedX + cardWidth), so
+  // this also sets the gap to the nodes: leaving ~130px clears the left-most
+  // node's centered title label (which extends ~100px left of its center).
+  readonly leftPadding = computed(() => this.useInGraphCards() ? 510 : 80);
 
   // Transparency settings (0% to 100% visibility/opacity, default 50%).
   readonly bridgeTransparency = signal<number>(50);
@@ -950,6 +1062,65 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     const val = this.gridTransparency();
     return val <= 50 ? 1 : 1 + (val - 50) / 50;
   });
+
+  // localStorage key under which the display settings below are persisted so they
+  // survive leaving and re-entering the OK-Graph tab (the component is recreated on
+  // navigation, which would otherwise reset every signal to its default).
+  private static readonly DISPLAY_SETTINGS_KEY = 'okgraph.displaySettings.v1';
+
+  /** Current values of every persisted display setting, as a plain object. */
+  private displaySettingsSnapshot(): Record<string, boolean | number> {
+    return {
+      showGoldStars: this.showGoldStars(),
+      showSilverStars: this.showSilverStars(),
+      showSeedMarkers: this.showSeedMarkers(),
+      highlightInfluentialEdges: this.highlightInfluentialEdges(),
+      onlyGoldNodes: this.onlyGoldNodes(),
+      onlySilverNodes: this.onlySilverNodes(),
+      blobbyShapes: this.blobbyShapes(),
+      blobMerging: this.blobMerging(),
+      unifiedVerticalExpansion: this.unifiedVerticalExpansion(),
+      blobTransition: this.blobTransition(),
+      useInGraphCards: this.useInGraphCards(),
+      staggeredCards: this.staggeredCards(),
+      bridgeTransparency: this.bridgeTransparency(),
+      linkTransparency: this.linkTransparency(),
+      gridTransparency: this.gridTransparency(),
+    };
+  }
+
+  /** Reapply persisted display settings (no-op if none were saved / storage fails). */
+  private restoreDisplaySettings(): void {
+    let saved: Record<string, unknown>;
+    try {
+      const raw = localStorage.getItem(OkGraphComponent.DISPLAY_SETTINGS_KEY);
+      if (!raw) return;
+      saved = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    const applyBool = (sig: { set(v: boolean): void }, v: unknown) => {
+      if (typeof v === 'boolean') sig.set(v);
+    };
+    const applyNum = (sig: { set(v: number): void }, v: unknown) => {
+      if (typeof v === 'number' && Number.isFinite(v)) sig.set(v);
+    };
+    applyBool(this.showGoldStars, saved['showGoldStars']);
+    applyBool(this.showSilverStars, saved['showSilverStars']);
+    applyBool(this.showSeedMarkers, saved['showSeedMarkers']);
+    applyBool(this.highlightInfluentialEdges, saved['highlightInfluentialEdges']);
+    applyBool(this.onlyGoldNodes, saved['onlyGoldNodes']);
+    applyBool(this.onlySilverNodes, saved['onlySilverNodes']);
+    applyBool(this.blobbyShapes, saved['blobbyShapes']);
+    applyBool(this.blobMerging, saved['blobMerging']);
+    applyBool(this.unifiedVerticalExpansion, saved['unifiedVerticalExpansion']);
+    applyBool(this.blobTransition, saved['blobTransition']);
+    applyBool(this.useInGraphCards, saved['useInGraphCards']);
+    applyBool(this.staggeredCards, saved['staggeredCards']);
+    applyNum(this.bridgeTransparency, saved['bridgeTransparency']);
+    applyNum(this.linkTransparency, saved['linkTransparency']);
+    applyNum(this.gridTransparency, saved['gridTransparency']);
+  }
 
   toggleSettings(): void { this.settingsOpen.update(v => !v); }
   closeSettings(): void { this.settingsOpen.set(false); }
@@ -1196,6 +1367,26 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
   });
 
   constructor() {
+    // Restore display settings saved from a previous visit BEFORE wiring the persist
+    // effect below, so leaving and re-entering the tab keeps the user's choices instead
+    // of resetting every toggle/slider to its default (the component is destroyed on
+    // navigation away and rebuilt on return). The persist effect then keeps them in sync.
+    this.restoreDisplaySettings();
+    effect(() => {
+      const snapshot = this.displaySettingsSnapshot();
+      try {
+        localStorage.setItem(OkGraphComponent.DISPLAY_SETTINGS_KEY, JSON.stringify(snapshot));
+      } catch { /* storage unavailable (private mode / quota) — settings just won't persist */ }
+    });
+
+    // Keep the boolean keyword query pre-filled with the latest search text until
+    // the user edits it (prefillBooleanQuery no-ops once userEdited). This gives the
+    // filter a sensible default the moment the user enables keyword filtering.
+    effect(() => {
+      const raw = this.searchState.rawQuery();
+      untracked(() => this.graphFilter.prefillBooleanQuery(raw));
+    });
+
     // Seed the top-level representatives once per dataset. setHierarchy() clears
     // placed[], so a fresh send re-seeds; returning to the tab with existing
     // placed nodes keeps them (they persist in the service).
@@ -1245,6 +1436,73 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
         }
       }
     }, { allowSignalWrites: true });
+
+    // The seed is the focus of the OK-Graph: when a freshly built graph first
+    // renders, smoothly centre + zoom the camera onto the (median-year) seed.
+    // Runs once per build (reset in seedTopLevel); drilling/filtering never
+    // re-triggers it, and it never overrides a camera the user has moved.
+    effect(() => {
+      const nodes = this.laneLayout().nodes;
+      if (this.didAutoCenter || nodes.length === 0) return;
+      const seed = untracked(() => this.pickFocusSeed(nodes));
+      if (!seed) return;
+      this.didAutoCenter = true;
+      this.scheduleCenterOnSeed(seed.x, seed.y);
+    }, { allowSignalWrites: true });
+  }
+
+  // --- auto-centre on seed ---------------------------------------------------
+  private didAutoCenter = false;
+  private centerRafId: number | null = null;
+  private static readonly SEED_FOCUS_ZOOM = 1.6;
+
+  /** The seed to focus: the middle one by year (median; ties broken randomly). */
+  private pickFocusSeed(nodes: RenderNode[]): RenderNode | null {
+    const seeds = nodes.filter(n => this.isSeedNode(n));
+    if (!seeds.length) return null;
+    seeds.sort((a, b) => (a.paper.year ?? 0) - (b.paper.year ?? 0));
+    const midYear = seeds[Math.floor((seeds.length - 1) / 2)].paper.year ?? 0;
+    const mids = seeds.filter(s => (s.paper.year ?? 0) === midYear);
+    return mids[Math.floor(Math.random() * mids.length)];
+  }
+
+  /** Defer to a frame so the SVG is laid out, then animate the camera. Retries a
+   *  few times if the viewport can't be measured yet. */
+  private scheduleCenterOnSeed(worldX: number, worldY: number, attempt = 0): void {
+    requestAnimationFrame(() => {
+      const el = this.graphSvgEl?.nativeElement;
+      const w = el?.clientWidth || 0;
+      const h = el?.clientHeight || 0;
+      if ((w === 0 || h === 0) && attempt < 10) {
+        this.scheduleCenterOnSeed(worldX, worldY, attempt + 1);
+        return;
+      }
+      this.animateCameraTo(worldX, worldY, w || this.lastW, h || this.lastH);
+    });
+  }
+
+  /** Smoothly pan + zoom so (worldX, worldY) lands at the viewport centre at the
+   *  seed focus zoom. Ease-out over ~800 ms. */
+  private animateCameraTo(worldX: number, worldY: number, w: number, h: number): void {
+    const targetZoom = Math.min(OkGraphComponent.SEED_FOCUS_ZOOM, OkGraphComponent.ZOOM_MAX);
+    const targetPanX = w / 2 - worldX * targetZoom;
+    const targetPanY = h / 2 - worldY * targetZoom;
+    const fromZoom = this.zoom(), fromX = this.panX(), fromY = this.panY();
+    const DURATION = 800;
+    const start = performance.now();
+    if (this.centerRafId != null) cancelAnimationFrame(this.centerRafId);
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / DURATION);
+      const e = 1 - Math.pow(1 - t, 3);   // ease-out cubic
+      this.zone.run(() => {
+        this.zoom.set(fromZoom + (targetZoom - fromZoom) * e);
+        this.panX.set(fromX + (targetPanX - fromX) * e);
+        this.panY.set(fromY + (targetPanY - fromY) * e);
+      });
+      if (t < 1) this.centerRafId = requestAnimationFrame(step);
+      else this.centerRafId = null;
+    };
+    this.centerRafId = requestAnimationFrame(step);
   }
 
   private repIndexOfCluster(level: number, community: number): number {
@@ -1287,6 +1545,8 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private seedTopLevel(): void {
+    // A fresh graph build: allow the camera to auto-centre on its seed again.
+    this.didAutoCenter = false;
     this.selectedNodeId.set(null);
     this.selectedClusterId.set(null);
     this.expandPopup.set(null);
@@ -1454,13 +1714,21 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     // Drop yearless nodes, then apply the per-tier node filter so the layout
     // (lanes, year columns, blobs, edges) is recomputed as if the filtered-out
     // nodes were removed entirely.
+    // The in-graph (post-construction) metadata filter only hides non-matching nodes;
+    // it's reactive here, so resetting/loosening it re-includes them on the next pass.
+    // Seed scope per node (initialSeedIds) keeps code/peer/archetype "seeds only", as in
+    // the build-time filter. Both predicates keep everything when no constraint is set.
+    const postKeepSeed = this.postFilter.nodePredicate(true);
+    const postKeepExpanded = this.postFilter.nodePredicate(false);
+    const seedIds = this.state.initialSeedIds();
     const placed = this.state.placed()
       .filter(p => p.paper.year != null)
-      .filter(p => this.passesTierFilter(this.starFor(p.paper.ok_score ?? 0)));
+      .filter(p => this.passesTierFilter(this.starFor(p.paper.ok_score ?? 0)))
+      .filter(p => (seedIds.has(paperId(p.paper)) ? postKeepSeed : postKeepExpanded)(p.paper));
     const empty = {
       nodes: [] as RenderNode[], edges: [] as LayoutEdge[],
       yearColumns: [] as { year: number; x: number }[],
-      dividers: [] as { x: number }[], laneLines: [] as { y: number }[],
+      dividers: [] as { x: number }[], seedLines: [] as { x: number }[],
       blobs: [] as Blob[], bridges: [] as Bridge[],
       width: 400, height: 300,
       laneBoxes: [] as any[],
@@ -1557,75 +1825,162 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     }
 
+    // v2 ("direction-pure cones") graph: gates the v2-only layout tweaks below
+    // (tighter lanes + no bridges when cards are off, all citations as edges, and
+    // the seed cluster centred). Reflects the construction of the *displayed*
+    // graph, not the live toggle.
+    const v2 = this.state.directionalSplit();
+
     // Lanes: ordered to minimise bridge overlap.
-    const laneClusters = orderLanesByConnectivity(
+    let laneClusters = orderLanesByConnectivity(
       [...sizeOf.keys()], pairWeight, sizeOf, isInner ? null : misc,
     );
+
+    // v2: keep the seed paper(s)' cluster(s) in the middle of the lane stack so
+    // the origin of the graph reads as its vertical centre. The other lanes are
+    // split evenly above/below, preserving their connectivity-derived order.
+    if (v2) {
+      const seedClusters = new Set<number>();
+      for (const p of placedFiltered) {
+        if (seedIds.has(paperId(p.paper))) seedClusters.add(currentComm[p.repIndex]);
+      }
+      if (seedClusters.size && seedClusters.size < laneClusters.length) {
+        const seedLanes = laneClusters.filter(c => seedClusters.has(c));
+        const others = laneClusters.filter(c => !seedClusters.has(c));
+        const half = Math.floor(others.length / 2);
+        laneClusters = [...others.slice(0, half), ...seedLanes, ...others.slice(half)];
+      }
+    }
+
     const laneIndex = new Map<number, number>();
     laneClusters.forEach((c, i) => laneIndex.set(c, i));
-    const numLanes = laneClusters.length;
 
     // Year columns (x).
     const leftPad = this.leftPadding();
     const years = [...new Set(placedFiltered.map(p => p.paper.year!))].sort((a, b) => a - b);
-    const yearX = new Map<number, number>();
-    years.forEach((y, i) => yearX.set(y, leftPad + i * YEAR_GAP));
 
-    // Group by (lane, year) to size lanes and stack within a cell.
+    // v2-only seed-year split: a year column holding a seed is widened into ordered
+    // sub-columns [ other | refs | SEED | citers ] so the seed never overlaps a
+    // non-seed paper vertically and same-year neighbours read left→right by
+    // citation direction. Empty (no split) for v1 / non-v2 graphs, so the layout
+    // below collapses to the original one-x-per-year behaviour.
+    const split = this.state.directionalSplit()
+      ? computeSeedYearSplit(
+          placedFiltered.map(p => ({
+            id: p.id, year: p.paper.year!, isSeed: seedIds.has(paperId(p.paper)),
+          })),
+          this.state.rawGraph()?.edges ?? [],
+        )
+      : { rolesByYear: new Map<number, SeedRole[]>(), roleOf: new Map<string, SeedRole>() };
+
+    // Walk years left→right; each year occupies (slots-1)*SUBLANE_GAP of width plus
+    // a YEAR_GAP to the next. `yearCenterX` is the column centre (dividers, axis
+    // labels, blobs, width); `subColX` holds the per-role x within a split year.
+    const yearCenterX = new Map<number, number>();
+    const subColX = new Map<string, number>();
+    const yearSpan = new Map<number, number>();   // px between first and last sub-column
+    let cursor = leftPad;
+    let lastRightEdge = leftPad;
+    for (const y of years) {
+      const roles = split.rolesByYear.get(y);
+      const slots = roles?.length ?? 1;
+      const span = (slots - 1) * SUBLANE_GAP;
+      yearSpan.set(y, span);
+      yearCenterX.set(y, cursor + span / 2);
+      if (roles) roles.forEach((r, j) => subColX.set(`${y}|${r}`, cursor + j * SUBLANE_GAP));
+      lastRightEdge = cursor + span;
+      cursor += span + YEAR_GAP;
+    }
+
+    // x of a placed node: its sub-column in a split year, else the column centre.
+    const xForNode = (p: PlacedNode): number => {
+      const y = p.paper.year!;
+      if (!split.rolesByYear.has(y)) return yearCenterX.get(y)!;
+      const r = split.roleOf.get(p.id);
+      return r ? subColX.get(`${y}|${r}`)! : yearCenterX.get(y)!;
+    };
+
+    // --- laneless organic packing -------------------------------------------
+    // No global swimlanes. Within each year column we stack only the clusters
+    // actually present that year, fanned out from a central corridor (above /
+    // below by the cluster's stable global rank). Years with few clusters pack
+    // tight to the centre; busy years fan wide → blobs converge and diverge.
+    // Seed papers are excluded from this packing and sit on the corridor line.
+    const isSeedNodeP = (p: PlacedNode) => seedIds.has(paperId(p.paper));
+    const placedNonSeed = placedFiltered.filter(p => !isSeedNodeP(p));
+    const placedSeed = placedFiltered.filter(p => isSeedNodeP(p));
+    const hasSeeds = placedSeed.length > 0;
+
+    // (cluster, year) cells of NON-SEED nodes — these alone size the blobs.
+    const cellKey = (cluster: number, year: number) => `${cluster}|${year}`;
     const cells = new Map<string, PlacedNode[]>();
-    let maxCell = 1;
-    for (const p of placedFiltered) {
-      const nodeClusterId = currentComm[p.repIndex];
-      const lane = laneIndex.get(nodeClusterId) ?? 0;
-      const key = `${lane}|${p.paper.year}`;
+    for (const p of placedNonSeed) {
+      const cluster = currentComm[p.repIndex];
+      const key = cellKey(cluster, p.paper.year!);
       let arr = cells.get(key);
       if (!arr) { arr = []; cells.set(key, arr); }
       arr.push(p);
-      if (arr.length > maxCell) maxCell = arr.length;
     }
 
-    const maxCellForLane = new Map<number, number>();
-    for (let i = 0; i < numLanes; i++) {
-      maxCellForLane.set(i, 1);
+    // Tallest sub-column node count in a (cluster, year) cell → its vertical
+    // node-centre extent. A v2 split year spreads a cell across sub-columns;
+    // each sub-column stacks independently, so the extent is the tallest one.
+    const cellMaxK = new Map<string, number>();
+    for (const [key, arr] of cells) {
+      const byX = new Map<number, number>();
+      for (const p of arr) {
+        const gx = xForNode(p);
+        byX.set(gx, (byX.get(gx) ?? 0) + 1);
+      }
+      let mk = 1;
+      for (const c of byX.values()) if (c > mk) mk = c;
+      cellMaxK.set(key, mk);
     }
-    for (const [key, arr] of cells.entries()) {
-      const lane = +key.split('|')[0];
-      const count = arr.length;
-      if (count > (maxCellForLane.get(lane) ?? 1)) {
-        maxCellForLane.set(lane, count);
+    const cellExtent = (cluster: number, year: number) =>
+      ((cellMaxK.get(cellKey(cluster, year)) ?? 1) - 1) * LANE_NODE_VGAP;
+
+    // --- symmetric fixed-level band layout ----------------------------------
+    // Each cluster sits at one fixed vertical LEVEL, the same on both sides of the
+    // seed, so the view is mirror-symmetric about the seed line: the seed's own
+    // cluster is centred (level 0) and every other cluster is offset by its rank
+    // distance from the seed cluster (BAND_SPACING apart). A cluster present
+    // before AND after the seed keeps the same level on both sides; the blobs neck
+    // into the seed and back out (the funnel below), which is where the
+    // convergence/divergence happens — not by shuffling levels per year.
+    const numLanes = laneClusters.length;
+    const seedRanks: number[] = [];
+    for (const p of placedSeed) {
+      const r = laneIndex.get(currentComm[p.repIndex]);
+      if (r != null) seedRanks.push(r);
+    }
+    const seedRank = seedRanks.length
+      ? seedRanks.reduce((s, r) => s + r, 0) / seedRanks.length
+      : (numLanes - 1) / 2;
+    const levelOf = (cluster: number) => ((laneIndex.get(cluster) ?? 0) - seedRank) * BAND_SPACING;
+
+    const cellCenterY = new Map<string, number>();
+    let minCenter = Infinity, maxCenter = -Infinity;
+    for (const y of years) {
+      for (const c of laneClusters) {
+        const key = cellKey(c, y);
+        if (!cells.has(key)) continue;
+        const yy = levelOf(c);
+        cellCenterY.set(key, yy);
+        const h = cellExtent(c, y);
+        minCenter = Math.min(minCenter, yy - h / 2);
+        maxCenter = Math.max(maxCenter, yy + h / 2);
       }
     }
+    if (!isFinite(minCenter)) { minCenter = 0; maxCenter = 0; }
 
-    const laneHeights: number[] = [];
-    const isUnified = this.unifiedVerticalExpansion();
-    // When a cluster card's full summary is expanded it grows taller than the
-    // node area; grow that specific lane so the (centered) card fits without
-    // overlapping its neighbours. Reading these signals keeps the layout in
-    // sync as cards are toggled / re-measured.
-    const cardsOn = this.useInGraphCards() && currentTopLevel >= 0;
-    const expandedSummaries = this.expandedSummaries();
-    const measuredCardHeights = this.cardHeights();
-    for (let i = 0; i < numLanes; i++) {
-      const cellCount = isUnified ? maxCell : (maxCellForLane.get(i) ?? 1);
-      let h = Math.max(LANE_MIN_HEIGHT, cellCount * LANE_NODE_VGAP + LANE_PAD);
-      if (cardsOn) {
-        const clusterId = laneClusters[i];
-        if (expandedSummaries.has(clusterId)) {
-          const cardH = measuredCardHeights.get(clusterId) ?? this.cardHeightFallback;
-          h = Math.max(h, cardH + LANE_PAD);
-        }
-      }
-      laneHeights.push(h);
-    }
+    // Seeds sit at level 0 — the focal "waist" the cluster blobs neck into.
+    const seedRelY = 0;
 
-    const laneYStart: number[] = [TOP_PADDING];
-    for (let i = 1; i <= numLanes; i++) {
-      laneYStart.push(laneYStart[i - 1] + laneHeights[i - 1]);
-    }
-    const laneCenters: number[] = [];
-    for (let i = 0; i < numLanes; i++) {
-      laneCenters.push(laneYStart[i] + laneHeights[i] / 2);
-    }
+    // Shift relative centres into absolute canvas space (topmost blob edge at
+    // TOP_PADDING). `absCenterY` is the seed row.
+    const offsetY = TOP_PADDING + BLOB_PAD_TOP - minCenter;
+    let absCenterY = seedRelY + offsetY;
+    for (const [k, v] of cellCenterY) cellCenterY.set(k, v + offsetY);
 
     // Letters by placement order (stable as nodes are added).
     const letterOf = new Map<string, string>();
@@ -1633,39 +1988,77 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const nodes: RenderNode[] = [];
     const boxes = new Map<number, { minX: number; maxX: number; minY: number; maxY: number }>();
-    for (const [key, members] of cells) {
-      const lane = +key.split('|')[0];
-      const laneCenter = laneCenters[lane];
-      members.sort((a, b) => (b.paper.ok_score ?? 0) - (a.paper.ok_score ?? 0));
-      const k = members.length;
-      members.forEach((p, j) => {
-        const x = yearX.get(p.paper.year!)!;
-        const y = laneCenter + (j - (k - 1) / 2) * LANE_NODE_VGAP;
-        const nodeClusterId = currentComm[p.repIndex];
-        const color = this.clusterColorFor(nodeClusterId, isInner);
-        nodes.push({
-          id: p.id, paper: p.paper, x, y,
-          letter: letterOf.get(p.id) ?? '?',
-          color, colorStrong: lighten(color),
-          star: this.starFor(p.paper.ok_score ?? 0),
-          rings: this.ringsForLevel(p.level),
-          clusterId: nodeClusterId,
-        });
-        const b = boxes.get(nodeClusterId);
-        if (!b) boxes.set(nodeClusterId, { minX: x, maxX: x, minY: y, maxY: y });
-        else {
-          b.minX = Math.min(b.minX, x); b.maxX = Math.max(b.maxX, x);
-          b.minY = Math.min(b.minY, y); b.maxY = Math.max(b.maxY, y);
-        }
+
+    const pushNode = (p: PlacedNode, x: number, y: number, intoBox: boolean) => {
+      const nodeClusterId = currentComm[p.repIndex];
+      const color = this.clusterColorFor(nodeClusterId, isInner);
+      nodes.push({
+        id: p.id, paper: p.paper, x, y,
+        letter: letterOf.get(p.id) ?? '?',
+        color, colorStrong: lighten(color),
+        star: this.starFor(p.paper.ok_score ?? 0),
+        rings: this.ringsForLevel(p.level),
+        clusterId: nodeClusterId,
       });
+      if (!intoBox) return;            // seeds never expand the cluster blob box
+      const b = boxes.get(nodeClusterId);
+      if (!b) boxes.set(nodeClusterId, { minX: x, maxX: x, minY: y, maxY: y });
+      else {
+        b.minX = Math.min(b.minX, x); b.maxX = Math.max(b.maxX, x);
+        b.minY = Math.min(b.minY, y); b.maxY = Math.max(b.maxY, y);
+      }
+    };
+
+    // Non-seed nodes: stacked within their (cluster, year) cell, by sub-column,
+    // centred on the cell's packed centre.
+    for (const [key, members] of cells) {
+      const center = cellCenterY.get(key) ?? absCenterY;
+      members.sort((a, b) => (b.paper.ok_score ?? 0) - (a.paper.ok_score ?? 0));
+      // Split a cell's members by their sub-column x (a v2 split year spreads them
+      // across [other|refs|seed|citers]); each sub-column stacks vertically on its
+      // own, centred on the cell. Non-split years yield a single group.
+      const byX = new Map<number, PlacedNode[]>();
+      for (const p of members) {
+        const x = xForNode(p);
+        let arr = byX.get(x);
+        if (!arr) { arr = []; byX.set(x, arr); }
+        arr.push(p);
+      }
+      for (const [x, group] of byX) {
+        const k = group.length;
+        group.forEach((p, j) => pushNode(p, x, center + (j - (k - 1) / 2) * LANE_NODE_VGAP, true));
+      }
+    }
+
+    // Seed nodes: exceptions sitting on the corridor line — coloured like their
+    // cluster but never folded into its blob. Multiple seeds in one year stack
+    // within the corridor.
+    const seedsByYear = new Map<number, PlacedNode[]>();
+    for (const p of placedSeed) {
+      const y = p.paper.year!;
+      let arr = seedsByYear.get(y);
+      if (!arr) { arr = []; seedsByYear.set(y, arr); }
+      arr.push(p);
+    }
+    for (const [, group] of seedsByYear) {
+      const byX = new Map<number, PlacedNode[]>();
+      for (const p of group) {
+        const x = xForNode(p);
+        let arr = byX.get(x);
+        if (!arr) { arr = []; byX.set(x, arr); }
+        arr.push(p);
+      }
+      for (const [x, g] of byX) {
+        const k = g.length;
+        g.forEach((p, j) => pushNode(p, x, absCenterY + (j - (k - 1) / 2) * LANE_NODE_VGAP, false));
+      }
     }
 
     // Pin the entered cluster's representative paper in place. We translate the
     // whole inner-view layout so the rep node lands exactly where it sat in the
     // outer view — the representative never moves; everything else carries the
-    // same translation (and has already reshuffled into subcluster lanes), so it
-    // moves relative to the fixed rep. Done before blobs/bridges/dividers so they
-    // derive from the shifted yearX / lane positions and stay consistent.
+    // same translation. Done before blobs/bridges/dividers so they derive from
+    // the shifted year-column / cell positions and stay consistent.
     const anchor = isInner ? this.innerViewAnchor() : null;
     let dx = 0;
     let dy = 0;
@@ -1680,66 +2073,124 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
         for (const b of boxes.values()) {
           b.minX += dx; b.maxX += dx; b.minY += dy; b.maxY += dy;
         }
-        for (const [y, x] of yearX) yearX.set(y, x + dx);
-        for (let i = 0; i < laneCenters.length; i++) laneCenters[i] += dy;
-        for (let i = 0; i < laneYStart.length; i++) laneYStart[i] += dy;
+        for (const [y, x] of yearCenterX) yearCenterX.set(y, x + dx);
+        for (const [k, x] of subColX) subColX.set(k, x + dx);
+        for (const [k, v] of cellCenterY) cellCenterY.set(k, v + dy);
+        absCenterY += dy;
+        lastRightEdge += dx;
       }
     }
 
-    // One coloured blob per cluster, around its representatives.
-    const PAD_X = 38, PAD_TOP = 40, PAD_BOTTOM = 50;
+    // Average packed centre per cluster — the fallback anchor for bridges and a
+    // gap-year blob baseline.
+    const clusterCenterY = new Map<number, number>();
+    {
+      const acc = new Map<number, { sum: number; n: number }>();
+      for (const [key, v] of cellCenterY) {
+        const c = +key.split('|')[0];
+        const a = acc.get(c) ?? { sum: 0, n: 0 };
+        a.sum += v; a.n += 1; acc.set(c, a);
+      }
+      for (const [c, a] of acc) clusterCenterY.set(c, a.sum / a.n);
+    }
+
+    // Vertical line through each seed paper, marking past (refs, left) vs future
+    // (citers, right). One per distinct seed x (post-shift).
+    const seedLineSet = new Set<number>();
+    for (const n of nodes) if (seedIds.has(paperId(n.paper))) seedLineSet.add(n.x);
+    const seedLines = [...seedLineSet].sort((a, b) => a - b).map(x => ({ x }));
+
+    // One coloured blob per cluster, around its NON-SEED representatives. The
+    // band's vertical centre follows the cluster's packed centre per year, so it
+    // narrows and widens (converges / diverges) across the year axis.
+    const PAD_X = BLOB_PAD_X, PAD_TOP = BLOB_PAD_TOP, PAD_BOTTOM = BLOB_PAD_BOTTOM;
     const blobs: Blob[] = [];
 
-    // Group placed nodes by active clusterId to easily find their years.
-    const clusterNodesMap = new Map<number, PlacedNode[]>();
-    for (const p of placedFiltered) {
+    // Year span per cluster, from its non-seed members only.
+    const clusterYearsMap = new Map<number, Set<number>>();
+    for (const p of placedNonSeed) {
       const nodeClusterId = currentComm[p.repIndex];
-      let arr = clusterNodesMap.get(nodeClusterId);
-      if (!arr) {
-        arr = [];
-        clusterNodesMap.set(nodeClusterId, arr);
-      }
-      arr.push(p);
+      let s = clusterYearsMap.get(nodeClusterId);
+      if (!s) { s = new Set(); clusterYearsMap.set(nodeClusterId, s); }
+      s.add(p.paper.year!);
     }
 
-    for (const [nodeClusterId, members] of clusterNodesMap) {
-      const yearsInCluster = members.map(m => m.paper.year!);
-      const minYear = Math.min(...yearsInCluster);
-      const maxYear = Math.max(...yearsInCluster);
-
+    for (const [nodeClusterId, yearSet] of clusterYearsMap) {
+      const minYear = Math.min(...yearSet);
+      const maxYear = Math.max(...yearSet);
       const clusterYears = years.filter(y => y >= minYear && y <= maxYear);
-
-      const lane = laneIndex.get(nodeClusterId) ?? 0;
-      const laneCenter = laneCenters[lane];
+      const fallbackCenter = clusterCenterY.get(nodeClusterId) ?? absCenterY;
 
       const points: { x: number; topY: number; bottomY: number }[] = [];
       for (const y of clusterYears) {
-        const x = yearX.get(y)!;
-        const cellMembers = cells.get(`${lane}|${y}`);
-        const k = cellMembers ? cellMembers.length : 0;
-        const effectiveK = k > 0 ? k : 1;
+        const key = cellKey(nodeClusterId, y);
+        const cellMembers = cells.get(key);
+        // Group the cell by sub-column x: each sub-column stacks independently, so
+        // the band's vertical extent is the tallest sub-column (not the cell total),
+        // and its horizontal extent must span from the left-most to the right-most
+        // occupied sub-column (a v2 split year). Empty gap years → a thin centre
+        // point (at the cluster's mean centre) so the band stays continuous.
+        let xs: number[];
+        let maxK = 1;
+        let center = cellCenterY.get(key);
+        if (cellMembers && cellMembers.length) {
+          const groups = new Map<number, number>();
+          for (const p of cellMembers) {
+            const gx = xForNode(p);
+            groups.set(gx, (groups.get(gx) ?? 0) + 1);
+          }
+          xs = [...groups.keys()].sort((a, b) => a - b);
+          maxK = Math.max(...groups.values());
+        } else {
+          xs = [yearCenterX.get(y)!];
+        }
+        if (center == null) center = fallbackCenter;
 
-        const minY_node = laneCenter - ((effectiveK - 1) / 2) * LANE_NODE_VGAP;
-        const maxY_node = laneCenter + ((effectiveK - 1) / 2) * LANE_NODE_VGAP;
+        const minY_node = center - ((maxK - 1) / 2) * LANE_NODE_VGAP;
+        const maxY_node = center + ((maxK - 1) / 2) * LANE_NODE_VGAP;
 
         const topY = minY_node - PAD_TOP;
         const bottomY = maxY_node + PAD_BOTTOM;
 
-        points.push({ x, topY, bottomY });
+        // Left edge, then right edge (identical when this cluster isn't split here).
+        points.push({ x: xs[0], topY, bottomY });
+        if (xs.length > 1) points.push({ x: xs[xs.length - 1], topY, bottomY });
       }
 
-      // Now build the SVG path.
+      // Merge into the seed: the band necks down to the seed point so the blob
+      // funnels into the seed and back out — shrinking as it approaches and
+      // widening as it leaves — instead of crossing the seed line as a bar. A seed
+      // inside the cluster's span pinches it in the middle; a seed just off either
+      // end (within MERGE_REACH) extends the band to the seed so near-seed clusters
+      // also emanate from it. Same-cluster papers before and after the seed thus
+      // meet *at* the seed and never visually cross the line.
+      if (points.length > 0 && seedLines.length) {
+        const lo = points[0].x, hi = points[points.length - 1].x;
+        const pinch = (x: number) =>
+          points.push({ x, topY: absCenterY - SEED_PINCH_HALF, bottomY: absCenterY + SEED_PINCH_HALF });
+        for (const s of seedLines) {
+          if (s.x > lo && s.x < hi) pinch(s.x);                        // spanning → neck in the middle
+          else if (s.x <= lo && lo - s.x <= MERGE_REACH) pinch(s.x);   // just right of seed → emerge from it
+          else if (s.x >= hi && s.x - hi <= MERGE_REACH) pinch(s.x);   // just left of seed → merge into it
+        }
+        points.sort((a, b) => a.x - b.x);
+      }
+
+      // Now build the SVG path. Bezier control handles scale with each segment's
+      // own width (clamped), so short segments — e.g. the seed sub-column sitting
+      // close to a year column — don't overshoot into kinks.
       let path = '';
       if (points.length > 0) {
         const n = points.length - 1;
-        const dx = 70;
+        const handle = (x1: number, x2: number) => Math.min(70, Math.abs(x2 - x1) * 0.42);
         const capDx = PAD_X * 1.33;
 
         path = `M ${points[0].x} ${points[0].topY}`;
 
         // Top edge curve
         for (let i = 0; i < n; i++) {
-          path += ` C ${points[i].x + dx} ${points[i].topY}, ${points[i+1].x - dx} ${points[i+1].topY}, ${points[i+1].x} ${points[i+1].topY}`;
+          const h = handle(points[i].x, points[i+1].x);
+          path += ` C ${points[i].x + h} ${points[i].topY}, ${points[i+1].x - h} ${points[i+1].topY}, ${points[i+1].x} ${points[i+1].topY}`;
         }
 
         // Right cap curve
@@ -1747,7 +2198,8 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
 
         // Bottom edge curve
         for (let i = n; i > 0; i--) {
-          path += ` C ${points[i].x - dx} ${points[i].bottomY}, ${points[i-1].x + dx} ${points[i-1].bottomY}, ${points[i-1].x} ${points[i-1].bottomY}`;
+          const h = handle(points[i].x, points[i-1].x);
+          path += ` C ${points[i].x - h} ${points[i].bottomY}, ${points[i-1].x + h} ${points[i-1].bottomY}, ${points[i-1].x} ${points[i-1].bottomY}`;
         }
 
         // Left cap curve
@@ -1778,22 +2230,29 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       });
     }
 
-    const bridges = this.blobMerging()
-      ? this.buildBridges(currentTopLevel, currentComm, laneIndex, laneCenters, boxes, nodes, years, yearX)
+    // v2 with cards off draws every citation as a node edge (see below), so the
+    // inter-cluster blob bridges become redundant clutter — suppress them.
+    const bridges = (this.blobMerging() && !(v2 && !this.useInGraphCards()))
+      ? this.buildBridges(currentTopLevel, currentComm, clusterCenterY, boxes, nodes, years, yearCenterX)
       : [];
 
+    // Divider between two years sits in the YEAR_GAP between them: midpoint of the
+    // left year's right edge and the right year's left edge (each year's half-span
+    // is `yearSpan/2` around its centre), so the line never cuts a widened column.
     const dividers: { x: number }[] = [];
     for (let i = 0; i < years.length - 1; i++) {
-      dividers.push({ x: (yearX.get(years[i])! + yearX.get(years[i + 1])!) / 2 });
+      const lRight = yearCenterX.get(years[i])! + (yearSpan.get(years[i]) ?? 0) / 2;
+      const rLeft = yearCenterX.get(years[i + 1])! - (yearSpan.get(years[i + 1]) ?? 0) / 2;
+      dividers.push({ x: (lRight + rLeft) / 2 });
     }
 
-    const laneLines: { y: number }[] = [];
-    for (let i = 0; i <= numLanes; i++) laneLines.push({ y: laneYStart[i] });
+    // Canvas extent from the actual content (no global lanes any more).
+    let contentMaxY = absCenterY;
+    for (const n of nodes) if (n.y > contentMaxY) contentMaxY = n.y;
+    for (const b of boxes.values()) if (b.maxY > contentMaxY) contentMaxY = b.maxY;
 
-    const width = years.length
-      ? yearX.get(years[years.length - 1])! + 80
-      : 400;
-    const height = laneYStart[numLanes] + 20;
+    const width = years.length ? lastRightEdge + 80 : 400;
+    const height = contentMaxY + PAD_BOTTOM + 40;
 
     // Edges drawn between placed nodes — two sources, unioned and de-duped:
     //  1. Real citation edges from the raw graph, between two placed nodes in the
@@ -1801,7 +2260,8 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     //     internal citation structure no matter how its papers were revealed —
     //     the drill-in / "expand whole cluster" paths add no manual links, so
     //     without this their nodes render disconnected. Cross-cluster citation
-    //     edges are intentionally left to the blob bridges, not drawn as links.
+    //     edges are left to the blob bridges in v1; in v2 every citation (incl.
+    //     cross-cluster) is drawn as a node link (see the `v2` arg below).
     //  2. The manual parent→child links recorded during interactive expansion
     //     (double-click, year-expand). Kept so explicit lineage between a node
     //     and a placed sibling survives even when no direct citation edge joins
@@ -1815,6 +2275,9 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       currentComm,
       (level: number) => this.communitiesAtLevel()(level),
       this.baseNodes().length,
+      // v2: draw every citation between placed nodes, including cross-cluster ones
+      // (v1 keeps cross-cluster links as blob bridges only).
+      v2,
     );
     for (const e of edges) {
       const key = e.fromId < e.toId ? `${e.fromId}|${e.toId}` : `${e.toId}|${e.fromId}`;
@@ -1917,8 +2380,9 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
         laneIndex: i,
         name,
         color,
-        yStart: laneYStart[laneIndex.get(id) ?? 0],
-        height: laneHeights[laneIndex.get(id) ?? 0],
+        // No lanes any more: the card hugs the cluster's actual vertical extent.
+        yStart: clusterBox ? clusterBox.minY - PAD_TOP : absCenterY - LANE_MIN_HEIGHT / 2,
+        height: clusterBox ? (clusterBox.maxY - clusterBox.minY) + PAD_TOP + PAD_BOTTOM : LANE_MIN_HEIGHT,
         cardX,
         summary,
         isMisc,
@@ -1935,9 +2399,9 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     return {
       nodes,
       edges,
-      yearColumns: years.map(y => ({ year: y, x: yearX.get(y)! })),
+      yearColumns: years.map(y => ({ year: y, x: yearCenterX.get(y)! })),
       dividers,
-      laneLines,
+      seedLines,
       blobs,
       bridges,
       width,
@@ -1958,8 +2422,7 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
   private buildBridges(
     top: number,
     topComm: number[],
-    laneIndex: Map<number, number>,
-    laneCenters: number[],
+    clusterCenterY: Map<number, number>,
     boxes: Map<number, { minX: number; maxX: number; minY: number; maxY: number }>,
     nodes: RenderNode[],
     years: number[],
@@ -2040,13 +2503,13 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       const placed = renderPos.get(repNode.paper_id);
       if (placed) return { x: placed.x, y: placed.y };
       const parentTop = topComm[rep];
-      const lane = laneIndex.get(parentTop) ?? 0;
-      const laneCenter = laneCenters[lane];
       const box = boxes.get(parentTop);
+      const centerY = clusterCenterY.get(parentTop)
+        ?? (box ? (box.minY + box.maxY) / 2 : TOP_PADDING);
       let x = repNode.year != null ? yearToX(repNode.year)
             : box ? (box.minX + box.maxX) / 2 : this.leftPadding();
       if (box) x = Math.min(Math.max(x, box.minX), box.maxX);
-      return { x, y: laneCenter };
+      return { x, y: centerY };
     };
 
     const bridges: Bridge[] = [];
@@ -2104,7 +2567,7 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
   readonly edges = computed(() => this.laneLayout().edges);
   readonly yearColumns = computed(() => this.laneLayout().yearColumns);
   readonly dividers = computed(() => this.laneLayout().dividers);
-  readonly laneLines = computed(() => this.laneLayout().laneLines);
+  readonly seedLines = computed(() => this.laneLayout().seedLines);
   readonly blobs = computed(() => this.laneLayout().blobs);
   readonly bridges = computed(() => this.laneLayout().bridges);
   readonly svgWidth = computed(() => this.laneLayout().width);
@@ -2708,6 +3171,14 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
   onNodeEnter(node: RenderNode): void { this.hoveredNodeId.set(node.id); }
   onNodeLeave(): void { this.hoveredNodeId.set(null); }
 
+  /** Best external link for a paper: open-access PDF, then landing page, then DOI.
+   *  Null when the paper carries none of these (so the button can hide). */
+  paperUrl(paper: Paper): string | null {
+    return paper.pdf_url
+      || paper.landing_url
+      || (paper.doi ? `https://doi.org/${paper.doi}` : null);
+  }
+
   removeSelectedNode(): void {
     const id = this.selectedNodeId();
     if (!id) return;
@@ -2739,6 +3210,19 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     const sel = this.selectedNodeId();
     if (sel && ids.has(sel)) this.selectedNodeId.set(null);
     if (this.selectedClusterId() === topCluster) this.selectedClusterId.set(null);
+
+    // If removing this cluster emptied the inner view we're currently inside, climb back
+    // up to the nearest ancestor view that still has visible nodes (or the main view).
+    // Otherwise the canvas would render the "no representatives" empty page with no way
+    // back to the level above. `nodes()` recomputes against the popped path each pass.
+    while (this.innerViewPath().length > 0 && this.nodes().length === 0) {
+      this.innerViewPath.update(p => p.slice(0, -1));
+      this.innerViewAnchor.set(null);
+      this.transitionState.set(null);
+      this.selectedYear.set(null);
+      this.selectedGap.set(null);
+      this.expandPopup.set(null);
+    }
   }
 
   clearGraph(): void {
@@ -2971,6 +3455,91 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     return !!sel && (edge.fromId === sel || edge.toId === sel);
   }
 
+  // --- highlighted-edge hover (influential tooltip) --------------------------
+
+  /** Undirected key for an edge, stable across layout recomputes. */
+  private edgeKey(edge: LayoutEdge): string {
+    return edge.fromId < edge.toId ? `${edge.fromId}|${edge.toId}` : `${edge.toId}|${edge.fromId}`;
+  }
+
+  // Which highlighted edge the pointer is over (by key, so it survives the
+  // edges() recompute that produces fresh LayoutEdge objects).
+  readonly hoveredEdgeKey = signal<string | null>(null);
+
+  /** The live LayoutEdge being hovered, only while it is still highlighted. */
+  readonly hoveredEdge = computed<LayoutEdge | null>(() => {
+    const key = this.hoveredEdgeKey();
+    if (!key) return null;
+    return this.edges().find(e => this.edgeKey(e) === key && this.isEdgeHighlighted(e)) ?? null;
+  });
+
+  isEdgeHovered(edge: LayoutEdge): boolean {
+    return this.hoveredEdgeKey() === this.edgeKey(edge) && this.isEdgeHighlighted(edge);
+  }
+
+  onEdgeEnter(edge: LayoutEdge, ev: MouseEvent): void {
+    this.hoveredEdgeKey.set(this.edgeKey(edge));
+    this.hoverPos.set(this.toContentPoint(ev));
+  }
+  onEdgeLeave(edge: LayoutEdge): void {
+    if (this.hoveredEdgeKey() === this.edgeKey(edge)) {
+      this.hoveredEdgeKey.set(null);
+      this.hoverPos.set(null);
+    }
+  }
+
+  isEdgeInfluential(edge: LayoutEdge): boolean { return !!edge.isInfluential; }
+
+  /** Whether the edge should render with the influential-citation wave. */
+  isEdgeWavy(edge: LayoutEdge): boolean {
+    return this.highlightInfluentialEdges() && this.isEdgeInfluential(edge);
+  }
+
+  /**
+   * Edge opacity:
+   *  - hovered edge → solid;
+   *  - when a node is selected, only its immediate citations/references (the
+   *    highlighted edges) are shown; every other edge is fully invisible;
+   *  - otherwise follow the link-transparency slider, with a readable floor for
+   *    influential (wavy) edges so the signal survives a low setting.
+   */
+  edgeOpacity(edge: LayoutEdge): number {
+    if (this.isEdgeHovered(edge)) return 1;
+    if (this.selectedNodeId()) return this.isEdgeHighlighted(edge) ? 1 : 0;
+    const base = this.linkTransparency() / 100;
+    return this.isEdgeWavy(edge) ? Math.max(base, 0.85) : base;
+  }
+  edgeLabelText(edge: LayoutEdge): string {
+    return this.isEdgeInfluential(edge) ? 'Influential citation' : 'Regular citation';
+  }
+
+  /** Half-width of the (small) edge-label chip, sized to its text. */
+  edgeLabelHalfWidth(edge: LayoutEdge): number {
+    return (this.edgeLabelText(edge).length * 5.5 + 14) / 2;
+  }
+
+  // Pointer position (content space) of the hovered edge, so the badge follows
+  // the cursor instead of sitting at the edge midpoint.
+  readonly hoverPos = signal<{ x: number; y: number } | null>(null);
+
+  /** Convert a pointer event to content-space coords (inside contentTransform). */
+  private toContentPoint(ev: MouseEvent): { x: number; y: number } | null {
+    const el = ev.target as SVGGraphicsElement;
+    const svg = el.ownerSVGElement;
+    const ctm = el.getScreenCTM();
+    if (!svg || !ctm) return null;
+    const pt = svg.createSVGPoint();
+    pt.x = ev.clientX;
+    pt.y = ev.clientY;
+    const local = pt.matrixTransform(ctm.inverse());
+    return { x: local.x, y: local.y };
+  }
+
+  onEdgeMove(ev: MouseEvent): void {
+    const p = this.toContentPoint(ev);
+    if (p) this.hoverPos.set(p);
+  }
+
   isBridgeHighlighted(bridge: Bridge): boolean {
     const sel = this.selectedClusterId();
     if (sel === null) return false;
@@ -2981,13 +3550,106 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
   edgePath(edge: LayoutEdge): string {
     const from = this.nodeMap().get(edge.fromId);
     const to = this.nodeMap().get(edge.toId);
-    return from && to ? buildEdgePath(from, to) : '';
+    if (!from || !to) return '';
+    // Use the render-time y so the curve tracks a node that has been pushed down
+    // to clear an expanded title (the edge's `d` transition then animates with it).
+    const fromPt = { x: from.x, y: this.nodeRenderY(from) };
+    const toPt = { x: to.x, y: this.nodeRenderY(to) };
+    // Influential citations ripple; everything else is the normal smooth curve.
+    return this.isEdgeWavy(edge) ? buildWavyEdgePath(fromPt, toPt) : buildEdgePath(fromPt, toPt);
   }
 
   nodeLabel(node: RenderNode): string {
     const t = node.paper.title;
-    return t.length > 28 ? t.slice(0, 26) + '…' : t;
+    return t.length > 20 ? t.slice(0, 18) + '…' : t;
   }
+
+  /** Whether a node should show its full, wrapped title rather than the clamped
+   *  single-line label: true while hovered, or while it is selected. */
+  showFullTitle(node: RenderNode): boolean {
+    return this.isSelected(node) || this.hoveredNodeId() === node.id;
+  }
+
+  // Node-label geometry. The full title uses the *same* font as the truncated
+  // label (graph-svg__node-label: 11px / weight 500) so expanding it is seamless.
+  private titleMeasureCtx?: CanvasRenderingContext2D | null;
+  private static readonly LABEL_FONT_SIZE = 11;     // px, matches .graph-svg__node-label
+  private static readonly LABEL_WRAP_WIDTH = 150;   // px, max width before wrapping
+  private static readonly LABEL_LINE_HEIGHT = 13;   // px between wrapped lines
+  private static readonly LABEL_BASE_Y = 36;        // baseline of the first line
+  private static readonly LABEL_MAX_LINES = 8;       // hard cap so the box can't run away
+  private static readonly LABEL_PUSH_PAD = 4;        // extra clearance below the last line
+
+  /** Greedy word-wrap of a node's full title at the label font, into at most
+   *  LABEL_MAX_LINES lines (the last is ellipsized if the title overflows). */
+  titleLines(node: RenderNode): string[] {
+    const C = OkGraphComponent;
+    const title = node.paper.title?.trim();
+    if (!title) return [];
+    if (typeof document === 'undefined') return [title];
+    const ctx = this.titleMeasureCtx ??= document.createElement('canvas').getContext('2d');
+    if (!ctx) return [title];
+    ctx.font = `500 ${C.LABEL_FONT_SIZE}px sans-serif`;
+    const lines: string[] = [];
+    let current = '';
+    for (const word of title.split(/\s+/)) {
+      const candidate = current ? current + ' ' + word : word;
+      if (current && ctx.measureText(candidate).width > C.LABEL_WRAP_WIDTH) {
+        lines.push(current);
+        current = word;
+        if (lines.length === C.LABEL_MAX_LINES - 1) break;
+      } else {
+        current = candidate;
+      }
+    }
+    // Whatever is left (the in-progress line, or the untouched remainder when the
+    // line cap was hit) becomes the final line, ellipsized if it is still too wide.
+    const consumed = lines.join(' ');
+    let rest = consumed ? title.slice(consumed.length).trim() : title;
+    if (ctx.measureText(rest).width > C.LABEL_WRAP_WIDTH) {
+      while (rest.length > 1 && ctx.measureText(rest + '…').width > C.LABEL_WRAP_WIDTH) {
+        rest = rest.slice(0, -1);
+      }
+      rest = rest.replace(/\s+\S*$/, '') + '…';
+    }
+    lines.push(rest);
+    return lines;
+  }
+
+  /** Render-time y of a node: its laid-out y plus any downward push needed to
+   *  clear the multi-line title(s) of expanded node(s) above it. */
+  nodeRenderY(node: RenderNode): number {
+    return node.y + (this.titleOffsets().get(node.id) ?? 0);
+  }
+
+  /** Map of node id -> downward offset (px) so that nodes sitting below an
+   *  expanded (hovered/selected) node slide out of the way of its wrapped title.
+   *  Recomputed only when the layout, hover, or selection changes. */
+  private readonly titleOffsets = computed<Map<string, number>>(() => {
+    const C = OkGraphComponent;
+    const nodes = this.nodes();
+    const hovered = this.hoveredNodeId();
+    const selected = this.selectedNodeId();
+    const offsets = new Map<string, number>();
+    if (!hovered && !selected) return offsets;
+    const NODE_R = 22;
+    const reach = C.LABEL_WRAP_WIDTH / 2 + NODE_R; // horizontal overlap threshold
+    const expanded = nodes.filter(n => n.id === hovered || n.id === selected);
+    for (const e of expanded) {
+      const lineCount = this.titleLines(e).length;
+      if (lineCount <= 1) continue;
+      const extra = (lineCount - 1) * C.LABEL_LINE_HEIGHT + C.LABEL_PUSH_PAD;
+      for (const n of nodes) {
+        if (n.id === e.id || n.y <= e.y || Math.abs(n.x - e.x) >= reach) continue;
+        offsets.set(n.id, (offsets.get(n.id) ?? 0) + extra);
+      }
+    }
+    return offsets;
+  });
+
+  // Geometry exposed to the template for laying out the full title's <tspan>s.
+  readonly labelBaseY = OkGraphComponent.LABEL_BASE_Y;
+  readonly labelLineHeight = OkGraphComponent.LABEL_LINE_HEIGHT;
 
   authorLine(paper: Paper): string {
     const a = paper.authors;

@@ -28,6 +28,7 @@ from .bigquery_citations import (
     BigQueryNotConfiguredError,
     get_citation_graph,
 )
+from .boolean_query import compile_text_predicate
 from .opensearch_search import OpenSearchError, get_engine
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,7 @@ class CitGraphNode:
 class CitGraphEdge:
     source: str
     target: str
+    is_influential: bool = False
 
 
 @dataclass
@@ -84,6 +86,47 @@ class CitGraphResult:
     nodes: list[CitGraphNode]
     edges: list[CitGraphEdge]
     seed_id: str
+
+
+def merge_cit_graph_results(*results: CitGraphResult) -> CitGraphResult:
+    """Union the node/edge sets of direction-pure cones into one graph (v2).
+
+    Used by the "directional split" (v2) construction, which builds a pure future
+    cone and a pure past cone separately and merges them. Nodes are keyed by
+    ``paper_id``; when the same paper appears in more than one cone (a seed at
+    hop 0, or a paper that is both a descendant and an ancestor of the seeds) the
+    smaller ``hop`` wins so distance-from-seed stays meaningful. Edges are keyed
+    by ``(source, target)`` and ``is_influential`` is OR-ed across duplicates.
+    ``seed_id`` is the first non-empty one. First-appearance order is preserved.
+    """
+    nodes: dict[str, CitGraphNode] = {}
+    for res in results:
+        for n in res.nodes:
+            existing = nodes.get(n.paper_id)
+            if existing is None:
+                nodes[n.paper_id] = n
+            elif n.hop < existing.hop:
+                nodes[n.paper_id] = n
+
+    edges: dict[tuple[str, str], CitGraphEdge] = {}
+    for res in results:
+        for e in res.edges:
+            key = (e.source, e.target)
+            existing_e = edges.get(key)
+            if existing_e is None:
+                edges[key] = e
+            elif e.is_influential and not existing_e.is_influential:
+                existing_e.is_influential = True
+
+    seed_id = ""
+    for res in results:
+        if res.seed_id:
+            seed_id = res.seed_id
+            break
+
+    return CitGraphResult(
+        nodes=list(nodes.values()), edges=list(edges.values()), seed_id=seed_id
+    )
 
 
 def _paper_to_node(p: Paper, hop: int) -> CitGraphNode:
@@ -112,6 +155,36 @@ def matches_keywords(title: str | None, abstract: str | None, keywords: list[str
     return any(k.lower() in text for k in keywords if k)
 
 
+def node_matches_filter(node: CitGraphNode, node_filter: object) -> bool:
+    """Whether a hydrated node satisfies a metadata ``node_filter``.
+
+    ``node_filter`` is duck-typed (e.g. the API ``GraphNodeFilter``); only fields
+    available on OpenSearch-hydrated nodes are checked — year, citation_count,
+    open-access, fields-of-study. A null ``year`` fails a set year bound; a null
+    ``citation_count`` is treated as 0 (mirrors the client/search semantics).
+    """
+    nf = node_filter
+    year_min = getattr(nf, "year_min", None)
+    year_max = getattr(nf, "year_max", None)
+    if year_min is not None and (node.year is None or node.year < year_min):
+        return False
+    if year_max is not None and (node.year is None or node.year > year_max):
+        return False
+    cc = node.citation_count or 0
+    citation_min = getattr(nf, "citation_min", None)
+    citation_max = getattr(nf, "citation_max", None)
+    if citation_min is not None and cc < citation_min:
+        return False
+    if citation_max is not None and cc > citation_max:
+        return False
+    if getattr(nf, "open_access_only", False) and not node.is_open_access:
+        return False
+    fields = getattr(nf, "fields", None) or []
+    if fields and not (set(node.fields_of_study or []) & set(fields)):
+        return False
+    return True
+
+
 async def _hydrate(corpusids: list[int], hop: int) -> dict[int, CitGraphNode]:
     """Fetch node metadata for ``corpusids`` from OpenSearch (only those present)."""
     if not corpusids:
@@ -133,6 +206,9 @@ async def _traverse(
     include_non_matching: bool,
     top_k_per_paper: list[int | None] | int | None = None,
     max_per_hop_total: int | None = None,
+    influential_only: bool = False,
+    boolean_query: str | None = None,
+    node_filter: object | None = None,
 ) -> CitGraphResult:
     """Traverse the citation graph.
 
@@ -142,6 +218,11 @@ async def _traverse(
     number of new papers added in a hop to the globally highest-ok-score ones
     (cumulative across all frontier papers). ok-score is proxied by
     ``citation_count`` — see the per-paper cap comment below.
+
+    When ``influential_only`` is set, every non-influential edge is dropped at the
+    start of each hop (before candidates are gathered), so the papers those edges
+    would have introduced are never added as nodes and never enter the frontier —
+    they are not expanded from on later hops.
     """
     engine = get_engine()
     bq = get_citation_graph()
@@ -174,10 +255,14 @@ async def _traverse(
 
     want_past = direction in ("past", "both")
     want_future = direction in ("future", "both")
-    # Keyword filtering can drop a high-citation neighbour after hydration, so the kept
-    # top-K is taken among matches — meaning we must NOT pre-cap by citation at the source
-    # when it is active. Invariant across hops.
-    keyword_filtering = (not include_non_matching) and bool(keywords)
+    # Advanced filter (boolean query + metadata) supersedes the legacy keyword path.
+    # Parse the boolean query once; an empty/invalid query yields a match-all predicate.
+    text_pred = compile_text_predicate(boolean_query) if boolean_query else None
+    advanced_filtering = text_pred is not None or node_filter is not None
+    # Any filter that can drop a high-citation neighbour after hydration means the kept
+    # top-K must be taken among the survivors — so we must NOT pre-cap by citation at the
+    # source when one is active. Invariant across hops.
+    keyword_filtering = ((not include_non_matching) and bool(keywords)) or advanced_filtering
     overfetch = _bq_overfetch()
 
     def _top_k_for_hop(hop: int) -> int | None:
@@ -209,14 +294,14 @@ async def _traverse(
         # This hop's edges, each tagged with its *anchor* — the frontier paper the
         # neighbour hangs off — so a per-paper cap can be applied below. For a
         # reference the anchor is the citing side; for a citation it's the cited
-        # side. Item shape: (anchor, neighbour, (citing, cited)). Fetch order is
-        # preserved (references then citations), matching the legacy traversal.
+        # side. Item shape: (anchor, neighbour, (citing, cited), is_influential).
+        # Fetch order is preserved (references then citations), matching the legacy traversal.
         # Fetch references (past) and citations (future) concurrently: they are
         # independent BigQuery jobs and each carries a large fixed per-job latency, so
         # running them in parallel roughly halves a 'both'-direction hop. The helpers
         # capture BigQuery errors instead of raising so the task group always exits
         # cleanly; we then surface them as UpstreamError in normal control flow.
-        edge_results: dict[str, list[tuple[int, int]]] = {"refs": [], "cites": []}
+        edge_results: dict[str, list[tuple[int, int, bool]]] = {"refs": [], "cites": []}
         edge_errors: list[Exception] = []
 
         async def _fetch_edges(kind: str, fn) -> None:
@@ -238,27 +323,46 @@ async def _traverse(
 
         # Merge in a fixed order (references then citations) so traversal stays
         # deterministic regardless of which thread finished first.
-        tagged: list[tuple[int, int, tuple[int, int]]] = []
-        for citing, cited in edge_results["refs"]:
-            tagged.append((citing, cited, (citing, cited)))
-        for citing, cited in edge_results["cites"]:
-            tagged.append((cited, citing, (citing, cited)))
+        tagged: list[tuple[int, int, tuple[int, int], bool]] = []
+        for citing, cited, infl in edge_results["refs"]:
+            tagged.append((citing, cited, (citing, cited), infl))
+        for citing, cited, infl in edge_results["cites"]:
+            tagged.append((cited, citing, (citing, cited), infl))
+
+        # Influential-only mode: drop every non-influential edge up front so the
+        # papers they reach are never hydrated, added as nodes, or pushed onto the
+        # frontier — i.e. not expanded from on later hops (admin toggle).
+        if influential_only:
+            tagged = [t for t in tagged if t[3]]
 
         # Candidate neighbours = endpoints not already known as nodes.
         candidates: set[int] = set()
-        for _anchor, _neighbour, (citing, cited) in tagged:
+        for _anchor, _neighbour, (citing, cited), _infl in tagged:
             for endpoint in (citing, cited):
                 if endpoint not in nodes:
                     candidates.add(endpoint)
         hop_nodes = await _hydrate(list(candidates), hop=hop)
 
         # A neighbour is usable iff it is already a node or present in OpenSearch now,
-        # and (when filtering) matches the keywords.
+        # and (when filtering) passes the active filter. Seeds are always exempt — they
+        # were chosen by the user (and pre-filtered client-side for fields the index can't
+        # supply, e.g. code/peer-reviewed/archetype). A non-usable node is excluded here,
+        # so it is never added to `nodes`, never pushed onto `next_frontier`, and therefore
+        # never expanded from on later hops — this gates BFS expansion for every filter.
         def _usable(cid: int) -> bool:
             node = nodes.get(cid) or hop_nodes.get(cid)
             if node is None:  # not in the index -> dropped (OpenSearch-only)
                 return False
-            if not include_non_matching and cid not in seen_seed:
+            if cid in seen_seed:
+                return True
+            if advanced_filtering:
+                # Boolean query + metadata filter (the new path) supersedes the legacy one.
+                if text_pred is not None and not text_pred(node.title, node.abstract):
+                    return False
+                if node_filter is not None and not node_matches_filter(node, node_filter):
+                    return False
+                return True
+            if not include_non_matching:
                 return matches_keywords(node.title, node.abstract, keywords)
             return True
 
@@ -271,41 +375,60 @@ async def _traverse(
             node = nodes.get(cid) or hop_nodes.get(cid)
             return (node.citation_count or 0) if node else -1
 
-        # Per-paper top-K cap: keep only the K highest-ok-score neighbours taken
-        # from any single anchor paper (e.g. a foundational work's most relevant
-        # citers). ``current_top_k`` was computed above (and may already have bounded
-        # the BigQuery fetch); this trims to the exact top-K among usable neighbours.
+        # Per-paper top-K cap: keep only the top-K neighbours taken from any single
+        # anchor paper (e.g. a foundational work's most relevant citers).
+        # ``current_top_k`` was computed above (and may already have bounded the
+        # BigQuery fetch); this trims to the exact top-K among usable neighbours.
+        #
+        # Ranking prioritises S2 "highly influential" citations: each anchor's
+        # neighbours are partitioned influential-first (``t[3]``), then ordered within
+        # each partition by ok-score (citation_count proxy). So an influential
+        # neighbour is always kept ahead of a non-influential one, and only when the
+        # partition still has room do non-influential neighbours fill the rest. A
+        # descending tuple sort yields exactly that (True > False, then higher cite
+        # count first); the stable sort keeps fetch order on exact ties. When
+        # ``influential_only`` is set this is moot — non-influential edges are already
+        # gone — so the partition collapses to a pure ok-score order.
         if current_top_k is not None:
-            grouped: dict[int, list[tuple[int, int, tuple[int, int]]]] = defaultdict(list)
+            grouped: dict[int, list[tuple[int, int, tuple[int, int], bool]]] = defaultdict(list)
             for t in usable:
                 grouped[t[0]].append(t)
-            capped: list[tuple[int, int, tuple[int, int]]] = []
+            capped: list[tuple[int, int, tuple[int, int], bool]] = []
             for items in grouped.values():
-                # Stable sort: ties keep fetch order, so the result is deterministic.
-                items.sort(key=lambda t: _cite_count(t[1]), reverse=True)
+                items.sort(key=lambda t: (t[3], _cite_count(t[1])), reverse=True)
                 capped.extend(items[:current_top_k])
             usable = capped
 
         # Cumulative per-hop cap: across ALL frontier papers, add at most
-        # ``max_per_hop_total`` *new* papers this hop — the globally highest-ok-score
-        # ones — so the graph cannot explode as the frontier grows. Counts distinct
-        # new nodes (not edges); edges to papers that don't make the cut are dropped,
-        # while edges to already-known papers are always kept.
+        # ``max_per_hop_total`` *new* papers this hop so the graph cannot explode as the
+        # frontier grows. Counts distinct new nodes (not edges); edges to papers that
+        # don't make the cut are dropped, while edges to already-known papers are always
+        # kept.
+        #
+        # Ranking mirrors the per-paper top-K above: influential-tier papers first, then
+        # by ok-score (citation_count proxy). A new paper is influential-tier if *any* of
+        # its incoming edges this hop is influential (OR-accumulated below), since the
+        # cumulative cap ranks distinct papers while a paper may be reached by several
+        # edges. A descending tuple sort yields True > False then higher cite count first;
+        # the stable sort keeps insertion (fetch) order on exact ties for determinism.
         if max_per_hop_total is not None:
-            new_scores: dict[int, int] = {}
-            for _anchor, neighbour, _edge in usable:
-                if neighbour not in nodes and neighbour not in new_scores:
-                    new_scores[neighbour] = _cite_count(neighbour)
-            if len(new_scores) > max_per_hop_total:
+            new_infl: dict[int, bool] = {}
+            for _anchor, neighbour, _edge, infl in usable:
+                if neighbour in nodes:
+                    continue
+                new_infl[neighbour] = new_infl.get(neighbour, False) or infl
+            if len(new_infl) > max_per_hop_total:
                 kept_new = {
                     cid for cid, _ in sorted(
-                        new_scores.items(), key=lambda kv: kv[1], reverse=True
+                        new_infl.items(),
+                        key=lambda kv: (kv[1], _cite_count(kv[0])),
+                        reverse=True,
                     )[:max_per_hop_total]
                 }
                 usable = [t for t in usable if t[1] in nodes or t[1] in kept_new]
 
         next_frontier: list[int] = []
-        for _anchor, _neighbour, (citing, cited) in usable:
+        for _anchor, _neighbour, (citing, cited), infl in usable:
             key = (citing, cited)
             if key in edge_set:
                 continue
@@ -314,7 +437,7 @@ async def _traverse(
                 if cid not in nodes:
                     nodes[cid] = hop_nodes[cid]
                     next_frontier.append(cid)
-            edges.append(CitGraphEdge(source=str(citing), target=str(cited)))
+            edges.append(CitGraphEdge(source=str(citing), target=str(cited), is_influential=infl))
 
         frontier = next_frontier
 
@@ -347,8 +470,52 @@ async def explore_citation_graph(
     k: int = 1,
     max_per_hop: int | None = None,
     top_k_per_paper: list[int | None] | int | None = None,
+    influential_only: bool = False,
+    boolean_query: str | None = None,
+    node_filter: object | None = None,
+    directional_split: bool = False,
 ) -> CitGraphResult:
-    """Expand a citation graph from multiple seeds in a chosen direction, from hosted data."""
+    """Expand a citation graph from multiple seeds in a chosen direction, from hosted data.
+
+    When ``directional_split`` (the v2 construction) is set and ``direction`` is
+    ``'both'``, the graph is assembled as the **union of two direction-pure
+    cones**: a pure future cone (citations only, every hop) and a pure past cone
+    (references only, every hop). Because a single-direction traversal cannot mix
+    citation and reference hops, no node in the union is reachable by a path that
+    alternates the two — unlike the default (v1) ``'both'`` traversal, whose
+    single frontier expands in both directions each hop. Per-hop / per-paper caps
+    apply independently within each cone. For a single-direction request v2 is
+    identical to v1, so the split only takes effect for ``'both'``.
+    """
+    if directional_split and direction == "both":
+        past = await _traverse(
+            seeds,
+            "past",
+            k,
+            _EXPLORE_FETCH_CAP,
+            keywords or [],
+            include_non_matching,
+            top_k_per_paper=top_k_per_paper,
+            max_per_hop_total=max_per_hop,
+            influential_only=influential_only,
+            boolean_query=boolean_query,
+            node_filter=node_filter,
+        )
+        future = await _traverse(
+            seeds,
+            "future",
+            k,
+            _EXPLORE_FETCH_CAP,
+            keywords or [],
+            include_non_matching,
+            top_k_per_paper=top_k_per_paper,
+            max_per_hop_total=max_per_hop,
+            influential_only=influential_only,
+            boolean_query=boolean_query,
+            node_filter=node_filter,
+        )
+        return merge_cit_graph_results(past, future)
+
     return await _traverse(
         seeds,
         direction,
@@ -358,5 +525,8 @@ async def explore_citation_graph(
         include_non_matching,
         top_k_per_paper=top_k_per_paper,
         max_per_hop_total=max_per_hop,
+        influential_only=influential_only,
+        boolean_query=boolean_query,
+        node_filter=node_filter,
     )
 

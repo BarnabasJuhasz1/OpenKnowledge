@@ -212,3 +212,96 @@ async def test_explore_top_k_per_paper_per_hop_demo():
 
 
 
+
+
+@pytest.mark.asyncio
+async def test_explore_boolean_query_filters_demo_neighbours():
+    """The advanced boolean query gates demo neighbours the same way the hosted path does."""
+    store = _make_store()
+    # seed -> A ("Alpha") and B ("Beta"); query keeps only A.
+    result = await store.explore(
+        ["seed"], "past", k=1, max_per_hop=100, boolean_query="alpha",
+    )
+    ids = {n.paper_id for n in result.nodes}
+    assert "seed" in ids and "A" in ids
+    assert "B" not in ids
+
+
+@pytest.mark.asyncio
+async def test_explore_node_filter_citation_min_demo():
+    from app.api.citgraph import GraphNodeFilter
+
+    store = _make_store()
+    # seed -> A (n_citation 10) and B (5). citation_min=8 keeps only A.
+    result = await store.explore(
+        ["seed"], "past", k=1, max_per_hop=100,
+        node_filter=GraphNodeFilter(citation_min=8),
+    )
+    ids = {n.paper_id for n in result.nodes}
+    assert "seed" in ids and "A" in ids
+    assert "B" not in ids
+
+
+# --- v2: direction-pure cones (directional_split) ---------------------------------
+
+def _make_v2_store() -> DemoCitGraphStore:
+    """Synthetic index with mixed-path nodes, for the v2 cone-union tests.
+
+    forward = references (p cites x), reverse = citers (x cites p). Around `seed`:
+      future hop1: C cites seed; future hop2: CC cites C
+      past   hop1: seed references R; past hop2: R references RR
+      mixed:  C references M  (future-then-past) — v1 only
+      mixed:  M2 cites R      (past-then-future) — v1 only
+    """
+    ids = ["seed", "C", "R", "CC", "RR", "M", "M2"]
+    meta = {
+        pid: {
+            "title": pid,
+            "abstract": f"Abstract for {pid}",
+            "authors": "['X']",
+            "venue": "V",
+            "year": "2020",
+            "n_citation": "10",
+            "predicted_main_archetype": "None",
+            "predicted_second_tier_archetype": "None",
+        }
+        for pid in ids
+    }
+    forward = {"seed": ["R"], "C": ["seed", "M"], "R": ["RR"], "CC": ["C"], "M2": ["R"]}
+    reverse = {"seed": ["C"], "R": ["seed", "M2"], "C": ["CC"], "M": ["C"], "RR": ["R"]}
+    title_to_id = {m["title"].lower(): pid for pid, m in meta.items()}
+    store = DemoCitGraphStore()
+    store._index = _Index(forward, reverse, meta, title_to_id)
+    return store
+
+
+@pytest.mark.asyncio
+async def test_v1_both_includes_mixed_path_nodes_demo():
+    store = _make_v2_store()
+    result = await store.explore(["seed"], direction="both", k=2)
+    ids = {n.paper_id for n in result.nodes}
+    # Default (v1) mixed expansion reaches M and M2 via mixed paths.
+    assert ids == {"seed", "C", "R", "CC", "RR", "M", "M2"}
+
+
+@pytest.mark.asyncio
+async def test_v2_both_excludes_mixed_path_nodes_demo():
+    store = _make_v2_store()
+    result = await store.explore(["seed"], direction="both", k=2, directional_split=True)
+    ids = {n.paper_id for n in result.nodes}
+    assert ids == {"seed", "C", "R", "CC", "RR"}
+    assert "M" not in ids and "M2" not in ids
+
+
+@pytest.mark.asyncio
+async def test_v2_equals_union_of_past_and_future_demo():
+    store = _make_v2_store()
+    v2 = await store.explore(["seed"], direction="both", k=2, directional_split=True)
+    past = await store.explore(["seed"], direction="past", k=2)
+    future = await store.explore(["seed"], direction="future", k=2)
+    union_nodes = {n.paper_id for n in past.nodes} | {n.paper_id for n in future.nodes}
+    union_edges = {(e.source, e.target) for e in past.edges} | {
+        (e.source, e.target) for e in future.edges
+    }
+    assert {n.paper_id for n in v2.nodes} == union_nodes
+    assert {(e.source, e.target) for e in v2.edges} == union_edges

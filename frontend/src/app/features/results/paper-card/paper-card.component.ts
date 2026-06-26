@@ -123,8 +123,20 @@ export class PaperCardComponent implements OnInit {
     return this.state.isInGraph(this.paper);
   }
 
+  /** True when the seed limit is reached and this paper isn't already a seed, so the
+   *  "mark as seed" button can be disabled rather than silently no-op. */
+  get atSeedLimit(): boolean {
+    return !this.inGraph && !this.state.canAddSeed();
+  }
+
+  get seedLimit(): number {
+    return this.state.seedLimit;
+  }
+
   addToGraph(): void {
-    this.state.addToGraph(this.paper);
+    if (!this.state.addToGraph(this.paper)) {
+      this.notify.show(`Seed limit reached (${this.state.seedLimit}). Remove a seed paper to add another.`);
+    }
   }
 
   toggleBookshelf(): void {

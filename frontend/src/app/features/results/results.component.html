@@ -14,14 +14,16 @@
       </div>
     }
 
-    <!-- Centered non-scrollable search loading screen (only shown before any results arrive) -->
-    @if (state.loading() && state.totalRaw() === 0) {
+    <!-- Centered non-scrollable search loading screen (only shown on the initial search,
+         before the query has any matches — never on a filter-driven refetch, where the
+         results area is already on screen and would otherwise overlap this loader). -->
+    @if (state.loading() && state.totalRaw() === 0 && !hasQueryMatches) {
       <div class="search-loader">
         <div class="search-loader__card">
           <div class="search-loader__header">
             <h2 class="search-loader__title">Searching Academic Databases</h2>
             <p class="search-loader__subtitle">
-              Querying OpenAlex, Semantic Scholar, arXiv, PubMed, DBLP, CrossRef, Europe PMC, and CORE
+              Querying the Semantic Scholar corpus
             </p>
           </div>
 
@@ -68,16 +70,6 @@
       </div>
     }
 
-    <!-- Progress banner while streaming -->
-    @if (state.loading() && state.totalRaw() > 0) {
-      <div class="stream-progress">
-        <div class="stream-progress__bar"></div>
-        <div class="stream-progress__text">
-          Fetching results — {{ state.sourcesQueried().length }} source(s) done, more incoming...
-        </div>
-      </div>
-    }
-
     <!-- Scoring progress banner -->
     @if (!state.loading() && state.scoresLoading()) {
       <div class="stream-progress stream-progress--scoring">
@@ -88,8 +80,10 @@
       </div>
     }
 
-    <!-- Results (show as soon as papers start arriving) -->
-    @if (!state.error() && state.totalRaw() > 0) {
+    <!-- Results (show as soon as papers start arriving). The layout — including the
+         filters sidebar — also stays mounted when filters narrow the set to zero, so
+         the user can always undo a filter that produced no matches. -->
+    @if (!state.error() && hasQueryMatches) {
       <div class="results-layout">
         <app-filters-sidebar class="results-layout__sidebar" />
         <div class="results-layout__content">
@@ -106,13 +100,15 @@
 
           <div class="results-page__header">
             <app-results-meta
-              [totalFound]="mode.isScholar() ? state.scholarTotal() : state.totalFound()"
+              [totalFound]="mode.isScholar() ? state.scholarUnfilteredTotal() : state.allScoredPapers().length"
               [totalRaw]="state.totalRaw()"
               [deduplicatesRemoved]="state.deduplicatesRemoved()"
+              [visibleCount]="mode.isScholar() ? state.scholarTotal() : state.filteredPapers().length"
               [activeFilter]="state.activeFilter()"
               [sourcesQueried]="state.sourcesQueried()"
               [sourcesFailed]="state.sourcesFailed()"
               [sourceErrors]="state.sourceErrors()"
+              [loading]="state.loading()"
             />
           </div>
 
@@ -128,7 +124,13 @@
             </div>
           }
 
-          @if (mode.isScholar()) {
+          @if (filteredToZero) {
+            <!-- Query matched papers, but the active filters exclude them all. Keep the
+                 page intact (header, sidebar) and just show no cards + a notice. -->
+            <div class="results-page__filtered-empty">
+              No papers match the current filters. Adjust or reset the filters to see results.
+            </div>
+          } @else if (mode.isScholar()) {
             <!-- Server fetches a 100-result window at a time, but only 10 are shown
                  per page: the loaded window is sliced client-side by the local page,
                  and paging past it fetches the next window from the backend. -->
@@ -137,6 +139,7 @@
               [page]="scholarLocalPage()"
               [clientPaginate]="true"
               [scoresLoading]="state.scoresLoading()"
+              [loading]="state.loading()"
             />
 
             <app-pagination
@@ -163,11 +166,31 @@
       </div>
     }
 
-    <!-- Empty state -->
-    @if (!state.loading() && !state.error() && state.totalRaw() === 0 && state.rawQuery()) {
+    <!-- Empty state — the query itself matched nothing (distinct from a filter that
+         narrowed real matches to zero, handled inside the results layout above). -->
+    @if (!state.loading() && !state.error() && !hasQueryMatches && state.rawQuery()) {
       <div class="results-page__empty">
         No papers found for this query. Try broadening your keywords.
       </div>
     }
   </main>
+
+  <!-- On-demand archetype-classifier cold-start notice. Independent of the OK-Graph
+       summarization model's warm-up notice — either service can be cold on its own. -->
+  @if (state.scholarClassifyWarmingUp()) {
+    <div class="results-warmup" role="status" aria-live="polite">
+      <span class="results-warmup__icon material-symbols-outlined">hourglass_top</span>
+      <div class="results-warmup__body">
+        <div class="results-warmup__title">Warming up the archetype model…</div>
+        <p class="results-warmup__text">{{ state.archetypeColdStartNotice }}</p>
+      </div>
+      <button
+        type="button"
+        class="results-warmup__close"
+        aria-label="Dismiss"
+        (click)="dismissClassifyWarmup()">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+  }
 </div>

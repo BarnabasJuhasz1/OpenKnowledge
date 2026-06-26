@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { citationLinksBetweenPlaced, PlacedRef } from './graph-layout';
+import { citationLinksBetweenPlaced, PlacedRef, wavyEdgePath } from './graph-layout';
 
 /**
  * 6 base papers. Two-level hierarchy used by the tests:
@@ -39,8 +39,8 @@ describe('citationLinksBetweenPlaced', () => {
       idxOf, level1, communitiesAtLevel, baseCount,
     );
     expect(edges).toEqual([
-      { fromId: 'p3', toId: 'p4' },
-      { fromId: 'p2', toId: 'p5' },
+      { fromId: 'p3', toId: 'p4', isInfluential: false },
+      { fromId: 'p2', toId: 'p5', isInfluential: false },
     ]);
   });
 
@@ -54,7 +54,7 @@ describe('citationLinksBetweenPlaced', () => {
     const edges = citationLinksBetweenPlaced(
       placed, [{ source: 'p2', target: 'p3' }], idxOf, level0, communitiesAtLevel, baseCount,
     );
-    expect(edges).toEqual([{ fromId: 'p2', toId: 'p3' }]);
+    expect(edges).toEqual([{ fromId: 'p2', toId: 'p3', isInfluential: false }]);
   });
 
   it('drops cross-cluster citation edges (shown as bridges, not node links)', () => {
@@ -68,6 +68,19 @@ describe('citationLinksBetweenPlaced', () => {
       placed, [{ source: 'p1', target: 'p2' }], idxOf, level1, communitiesAtLevel, baseCount,
     );
     expect(edges).toEqual([]);
+  });
+
+  it('draws cross-cluster citation edges when includeCrossCluster is on (v2)', () => {
+    // Same placement/edge as the drop case, but the v2 flag forces the link to draw.
+    const placed: PlacedRef[] = [
+      { id: 'p1', repIndex: 1, level: -1, community: 1 },
+      { id: 'p2', repIndex: 2, level: -1, community: 2 },
+    ];
+    const edges = citationLinksBetweenPlaced(
+      placed, [{ source: 'p1', target: 'p2' }], idxOf, level1, communitiesAtLevel, baseCount,
+      true,
+    );
+    expect(edges).toEqual([{ fromId: 'p1', toId: 'p2', isInfluential: false }]);
   });
 
   it('ignores edges to papers that are not represented on the canvas', () => {
@@ -107,6 +120,81 @@ describe('citationLinksBetweenPlaced', () => {
     const edges = citationLinksBetweenPlaced(
       placed, [{ source: 'p2', target: 'p5' }], idxOf, level1, communitiesAtLevel, baseCount,
     );
-    expect(edges).toEqual([{ fromId: 'p2', toId: 's45' }]);
+    expect(edges).toEqual([{ fromId: 'p2', toId: 's45', isInfluential: false }]);
+  });
+
+  it('marks a link influential when any contributing citation is influential', () => {
+    const placed: PlacedRef[] = [
+      { id: 'p2', repIndex: 2, level: -1, community: 2 },
+      { id: 'p3', repIndex: 3, level: -1, community: 3 },
+    ];
+    const edges = citationLinksBetweenPlaced(
+      placed,
+      [{ source: 'p2', target: 'p3', is_influential: true }],
+      idxOf, level0, communitiesAtLevel, baseCount,
+    );
+    expect(edges).toEqual([{ fromId: 'p2', toId: 'p3', isInfluential: true }]);
+  });
+
+  it('OR-aggregates influence across merged duplicate/reversed pairs', () => {
+    const placed: PlacedRef[] = [
+      { id: 'p2', repIndex: 2, level: -1, community: 2 },
+      { id: 'p3', repIndex: 3, level: -1, community: 3 },
+    ];
+    // First contributor not influential, a later (reversed) one is → merged link influential.
+    const edges = citationLinksBetweenPlaced(
+      placed,
+      [
+        { source: 'p2', target: 'p3', is_influential: false },
+        { source: 'p3', target: 'p2', is_influential: true },
+      ],
+      idxOf, level1, communitiesAtLevel, baseCount,
+    );
+    expect(edges).toEqual([{ fromId: 'p2', toId: 'p3', isInfluential: true }]);
+  });
+
+  it('aggregates to not-influential when every contributing citation is regular', () => {
+    const placed: PlacedRef[] = [
+      { id: 's45', repIndex: 4, level: 0, community: 3 },
+      { id: 'p2', repIndex: 2, level: -1, community: 2 },
+    ];
+    // Two leaves of B (p4,p5) collapse into rep s45; both incoming links are regular.
+    const edges = citationLinksBetweenPlaced(
+      placed,
+      [
+        { source: 'p2', target: 'p4', is_influential: false },
+        { source: 'p2', target: 'p5' },
+      ],
+      idxOf, level1, communitiesAtLevel, baseCount,
+    );
+    expect(edges).toEqual([{ fromId: 'p2', toId: 's45', isInfluential: false }]);
+  });
+});
+
+describe('wavyEdgePath', () => {
+  it('starts at `from`, ends at `to`, and is a polyline of L segments', () => {
+    const d = wavyEdgePath({ x: 0, y: 0 }, { x: 100, y: 0 });
+    expect(d.startsWith('M 0.0 0.0')).toBe(true);
+    expect(d.trimEnd().endsWith('L 100.0 0.0')).toBe(true);
+    expect(d.split('L').length).toBeGreaterThan(8); // many ripple segments
+  });
+
+  it('tapers the wave to zero at both endpoints (no perpendicular offset there)', () => {
+    const d = wavyEdgePath({ x: 0, y: 0 }, { x: 100, y: 0 });
+    const pts = d
+      .replace('M', 'L')
+      .split('L')
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map(s => s.split(/\s+/).map(Number));
+    // First and last points sit exactly on the straight line (y = 0).
+    expect(pts[0]).toEqual([0, 0]);
+    expect(pts[pts.length - 1]).toEqual([100, 0]);
+    // Somewhere in the middle the wave departs from the line.
+    expect(pts.some(([, y]) => Math.abs(y) > 1)).toBe(true);
+  });
+
+  it('falls back to a straight segment for near-zero-length edges', () => {
+    expect(wavyEdgePath({ x: 5, y: 5 }, { x: 5, y: 5 })).toBe('M 5 5 L 5 5');
   });
 });

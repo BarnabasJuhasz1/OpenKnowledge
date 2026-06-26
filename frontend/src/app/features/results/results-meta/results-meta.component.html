@@ -1,11 +1,10 @@
 <div class="meta">
-  <span class="meta__count">{{ totalFound }} papers found</span>
-  @if (!activeFilter && deduplicatesRemoved > 0) {
+  <span class="meta__count" [class.meta__count--muted]="visibleCount !== totalFound">{{ totalFound }} papers found</span>
+  @if (visibleCount !== totalFound || loading) {
     <span class="meta__sep">·</span>
-    <span class="meta__dedup">{{ totalRaw }} total across sources, {{ deduplicatesRemoved }} duplicates not shown</span>
-  }
-  @if (sourcesLabel) {
-    <span class="meta__sep">·</span>
-    <span class="meta__sources">{{ sourcesLabel }}</span>
+    <span class="meta__visible">filtered to {{ visibleCount }} papers</span>
+    @if (loading) {
+      <span class="meta__spinner" aria-hidden="true"></span>
+    }
   }
 </div>

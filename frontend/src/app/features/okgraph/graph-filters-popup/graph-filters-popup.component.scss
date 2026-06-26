@@ -1,0 +1,297 @@
+:host {
+  display: contents;
+}
+
+.gfp-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 18, 0.55);
+  backdrop-filter: blur(2px);
+  z-index: 1000;
+}
+
+.gfp {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1001;
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(80vh, 720px);
+  display: flex;
+  flex-direction: column;
+  background: var(--ok-surface-container);
+  border: 1px solid var(--ok-outline-variant);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  color: var(--ok-on-surface);
+  overflow: hidden;
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--ok-outline-variant);
+  }
+
+  &__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+
+    .material-symbols-outlined { font-size: 19px; color: var(--ok-primary); }
+  }
+
+  &__header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  &__reset {
+    background: none;
+    border: none;
+    color: var(--ok-primary);
+    font-size: 12px;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 6px;
+
+    &:hover { background: rgba(var(--ok-primary-rgb), 0.12); }
+  }
+
+  &__close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: var(--ok-on-surface-variant);
+    cursor: pointer;
+    padding: 2px;
+    border-radius: 6px;
+
+    .material-symbols-outlined { font-size: 18px; }
+    &:hover { background: var(--ok-surface-container-high); color: var(--ok-on-surface); }
+  }
+
+  &__body {
+    padding: 8px 16px 16px;
+    overflow-y: auto;
+  }
+
+  &__section {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--ok-outline-variant);
+
+    &:last-child { border-bottom: none; }
+  }
+
+  &__label {
+    margin: 0 0 10px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--ok-on-surface-variant);
+  }
+
+  &__range-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--ok-on-surface);
+    margin-bottom: 6px;
+  }
+
+  &__range-row {
+    position: relative;
+    height: 24px;
+  }
+
+  &__range-rail {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 4px;
+    transform: translateY(-50%);
+  }
+
+  &__range-track {
+    position: absolute;
+    inset: 0;
+    background: var(--ok-surface-container-highest);
+    border-radius: 2px;
+  }
+
+  &__range-fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: var(--ok-gradient-primary);
+    border-radius: 2px;
+  }
+
+  &__slider {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 24px;
+    margin: 0;
+    background: none;
+    pointer-events: none;
+    -webkit-appearance: none;
+    appearance: none;
+
+    &::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--ok-primary);
+      border: 2px solid var(--ok-surface-container);
+      cursor: pointer;
+      pointer-events: auto;
+    }
+    &::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--ok-primary);
+      border: 2px solid var(--ok-surface-container);
+      cursor: pointer;
+      pointer-events: auto;
+    }
+  }
+
+  &__toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+    cursor: pointer;
+    font-size: 13px;
+
+    input { accent-color: var(--ok-primary-raw); }
+
+    // Alpha: backing field not backfilled — toggle disabled.
+    &--alpha {
+      opacity: 0.55;
+      cursor: not-allowed;
+
+      input { cursor: not-allowed; }
+    }
+  }
+
+  &__toggle-text {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  &__seed-note {
+    font-style: normal;
+    font-size: 10px;
+    color: var(--ok-on-surface-variant);
+    background: var(--ok-surface-container-high);
+    padding: 1px 6px;
+    border-radius: 999px;
+  }
+
+  &__footer {
+    padding: 12px 16px;
+    border-top: 1px solid var(--ok-outline-variant);
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  &__done {
+    background: var(--ok-gradient-primary);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:hover { background: var(--ok-gradient-primary-hover); }
+  }
+}
+
+// Multi-select dropdown (archetypes / fields).
+.gfp-select {
+  position: relative;
+
+  &__toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--ok-surface-container-low);
+    border: 1px solid var(--ok-outline-variant);
+    border-radius: 8px;
+    padding: 8px 10px;
+    color: var(--ok-on-surface);
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  &__chevron {
+    font-size: 18px;
+    transition: transform 0.15s ease;
+    color: var(--ok-on-surface-variant);
+  }
+
+  &--open &__chevron { transform: rotate(180deg); }
+
+  &__menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 5;
+    max-height: 240px;
+    overflow-y: auto;
+    background: var(--ok-surface-container-high);
+    border: 1px solid var(--ok-outline-variant);
+    border-radius: 8px;
+    padding: 6px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  }
+
+  &__option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+
+    &:hover { background: var(--ok-surface-container-highest); }
+    input { accent-color: var(--ok-primary-raw); }
+
+    &--all { font-weight: 600; }
+  }
+
+  &__name { flex: 1; }
+
+  &__count {
+    font-size: 11px;
+    color: var(--ok-on-surface-variant);
+  }
+
+  &__divider {
+    height: 1px;
+    background: var(--ok-outline-variant);
+    margin: 4px 0;
+  }
+}
