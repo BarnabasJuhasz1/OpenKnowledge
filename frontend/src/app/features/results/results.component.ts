@@ -127,6 +127,10 @@ export class ResultsComponent implements OnInit, OnDestroy {
 
   private scheduleScholarRefetch(): void {
     if (this.scholarRefetchTimer) clearTimeout(this.scholarRefetchTimer);
+    // Mark a refetch as in flight immediately (not only when the debounce fires) so the
+    // "filtered to N papers" count shows its updating spinner for the whole debounce window —
+    // otherwise the count would sit silently stale until the request lands.
+    this.state.loading.set(true);
     // Filters/sort changed — reload the first window from the server (force) and restart
     // classification, since the match set (and thus the distribution) has changed.
     this.scholarRefetchTimer = setTimeout(() => {
@@ -138,6 +142,8 @@ export class ResultsComponent implements OnInit, OnDestroy {
 
   private scheduleScholarPageReload(): void {
     if (this.scholarPageReloadTimer) clearTimeout(this.scholarPageReloadTimer);
+    // Show the updating spinner across the whole debounce window (see scheduleScholarRefetch).
+    this.state.loading.set(true);
     // Sort or archetype filter changed — reload the first window from the server (to reorder,
     // or to apply the archetype filter across all matches). Neither alters the match set's
     // archetype distribution, so classification keeps running untouched.

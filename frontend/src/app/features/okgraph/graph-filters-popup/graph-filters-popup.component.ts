@@ -45,6 +45,35 @@ export class GraphFiltersPopupComponent {
     this.graphFilter.resetMetadata();
   }
 
+  // ── Year mode (around seed papers vs custom range) ────────────────────────────
+  get yearMode(): 'context' | 'range' { return this.graphFilter.yearMode(); }
+  setYearMode(mode: 'context' | 'range'): void { this.graphFilter.yearMode.set(mode); }
+
+  readonly yearContext = computed(() => this.graphFilter.yearContext());
+
+  /** The context windows rendered as text, e.g. "1988–1992, 2008–2012". */
+  get contextIntervalsLabel(): string {
+    const ints = this.yearContext().intervals;
+    if (!ints.length) return '—';
+    return ints.map(([lo, hi]) => (lo === hi ? `${lo}` : `${lo}–${hi}`)).join(', ');
+  }
+
+  /** One-line description of the rule producing the current windows. */
+  get contextRule(): string {
+    const ctx = this.yearContext();
+    if (ctx.mode === 'all') return 'Full span of all retrieved papers';
+    if (ctx.seedCount === 0) return 'No seed papers selected yet';
+    if (ctx.seedCount === 1) return 'Single seed paper ± 3 years';
+    return `${ctx.seedCount} seed papers, each ± 2 years`;
+  }
+
+  /** True only when the context actually narrows the build (seed config). In 'all'
+   *  config it reports the span but applies no filtering. */
+  get contextNarrows(): boolean {
+    const ctx = this.yearContext();
+    return ctx.mode === 'seed' && ctx.intervals.length > 0;
+  }
+
   // ── Year range ────────────────────────────────────────────────────────────────
   readonly yearBounds = computed(() => this.search.yearRange());
 

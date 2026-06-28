@@ -33,6 +33,33 @@ export interface AdminGraphConfig {
   TOP_K_PER_PAPER: (number | null)[] | null;
   /** Louvain clustering resolution. Higher → more, smaller clusters. */
   RESOLUTION: number;
+  /**
+   * 'all' mode clustering substrate (ignored by 'seed' mode):
+   *  - `'full-graph'` (legacy): cluster the retrieved papers AND the intermediate
+   *    connector papers together, then hide the intermediates. The connector
+   *    structure fragments the retrieved papers across many communities (lots of
+   *    single-paper clusters).
+   *  - `'projection'` (default): cluster a weighted similarity graph over the
+   *    retrieved papers ONLY, where edge weight = shared intermediate connectors
+   *    (co-citation / bibliographic coupling). Louvain optimises over the papers
+   *    actually shown; papers sharing nothing land in Miscellaneous.
+   *  Optional — only the 'all' entries set it; defaults to 'full-graph' when absent.
+   */
+  ALL_CLUSTER_SUBSTRATE?: 'full-graph' | 'projection';
+  /** Projection substrate: drop projected edges below this weight. The primary
+   *  cluster-density / Miscellaneous dial. Default 1. See weighted-projection.ts. */
+  PROJECTION_MIN_WEIGHT?: number;
+  /** Projection substrate: down-weight popular connectors so a few hub
+   *  intermediates don't tie everything together. Default 'adamic-adar'. */
+  PROJECTION_HUB_DISCOUNT?: 'none' | 'inverse-degree' | 'adamic-adar';
+  /** Projection substrate: extra weight for a pair that also cites each other
+   *  directly (rare but strong signal). Default 1. */
+  PROJECTION_DIRECT_EDGE_BONUS?: number;
+  /** Projection substrate: also link papers connected through a 2-intermediate
+   *  chain (i→X→Y→j), not just a shared neighbour. Shrinks Miscellaneous by
+   *  catching papers in the same citation region that share no common neighbour.
+   *  0 disables (one-hop only). Default 0. */
+  PROJECTION_BRIDGE_WEIGHT?: number;
 }
 
 /**
@@ -40,9 +67,12 @@ export interface AdminGraphConfig {
  * "Seed" / "All" tabs in the build panel:
  *  - `'seed'`: expand citation neighbourhoods outward from the selected seed
  *    papers (all knobs apply).
- *  - `'all'`: build the graph from every retrieved search result client-side
- *    (only `RESOLUTION` affects the result; the other knobs are kept for
- *    symmetry and future use).
+ *  - `'all'`: expand a k-hop citation neighbourhood on the backend from *every*
+ *    retrieved search result, then contract it down to the retrieved papers —
+ *    edges between retrieved papers represent multi-hop citation reachability
+ *    through (hidden) intermediate papers. `K_HOPS` / `MAX_PER_HOP` /
+ *    `TOP_K_PER_PAPER` drive the expansion; `RESOLUTION` drives Louvain over the
+ *    contracted retrieved-only graph.
  */
 export type GraphBuildMode = 'seed' | 'all';
 
@@ -73,10 +103,28 @@ export const ADMIN_GRAPH_CONFIG: Record<GraphBuildMode, AdminGraphConfig> = {
     RESOLUTION: 0.5,
   },
   all: {
-    K_HOPS: 2,
+    // 'all' mode sends EVERY retrieved paper to the backend k-hop expansion, then
+    // contracts that neighbourhood down to the retrieved papers (multi-hop edges).
+    // Depth 2 already links retrieved papers that share an intermediate
+    // (retrieved → intermediate → retrieved) — the minimum for the multi-hop
+    // build to add anything over direct citations — while keeping the expansion
+    // from hundreds of seeds affordable. K_HOPS / MAX_PER_HOP / TOP_K_PER_PAPER
+    // drive that expansion; RESOLUTION drives Louvain over the contracted graph.
+    K_HOPS: 3,
     MAX_PER_HOP: null,
-    TOP_K_PER_PAPER: [100, 30],
-    RESOLUTION: 0.5,
+    TOP_K_PER_PAPER: [100, 100, 100],
+    // Projection substrate: the 2-hop bridges make the retained graph densely
+    // connected, so a low resolution (≤0.5) collapses everything into one giant
+    // cluster. Resolution >1 subdivides that dense graph into granular communities
+    // without re-isolating papers into Miscellaneous (their bridge edges remain).
+    RESOLUTION: 1.2,
+    // Cluster a weighted similarity graph over the retrieved papers only (edge
+    // weight = shared intermediate connectors), instead of the full k-hop graph.
+    ALL_CLUSTER_SUBSTRATE: 'projection',
+    PROJECTION_MIN_WEIGHT: 0.3,
+    PROJECTION_HUB_DISCOUNT: 'adamic-adar',
+    PROJECTION_DIRECT_EDGE_BONUS: 1,
+    PROJECTION_BRIDGE_WEIGHT: 1,
   },
 };
 
@@ -109,6 +157,17 @@ export const ADMIN_GRAPH_CONFIG_V2: Record<GraphBuildMode, AdminGraphConfig> = {
     K_HOPS: 2,
     MAX_PER_HOP: null,
     TOP_K_PER_PAPER: [50, 15],
-    RESOLUTION: 0.5,
+    // Matches v1: the projection substrate's dense bridge graph needs resolution
+    // >1 to split into granular clusters instead of one blob. See v1 'all'.
+    RESOLUTION: 1.2,
+    // The 'all' build picks THIS (v2) config whenever graphVersion is v2 (the
+    // default) and direction is 'both' — which is the normal 'all' path — so the
+    // projection substrate must be set here too, not only on the v1 config, or the
+    // 'all' build silently falls back to 'full-graph'.
+    ALL_CLUSTER_SUBSTRATE: 'projection',
+    PROJECTION_MIN_WEIGHT: 0.3,
+    PROJECTION_HUB_DISCOUNT: 'adamic-adar',
+    PROJECTION_DIRECT_EDGE_BONUS: 1,
+    PROJECTION_BRIDGE_WEIGHT: 1,
   },
 };

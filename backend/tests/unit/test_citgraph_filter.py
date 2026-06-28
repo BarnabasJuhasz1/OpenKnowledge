@@ -123,6 +123,52 @@ async def test_node_filter_year_range(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_node_filter_year_intervals_disconnected(monkeypatch):
+    """The "around seed papers" default mode: disjoint year windows gate expansion.
+
+    Two seeds 1990 & 2010 (multiple -> +-2) produce [[1988, 1992], [2008, 2012]];
+    a neighbour only survives inside one of the windows, the 1999 gap-paper is dropped.
+    """
+    papers = {
+        100: _paper(100, year=1990),  # seed A
+        500: _paper(500, year=2010),  # seed B
+        200: _paper(200, year=1991),  # inside [1988, 1992]
+        300: _paper(300, year=2009),  # inside [2008, 2012]
+        400: _paper(400, year=1999),  # in the disconnected gap -> dropped
+        600: _paper(600, year=None),  # no year -> dropped
+    }
+    engine = _FakeEngine({"A": 100, "B": 500}, papers)
+    bq = _FakeBQ([(100, 200), (100, 400), (500, 300), (500, 600)])
+    _wire(monkeypatch, engine, bq)
+
+    result = await explore_citation_graph(
+        ["A", "B"], "both", k=1, max_per_hop=100,
+        node_filter=GraphNodeFilter(year_intervals=[[1988, 1992], [2008, 2012]]),
+    )
+    # Both seeds kept (exempt); 200 & 300 inside the windows; 400 (gap) & 600 (no year) dropped.
+    assert {n.paper_id for n in result.nodes} == {"100", "500", "200", "300"}
+
+
+@pytest.mark.asyncio
+async def test_node_filter_year_intervals_single_seed(monkeypatch):
+    """A single seed (+-3) yields one window [seed-3, seed+3]."""
+    papers = {
+        100: _paper(100, year=2000),  # seed
+        200: _paper(200, year=2003),  # inside [1997, 2003]
+        300: _paper(300, year=2004),  # outside
+    }
+    engine = _FakeEngine({"S": 100}, papers)
+    bq = _FakeBQ([(100, 200), (100, 300)])
+    _wire(monkeypatch, engine, bq)
+
+    result = await explore_citation_graph(
+        ["S"], "both", k=1, max_per_hop=100,
+        node_filter=GraphNodeFilter(year_intervals=[[1997, 2003]]),
+    )
+    assert {n.paper_id for n in result.nodes} == {"100", "200"}
+
+
+@pytest.mark.asyncio
 async def test_node_filter_citation_min(monkeypatch):
     papers = {
         100: _paper(100, citation_count=5),

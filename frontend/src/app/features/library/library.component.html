@@ -4,6 +4,17 @@
     <div class="library__tabs">
       <button
         class="library__tab"
+        [class.library__tab--active]="activeTab() === 'snapshots'"
+        (click)="switchTab('snapshots')"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h3l2-3h4l2 3h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        OK-Graph Snapshots
+        @if (snapshots().length) {
+          <span class="library__tab-count">{{ snapshots().length }}</span>
+        }
+      </button>
+      <button
+        class="library__tab"
         [class.library__tab--active]="activeTab() === 'shelf'"
         (click)="switchTab('shelf')"
       >
@@ -234,6 +245,64 @@
         </div>
       }
     }
+
+    <!-- OK-Graph Snapshots Tab -->
+    @if (activeTab() === 'snapshots') {
+      <h1 class="library__title">OK-Graph Snapshots</h1>
+      <p class="library__subtitle">Saved citation graphs for this project — load one to reopen it instantly.</p>
+
+      @if (snapshots().length === 0) {
+        <div class="library__empty">
+          <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><line x1="6.5" y1="7.2" x2="10" y2="10.5"/><line x1="17.5" y1="7.2" x2="14" y2="10.5"/><line x1="6.5" y1="16.8" x2="10" y2="13.5"/><line x1="17.5" y1="16.8" x2="14" y2="13.5"/></svg>
+          <p>No snapshots yet. Save one from the OK-Graph view's Snapshots menu.</p>
+        </div>
+      } @else {
+        <div class="library__list">
+          @for (item of snapshots(); track item.id) {
+            <div class="library__item">
+              <div class="library__item-main">
+                @if (renamingSnapId() === item.id) {
+                  <input
+                    class="library__edit-input"
+                    type="text"
+                    [value]="renameSnapValue()"
+                    (input)="renameSnapValue.set($any($event.target).value)"
+                    (keydown)="onRenameSnapKeydown($event, item)"
+                  />
+                } @else {
+                  <div class="library__item-text">
+                    <span class="library__item-label">{{ item.name }}</span>
+                    <span class="library__item-authors">
+                      {{ item.nodeCount }} papers · {{ item.clusterCount }} clusters · {{ item.updatedAt | date:'mediumDate' }}
+                    </span>
+                  </div>
+                }
+              </div>
+              <div class="library__item-actions">
+                @if (renamingSnapId() === item.id) {
+                  <button class="library__action-btn library__action-btn--save" (click)="saveRenameSnapshot(item)" title="Save">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  </button>
+                  <button class="library__action-btn" (click)="cancelRenameSnapshot()" title="Cancel">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                } @else {
+                  <button class="library__action-btn library__action-btn--use" [disabled]="loadingSnapshotId() === item.id" (click)="loadSnapshot(item)" title="Load this snapshot">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  </button>
+                  <button class="library__action-btn" (click)="startRenameSnapshot(item)" title="Rename">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  </button>
+                  <button class="library__action-btn library__action-btn--delete" (click)="requestDeleteSnapshot(item)" title="Delete">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  </button>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      }
+    }
   </main>
 
   <!-- Delete confirmation -->
@@ -241,15 +310,19 @@
     <div class="library__modal-overlay" (click)="cancelDelete()">
       <div class="library__modal" (click)="$event.stopPropagation()">
         <h2 class="library__modal-title">
-          {{ pending.kind === 'query' ? 'Remove query?' : 'Remove paper?' }}
+          @switch (pending.kind) {
+            @case ('query') { Remove query? }
+            @case ('book') { Remove paper? }
+            @default { Delete snapshot? }
+          }
         </h2>
         <p class="library__modal-text">
           Are you sure you want to remove
           <strong>{{ pending.name }}</strong>
-          @if (pending.kind === 'query') {
-            from your Query Shelf?
-          } @else {
-            from your Bookshelf? Your notes are kept and will return if you re-add it.
+          @switch (pending.kind) {
+            @case ('query') { from your Query Shelf? }
+            @case ('book') { from your Bookshelf? Your notes are kept and will return if you re-add it. }
+            @default { ? This permanently deletes the saved graph and its summaries. }
           }
         </p>
         <div class="library__modal-actions">

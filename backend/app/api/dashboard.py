@@ -21,7 +21,9 @@ from ..db.orm_models import (
     DBProject,
     DBRetrievalJob,
     DBShelfItem,
+    DBUser,
 )
+from .auth import optional_current_user
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -72,28 +74,39 @@ def _as_utc(value: datetime | None) -> datetime | None:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
-async def _counts_by_project(db: AsyncSession, column, table) -> dict[int, int]:
-    """Return {project_id: row_count} for the given table."""
+async def _counts_by_project(
+    db: AsyncSession, column, table, pids: list[int]
+) -> dict[int, int]:
+    """Return {project_id: row_count} for the given table, scoped to pids."""
     result = await db.execute(
-        select(column, func.count()).group_by(column)
+        select(column, func.count()).where(column.in_(pids)).group_by(column)
     )
     return {pid: count for pid, count in result.all()}
 
 
 @router.get("/stats", response_model=DashboardStatsOut)
-async def dashboard_stats(db: AsyncSession = Depends(get_db)) -> DashboardStatsOut:
+async def dashboard_stats(
+    user: DBUser | None = Depends(optional_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> DashboardStatsOut:
+    owner_id = user.id if user else None
     projects = (
-        await db.execute(select(DBProject).order_by(DBProject.created_at.asc()))
+        await db.execute(
+            select(DBProject)
+            .where(DBProject.user_id == owner_id)
+            .order_by(DBProject.created_at.asc())
+        )
     ).scalars().all()
     project_map = {p.id: p for p in projects}
+    pids = list(project_map.keys())
 
     # --- Per-project counts (one grouped query each) ------------------------
     library_counts = await _counts_by_project(
-        db, DBBookshelfItem.project_id, DBBookshelfItem
+        db, DBBookshelfItem.project_id, DBBookshelfItem, pids
     )
-    shelf_counts = await _counts_by_project(db, DBShelfItem.project_id, DBShelfItem)
-    paper_counts = await _counts_by_project(db, DBPaper.project_id, DBPaper)
-    job_counts = await _counts_by_project(db, DBRetrievalJob.project_id, DBRetrievalJob)
+    shelf_counts = await _counts_by_project(db, DBShelfItem.project_id, DBShelfItem, pids)
+    paper_counts = await _counts_by_project(db, DBPaper.project_id, DBPaper, pids)
+    job_counts = await _counts_by_project(db, DBRetrievalJob.project_id, DBRetrievalJob, pids)
 
     # Latest activity timestamp seen per project, across all item tables.
     last_activity: dict[int, datetime] = {}
@@ -109,6 +122,7 @@ async def dashboard_stats(db: AsyncSession = Depends(get_db)) -> DashboardStatsO
     for pid, ts in (
         await db.execute(
             select(DBBookshelfItem.project_id, func.max(DBBookshelfItem.updated_at))
+            .where(DBBookshelfItem.project_id.in_(pids))
             .group_by(DBBookshelfItem.project_id)
         )
     ).all():
@@ -116,6 +130,7 @@ async def dashboard_stats(db: AsyncSession = Depends(get_db)) -> DashboardStatsO
     for pid, ts in (
         await db.execute(
             select(DBShelfItem.project_id, func.max(DBShelfItem.last_used_at))
+            .where(DBShelfItem.project_id.in_(pids))
             .group_by(DBShelfItem.project_id)
         )
     ).all():
@@ -123,6 +138,7 @@ async def dashboard_stats(db: AsyncSession = Depends(get_db)) -> DashboardStatsO
     for pid, ts in (
         await db.execute(
             select(DBRetrievalJob.project_id, func.max(DBRetrievalJob.created_at))
+            .where(DBRetrievalJob.project_id.in_(pids))
             .group_by(DBRetrievalJob.project_id)
         )
     ).all():
@@ -151,7 +167,8 @@ async def dashboard_stats(db: AsyncSession = Depends(get_db)) -> DashboardStatsO
     added_this_week = (
         await db.execute(
             select(func.count()).select_from(DBBookshelfItem).where(
-                DBBookshelfItem.created_at >= week_ago
+                DBBookshelfItem.project_id.in_(pids),
+                DBBookshelfItem.created_at >= week_ago,
             )
         )
     ).scalar_one()
@@ -187,6 +204,7 @@ async def dashboard_stats(db: AsyncSession = Depends(get_db)) -> DashboardStatsO
     for item in (
         await db.execute(
             select(DBBookshelfItem)
+            .where(DBBookshelfItem.project_id.in_(pids))
             .order_by(DBBookshelfItem.created_at.desc())
             .limit(_ACTIVITY_LIMIT)
         )
@@ -196,6 +214,7 @@ async def dashboard_stats(db: AsyncSession = Depends(get_db)) -> DashboardStatsO
     for item in (
         await db.execute(
             select(DBShelfItem)
+            .where(DBShelfItem.project_id.in_(pids))
             .order_by(DBShelfItem.created_at.desc())
             .limit(_ACTIVITY_LIMIT)
         )
@@ -205,6 +224,7 @@ async def dashboard_stats(db: AsyncSession = Depends(get_db)) -> DashboardStatsO
     for job in (
         await db.execute(
             select(DBRetrievalJob)
+            .where(DBRetrievalJob.project_id.in_(pids))
             .order_by(DBRetrievalJob.created_at.desc())
             .limit(_ACTIVITY_LIMIT)
         )

@@ -99,6 +99,57 @@ export function metadataNodeMatches(m: GraphMetadataFilter, n: NodeLike, seedSco
   return true;
 }
 
+/**
+ * The auto-computed "around seed papers" year context for an OK-Graph build.
+ * `mode` records which section-1 configuration produced it; `intervals` are the
+ * resulting inclusive `[lo, hi]` windows. Seed windows narrow the build (seed ±3 for
+ * a single seed, ±2 each for multiple — possibly disconnected, e.g. 1990 & 2010 →
+ * `[[1988,1992],[2008,2012]]`). An `all` context reports the source set's span only
+ * and narrows nothing.
+ */
+export interface YearContext {
+  mode: 'seed' | 'all';
+  seedCount: number;
+  intervals: Array<[number, number]>;
+}
+
+/** Merge overlapping or adjacent intervals (gap ≤ 1, since years are integers, so
+ *  `[…,1992]` and `[1993,…]` collapse — no integer sits between them). */
+export function mergeYearIntervals(intervals: Array<[number, number]>): Array<[number, number]> {
+  const sorted = intervals
+    .filter(([lo, hi]) => Number.isFinite(lo) && Number.isFinite(hi))
+    .sort((a, b) => a[0] - b[0]);
+  const out: Array<[number, number]> = [];
+  for (const [lo, hi] of sorted) {
+    const last = out[out.length - 1];
+    if (last && lo <= last[1] + 1) {
+      last[1] = Math.max(last[1], hi);
+    } else {
+      out.push([lo, hi]);
+    }
+  }
+  return out;
+}
+
+/** Seed-context windows: each valid year padded by ±`pad`, then merged. */
+export function seedContextIntervals(
+  years: Array<number | null | undefined>,
+  pad: number,
+): Array<[number, number]> {
+  const valid = years.filter((y): y is number => y != null && Number.isFinite(y));
+  if (!valid.length) return [];
+  return mergeYearIntervals(valid.map(y => [y - pad, y + pad] as [number, number]));
+}
+
+/** Whether `year` lands in any inclusive interval (null fails, as with a single bound). */
+export function yearInIntervals(
+  year: number | null | undefined,
+  intervals: Array<[number, number]>,
+): boolean {
+  if (year == null) return false;
+  return intervals.some(([lo, hi]) => year >= lo && year <= hi);
+}
+
 /** Whether any constraint in `m` differs from the no-op default (i.e. it would hide
  *  at least some nodes). Shared by both the build-time and post-construction filters. */
 export function hasActiveMetadataConstraint(m: GraphMetadataFilter): boolean {
@@ -179,6 +230,32 @@ export class GraphFilterService {
    *  Cleared by {@link resetMetadata} to re-arm the mirror. */
   private metadataUserEdited = false;
 
+  // ── Year mode: "around seed papers" (default) vs custom range ─────────────────
+  /** Year-filter mode for the build. 'context' (the default) applies the auto
+   *  seed-context windows ({@link yearContext}); 'range' uses the manual slider
+   *  (metadata `yearMin`/`yearMax`). Lives next to the year control in the popup. */
+  readonly yearMode = signal<'context' | 'range'>('context');
+
+  /** The auto-computed year context, kept in sync by the OK-Graph component from the
+   *  section-1 configuration (seed papers vs all retrieved). */
+  private readonly autoYearContext = signal<YearContext>({ mode: 'seed', seedCount: 0, intervals: [] });
+  setAutoYearContext(ctx: YearContext): void { this.autoYearContext.set(ctx); }
+  readonly yearContext = computed(() => this.autoYearContext());
+
+  /** The year windows that actually gate the build, or null for no auto-narrowing.
+   *  Only 'context' mode with a 'seed' configuration narrows; an 'all' context is the
+   *  full span of the source set (every paper is already inside it), so it returns null
+   *  rather than dropping null-year papers. */
+  effectiveContextIntervals(): Array<[number, number]> | null {
+    if (this.yearMode() !== 'context') return null;
+    const ctx = this.autoYearContext();
+    if (ctx.mode !== 'seed' || !ctx.intervals.length) return null;
+    return ctx.intervals;
+  }
+
+  /** True when the seed-context year windows are actively gating the build. */
+  readonly yearContextActive = computed(() => this.effectiveContextIntervals() != null);
+
   updateMetadata(partial: Partial<GraphMetadataFilter>): void {
     this.metadataUserEdited = true;
     this.metadata.update(m => ({ ...m, ...partial }));
@@ -188,6 +265,7 @@ export class GraphFilterService {
    *  re-syncing to the current Retrieved-Results filter state. */
   resetMetadata(): void {
     this.metadataUserEdited = false;
+    this.yearMode.set('context');
     this.metadata.set(this.resultsSnapshot());
   }
 
@@ -258,19 +336,30 @@ export class GraphFilterService {
    * deliberately excluded — they're pre-filtered on seeds client-side.
    */
   backendNodeFilter(): GraphNodeFilterPayload | null {
-    if (!this.metadataFilterActive()) return null;
+    // The seed-context year windows ("around seed papers" default) gate the build even
+    // when the broader metadata filter is off — so this can return a filter carrying only
+    // year_intervals. When set, the windows supersede the slider's single year bound.
+    const intervals = this.effectiveContextIntervals();
+    const metaActive = this.metadataFilterActive();
     const m = this.metadata();
-    const fields = m.fields.size < ALL_SELECTABLE_FIELDS.length ? [...m.fields] : [];
-    const hasAny = m.yearMin != null || m.yearMax != null
-      || m.citationMin != null || m.citationMax != null
-      || m.openAccessOnly || fields.length > 0;
+    const fields = metaActive && m.fields.size < ALL_SELECTABLE_FIELDS.length ? [...m.fields] : [];
+    const yearMin = intervals ? null : (metaActive ? m.yearMin : null);
+    const yearMax = intervals ? null : (metaActive ? m.yearMax : null);
+    const citationMin = metaActive ? m.citationMin : null;
+    const citationMax = metaActive ? m.citationMax : null;
+    const openAccessOnly = metaActive ? m.openAccessOnly : false;
+    const hasAny = intervals != null
+      || yearMin != null || yearMax != null
+      || citationMin != null || citationMax != null
+      || openAccessOnly || fields.length > 0;
     if (!hasAny) return null;
     return {
-      year_min: m.yearMin,
-      year_max: m.yearMax,
-      citation_min: m.citationMin,
-      citation_max: m.citationMax,
-      open_access_only: m.openAccessOnly,
+      year_min: yearMin,
+      year_max: yearMax,
+      year_intervals: intervals ? intervals.map(([lo, hi]) => [lo, hi]) : null,
+      citation_min: citationMin,
+      citation_max: citationMax,
+      open_access_only: openAccessOnly,
       fields,
     };
   }
@@ -287,11 +376,13 @@ export class GraphFilterService {
     const keywordPred = this.keywordFilterEffective()
       ? compileNodePredicate(this.booleanQuery())
       : null;
+    const intervals = this.effectiveContextIntervals();
     const metaActive = this.metadataFilterActive();
     const m = this.metadata();
 
     return (n: NodeLike): boolean => {
       if (keywordPred && !keywordPred(n)) return false;
+      if (intervals && !yearInIntervals(n.year, intervals)) return false;
       if (!metaActive) return true;
       return metadataNodeMatches(m, n, seedScope);
     };

@@ -64,6 +64,21 @@ async def current_user(
     return user
 
 
+async def optional_current_user(
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> DBUser | None:
+    """Like `current_user`, but returns None instead of 401 when signed out.
+
+    Lets project-scoped endpoints serve both authenticated users (their own
+    projects) and the unauthenticated/guest flow (the `user_id IS NULL` bucket)
+    through the same code path.
+    """
+    user_id = request.session.get(_SESSION_KEY)
+    if user_id is None:
+        return None
+    return await db.get(DBUser, user_id)  # may be None if the row vanished
+
+
 def _require_provider(provider: str):
     if provider not in configured_providers():
         raise HTTPException(status_code=404, detail=f"Unknown or unconfigured provider: {provider}")

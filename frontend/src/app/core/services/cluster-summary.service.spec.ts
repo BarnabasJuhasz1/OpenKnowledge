@@ -89,6 +89,9 @@ describe('ClusterSummaryService', () => {
   const rawGraph = signal<any>({
     nodes: NODES, edges: EDGES, seedId: '', resolution: 1, maxLevels: 10,
   });
+  // 'all' mode flag: off by default (seed-mode behaviour); individual tests can
+  // flip it to assert retrieved-only (hop 0) summary member filtering.
+  const hideIntermediates = signal(false);
 
   beforeEach(() => {
     bodies = [];
@@ -98,7 +101,7 @@ describe('ClusterSummaryService', () => {
     }));
     TestBed.configureTestingModule({
       providers: [
-        { provide: OkGraphStateService, useValue: { rawGraph } },
+        { provide: OkGraphStateService, useValue: { rawGraph, hideIntermediates } },
       ],
     });
     svc = TestBed.inject(ClusterSummaryService);
@@ -222,5 +225,85 @@ describe('ClusterSummaryService', () => {
   it('exposes on-demand cold-start notice copy', () => {
     expect(svc.coldStartNotice).toContain('on-demand');
     expect(svc.coldStartNotice.toLowerCase()).toContain('patient');
+  });
+
+  it('hydrate restores saved summaries and the effect does NOT re-summarize', async () => {
+    const raw = { nodes: NODES, edges: EDGES, resolution: 1, maxLevels: 10, seedId: '' };
+    const saved = [
+      { level: 0, community: 0, title: 'Saved A', summary: 'sa', bullets: ['b'] },
+      { level: 0, community: 3, title: 'Saved B', summary: 'sb', bullets: [] },
+    ];
+
+    // Hydrate BEFORE the constructor effect runs (no tick yet): this pre-seeds
+    // the signature, so when the graph lands on rawGraph() the effect no-ops.
+    svc.hydrate(raw, saved);
+
+    // Store is populated immediately, marked done; no run in flight.
+    expect(svc.summaryAt(0, 0)?.title).toBe('Saved A');
+    expect(svc.summaryAt(0, 0)?.status).toBe('done');
+    expect(svc.summaryAt(0, 3)?.title).toBe('Saved B');
+    expect(svc.running()).toBe(false);
+    expect(svc.progress()).toEqual({ done: 2, total: 2 });
+
+    // Community map / top level rebuilt from the recomputed deterministic Louvain.
+    expect(svc.getTopLevel()).toBeGreaterThanOrEqual(0);
+    expect(svc.getRawCommunity('0')).toBeDefined();
+
+    // The graph now lands on rawGraph() (as a real load would). The effect fires,
+    // computes the identical signature, and short-circuits — zero network calls.
+    rawGraph.set({ nodes: NODES, edges: EDGES, seedId: '', resolution: 1, maxLevels: 10 });
+    appRef.tick();
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(bodies.length).toBe(0);
+    expect(svc.summaryAt(0, 0)?.title).toBe('Saved A'); // saved text intact
+    expect(svc.running()).toBe(false);
+  });
+
+  it('exportSummaries ↔ hydrate is a lossless round-trip', () => {
+    const raw = { nodes: NODES, edges: EDGES, resolution: 1, maxLevels: 10, seedId: '' };
+    const saved = [
+      { level: 0, community: 0, title: 'Saved A', summary: 'sa', bullets: ['b1', 'b2'] },
+      { level: 0, community: 3, title: 'Saved B', summary: 'sb', bullets: [] },
+    ];
+
+    // Hydrate the store from a snapshot, then export it back: the set the backend
+    // would persist must equal what was loaded (all hydrated entries are `done`).
+    svc.hydrate(raw, saved);
+    const exported = svc.exportSummaries();
+
+    const sortKey = (s: { level: number; community: number }) => `${s.level}:${s.community}`;
+    const byKey = (a: any, b: any) => sortKey(a).localeCompare(sortKey(b));
+    expect([...exported].sort(byKey)).toEqual([...saved].sort(byKey));
+  });
+
+  it("'all' mode (hideIntermediates): summarizes retrieved papers only, skips fully-intermediate clusters", async () => {
+    // hop 0 = retrieved (a triangle), 'x' = an intermediate joined to the
+    // retrieved cluster, 'm*' = a fully-intermediate cluster (no retrieved member).
+    const inode = (id: string, hop: number): CitGraphNode => ({ ...node(id), hop });
+    const gNodes: CitGraphNode[] = [
+      inode('r0', 0), inode('r1', 0), inode('r2', 0),
+      inode('x', 1),                       // intermediate inside the retrieved cluster
+      inode('m0', 2), inode('m1', 2), inode('m2', 2), // fully-intermediate cluster
+    ];
+    const gEdges: CitGraphEdge[] = (
+      [['r0', 'r1'], ['r1', 'r2'], ['r0', 'r2'], ['r0', 'x'],
+       ['m0', 'm1'], ['m1', 'm2'], ['m0', 'm2']] as [string, string][]
+    ).map(([source, target]) => ({ source, target }));
+
+    hideIntermediates.set(true);
+    rawGraph.set({ nodes: gNodes, edges: gEdges, seedId: '', resolution: 1, maxLevels: 10 });
+    await drain();
+
+    const finest = bodies.filter(b => b.kind === 'finest');
+    const promptTitles = finest.flatMap(b => b.papers.map((p: any) => p.title));
+    // Retrieved papers are summarized; the intermediate 'x' and the fully-
+    // intermediate 'm*' cluster never reach a prompt.
+    expect(promptTitles).toEqual(expect.arrayContaining(['Paper r0', 'Paper r1', 'Paper r2']));
+    expect(promptTitles).not.toContain('Paper x');
+    for (const t of promptTitles) expect(t.startsWith('Paper m')).toBe(false);
+
+    // restore shared state so later runs aren't affected by this test's flag.
+    hideIntermediates.set(false);
   });
 });

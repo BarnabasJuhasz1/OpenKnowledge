@@ -24,15 +24,5 @@
         (weightsChange)="onWeightsChange($event)"
       />
     </section>
-
-    <section class="settings__section" aria-labelledby="analysis-heading">
-      <div class="settings__section-head">
-        <h2 id="analysis-heading" class="settings__section-title">Analyze a paper</h2>
-        <p class="settings__section-desc">
-          Look up a single paper to see its OK-score breakdown under the current weights.
-        </p>
-      </div>
-      <app-analysis-tab [weights]="weights()" />
-    </section>
   </div>
 </div>

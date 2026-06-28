@@ -6,10 +6,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.database import get_db
-from ..db.orm_models import DBPaper
+from ..db.orm_models import DBPaper, DBUser
 from ..services.retrieval.citgraph_builder import build_citation_graph, UpstreamError, explore_citation_graph
 from ..services.retrieval.demo_citgraph import DemoCitGraphStore
 from ..services import archetype
+from .auth import optional_current_user
+from .deps import get_owned_project
 
 router = APIRouter(prefix="/citgraph", tags=["citgraph"])
 
@@ -30,6 +32,12 @@ class GraphNodeFilter(BaseModel):
     """
     year_min: int | None = None
     year_max: int | None = None
+    # Disconnected year windows (each [lo, hi], inclusive). When set, a node passes
+    # the year constraint iff its year falls in ANY interval — used by the "around
+    # seed papers" default build mode, where multiple seeds yield disjoint windows
+    # (e.g. seeds 1990 & 2010 -> [[1988, 1992], [2008, 2012]]). Supersedes
+    # year_min/year_max when present.
+    year_intervals: list[list[int]] | None = None
     citation_min: int | None = None
     citation_max: int | None = None
     open_access_only: bool = False
@@ -106,16 +114,19 @@ class CitGraphResponse(BaseModel):
 
 
 async def _enrichment_map(
-    nodes, project_id: int | None, db: AsyncSession
+    nodes, project_id: int | None, user: DBUser | None, db: AsyncSession
 ) -> dict[str, dict]:
     """Map node paper_id -> ok-score enrichment fields, joining live citgraph
     nodes to the active project's stored papers by DOI then arXiv id.
 
     Returns an empty map when no project is active so the live, project-agnostic
     build keeps working; unmatched nodes simply get neutral defaults downstream.
+    When a project_id is given it must be one the caller can access (else 404),
+    so enrichment can't read another user's papers.
     """
     if project_id is None:
         return {}
+    await get_owned_project(project_id, user, db)
     result = await db.execute(
         select(DBPaper).where(DBPaper.project_id == project_id)
     )
@@ -185,6 +196,7 @@ def _to_response(result, enrich: dict[str, dict] | None = None) -> CitGraphRespo
 async def build_graph(
     body: CitGraphRequest,
     project_id: int | None = Query(default=None),
+    user: DBUser | None = Depends(optional_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -203,7 +215,7 @@ async def build_graph(
         raise HTTPException(status_code=404, detail="Paper not found or no data available")
 
     await archetype.classify_citgraph_nodes(result.nodes)
-    enrich = await _enrichment_map(result.nodes, project_id, db)
+    enrich = await _enrichment_map(result.nodes, project_id, user, db)
     return _to_response(result, enrich)
 
 
@@ -211,6 +223,7 @@ async def build_graph(
 async def build_graph_demo(
     body: CitGraphRequest,
     project_id: int | None = Query(default=None),
+    user: DBUser | None = Depends(optional_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Build a citation graph from the local demo dataset (no external calls)."""
@@ -228,7 +241,7 @@ async def build_graph_demo(
         )
 
     await archetype.classify_citgraph_nodes(result.nodes)
-    enrich = await _enrichment_map(result.nodes, project_id, db)
+    enrich = await _enrichment_map(result.nodes, project_id, user, db)
     return _to_response(result, enrich)
 
 
@@ -236,6 +249,7 @@ async def build_graph_demo(
 async def explore_graph(
     body: CitGraphExploreRequest,
     project_id: int | None = Query(default=None),
+    user: DBUser | None = Depends(optional_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     try:
@@ -261,7 +275,7 @@ async def explore_graph(
         raise HTTPException(status_code=404, detail="No papers found or no data available")
 
     await archetype.classify_citgraph_nodes(result.nodes)
-    enrich = await _enrichment_map(result.nodes, project_id, db)
+    enrich = await _enrichment_map(result.nodes, project_id, user, db)
     return _to_response(result, enrich)
 
 
@@ -269,6 +283,7 @@ async def explore_graph(
 async def explore_graph_demo(
     body: CitGraphExploreRequest,
     project_id: int | None = Query(default=None),
+    user: DBUser | None = Depends(optional_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     store = DemoCitGraphStore.get()
@@ -294,5 +309,5 @@ async def explore_graph_demo(
         )
 
     await archetype.classify_citgraph_nodes(result.nodes)
-    enrich = await _enrichment_map(result.nodes, project_id, db)
+    enrich = await _enrichment_map(result.nodes, project_id, user, db)
     return _to_response(result, enrich)

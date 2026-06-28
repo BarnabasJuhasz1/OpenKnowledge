@@ -8,8 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.database import get_db
-from ..db.orm_models import DBProject
+from ..db.orm_models import DBProject, DBUser
 from ..services.retrieval.persistence import delete_project_data
+from .auth import optional_current_user
+from .deps import get_owned_project
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -38,17 +40,30 @@ class ProjectOut(BaseModel):
 
 
 @router.get("", response_model=list[ProjectOut])
-async def list_projects(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(DBProject).order_by(DBProject.created_at.asc()))
+async def list_projects(
+    user: DBUser | None = Depends(optional_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    owner_id = user.id if user else None
+    result = await db.execute(
+        select(DBProject)
+        .where(DBProject.user_id == owner_id)
+        .order_by(DBProject.created_at.asc())
+    )
     return result.scalars().all()
 
 
 @router.post("", response_model=ProjectOut, status_code=201)
-async def create_project(body: ProjectCreate, db: AsyncSession = Depends(get_db)):
+async def create_project(
+    body: ProjectCreate,
+    user: DBUser | None = Depends(optional_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     name = (body.name or "").strip()
     if not name:
         raise HTTPException(status_code=422, detail="Project name is required")
     project = DBProject(
+        user_id=user.id if user else None,
         name=name,
         description=body.description,
         color=body.color,
@@ -60,22 +75,22 @@ async def create_project(body: ProjectCreate, db: AsyncSession = Depends(get_db)
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
-async def get_project(project_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(DBProject).where(DBProject.id == project_id))
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return project
+async def get_project(
+    project_id: int,
+    user: DBUser | None = Depends(optional_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await get_owned_project(project_id, user, db)
 
 
 @router.put("/{project_id}", response_model=ProjectOut)
 async def update_project(
-    project_id: int, body: ProjectUpdate, db: AsyncSession = Depends(get_db)
+    project_id: int,
+    body: ProjectUpdate,
+    user: DBUser | None = Depends(optional_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(DBProject).where(DBProject.id == project_id))
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project = await get_owned_project(project_id, user, db)
     if body.name is not None:
         name = body.name.strip()
         if not name:
@@ -92,11 +107,12 @@ async def update_project(
 
 
 @router.delete("/{project_id}", status_code=204)
-async def delete_project(project_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(DBProject).where(DBProject.id == project_id))
-    project = result.scalar_one_or_none()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+async def delete_project(
+    project_id: int,
+    user: DBUser | None = Depends(optional_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project = await get_owned_project(project_id, user, db)
     # Remove all data owned by the project, then the project itself.
     await delete_project_data(db, project_id)
     await db.delete(project)

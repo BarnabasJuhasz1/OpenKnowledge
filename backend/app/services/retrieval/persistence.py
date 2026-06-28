@@ -7,7 +7,7 @@ from ...models.paper import Paper
 from ...db.orm_models import (
     DBAuthor, DBPaper, DBPaperAuthor, DBPaperKeyword,
     DBPaperReference, DBPaperVersion, DBRetrievalJob,
-    DBShelfItem, DBBookshelfItem, DBPaperNote,
+    DBShelfItem, DBBookshelfItem, DBPaperNote, DBGraphSnapshot,
 )
 
 
@@ -52,6 +52,9 @@ async def delete_project_data(session: AsyncSession, project_id: int) -> None:
     )
     await session.execute(
         delete(DBPaperNote).where(DBPaperNote.project_id == project_id)
+    )
+    await session.execute(
+        delete(DBGraphSnapshot).where(DBGraphSnapshot.project_id == project_id)
     )
     await session.commit()
 

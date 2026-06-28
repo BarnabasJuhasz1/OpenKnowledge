@@ -97,6 +97,43 @@ describe('SearchStateService', () => {
     expect(filtered.some(p => p.title === 'Paper 3')).toBe(true);
   });
 
+  it('does not re-filter the server window client-side in Scholar mode', () => {
+    const base = {
+      predicted_main_archetype: undefined, predicted_second_tier_archetype: undefined,
+      arxiv_id: null, semantic_scholar_id: null, openalex_id: null, pubmed_id: null,
+      dblp_key: null, core_id: null, abstract: null, publication_date: null,
+      authors: [], journal: null, venue: null, volume: null, issue: null, pages: null,
+      publisher: null, is_open_access: false, pdf_url: null, landing_url: null,
+      citation_count: 5, reference_count: 0, referenced_by: [], references: [],
+      is_peer_reviewed: false, has_public_code: false, code_url: null, has_dataset: false,
+      repo_stars: 0, fields_of_study: [], keywords: [], bibtex: null,
+      sources: ['semantic_scholar'], versions: null,
+    };
+    // A page the backend already filtered + returned (top of the match set).
+    service.rawPapersBySource.set({
+      semantic_scholar: [
+        { ...base, title: 'A', doi: '1', year: 2010 },
+        { ...base, title: 'B', doi: '2', year: 2020, is_peer_reviewed: true },
+      ],
+    });
+
+    // Scholar mode: the backend owns filtering, so the client must not second-guess the page.
+    service.serverSideArchetypeFilter.set(true);
+
+    // A year filter that, applied client-side, WOULD drop paper 'A' (2010). In Scholar mode it
+    // must not — otherwise the visible list would change while the server-driven count stays put.
+    service.updateFilter({ yearMin: 2015 });
+    expect(service.filteredPapers().map(p => p.title).sort()).toEqual(['A', 'B']);
+
+    // A peer-reviewed filter (also server-side in Scholar mode) likewise leaves the page intact.
+    service.updateFilter({ peerReviewedOnly: true });
+    expect(service.filteredPapers().length).toBe(2);
+
+    // The deprecated live/demo modes still filter client-side over their full in-memory set.
+    service.serverSideArchetypeFilter.set(false);
+    expect(service.filteredPapers().map(p => p.title)).toEqual(['B']);
+  });
+
   it('re-applies streamed archetypes to a page refetched after classification', () => {
     const bare = (doi: string): Paper => ({
       title: `Paper ${doi}`,

@@ -8,6 +8,9 @@ import { okScore } from '../../features/okgraph/cit-node';
 import { ProjectScoringService } from './project-scoring.service';
 import { ProjectContextService } from './project-context.service';
 import { ScoreWeights } from '../models/paper.model';
+// Type-only: snapshot payload shape lives with the snapshot service. Erased at
+// runtime, so it doesn't create an import cycle (graph-snapshot → this).
+import type { SnapshotSummary } from './graph-snapshot.service';
 
 export interface ClusterSummary {
   title: string;
@@ -129,7 +132,7 @@ export class ClusterSummaryService {
         this.reset();
         return;
       }
-      const sig = `${raw.nodes.length}|${raw.edges.length}|${raw.resolution}|${raw.maxLevels}|${raw.seedId}|${raw.nodes[0]?.paper_id ?? ''}|${raw.nodes[raw.nodes.length - 1]?.paper_id ?? ''}`;
+      const sig = this.signatureFor(raw);
       if (sig === this.signature) return;
       this.signature = sig;
       void this.start(raw.nodes, raw.edges, raw.resolution, raw.maxLevels);
@@ -148,6 +151,115 @@ export class ClusterSummaryService {
 
   getTopLevel(): number {
     return this.rawTopLevel();
+  }
+
+  /**
+   * Stable content fingerprint of a raw graph: identical inputs ⇒ identical
+   * Louvain ⇒ identical summary keys. The constructor effect re-summarizes only
+   * when this changes. Extracted (was inline in the effect) so the snapshot load
+   * path can pre-seed `this.signature` with it and stop the effect re-firing an
+   * expensive re-summarization on hydrate — see subtask 04.
+   */
+  signatureFor(raw: {
+    nodes: CitGraphNode[];
+    edges: CitGraphEdge[];
+    resolution: number;
+    maxLevels: number;
+    seedId: string;
+  }): string {
+    return `${raw.nodes.length}|${raw.edges.length}|${raw.resolution}|${raw.maxLevels}|${raw.seedId}|${raw.nodes[0]?.paper_id ?? ''}|${raw.nodes[raw.nodes.length - 1]?.paper_id ?? ''}`;
+  }
+
+  /**
+   * Snapshot the completed summaries as a flat `(level, community)` array. Only
+   * `done` entries are persisted — pending/running/error ones would reload as
+   * misleading partial text. The inverse (rebuild the store) lives in subtask 04.
+   */
+  exportSummaries(): SnapshotSummary[] {
+    const out: SnapshotSummary[] = [];
+    for (const [key, value] of this.store) {
+      if (value.status !== 'done') continue;
+      const sep = key.indexOf(':');
+      const level = Number(key.slice(0, sep));
+      const community = Number(key.slice(sep + 1));
+      if (!Number.isInteger(level) || !Number.isInteger(community)) continue;
+      out.push({
+        level,
+        community,
+        title: value.title,
+        summary: value.summary,
+        bullets: value.bullets,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Restore saved summaries from a snapshot **without** re-summarizing (subtask
+   * 04). The flow is order-sensitive: this must run *before* `OkGraphState`
+   * pushes the same `raw` onto `rawGraph()`. It pre-seeds `this.signature` with
+   * `signatureFor(raw)`, so when the constructor effect later observes the new
+   * graph it computes the identical signature and short-circuits — no expensive
+   * re-summarization fires.
+   *
+   * Louvain is recomputed locally (it's deterministic) to rebuild
+   * `rawCommunityMap` / `rawTopLevel` exactly as a fresh `start()` would, so
+   * views that read `summaryAt(level, community)` and `getRawCommunity(paperId)`
+   * resolve against the same community ids the stored summaries were keyed by.
+   */
+  hydrate(
+    raw: {
+      nodes: CitGraphNode[];
+      edges: CitGraphEdge[];
+      resolution: number;
+      maxLevels: number;
+      seedId: string;
+    },
+    summaries: SnapshotSummary[],
+  ): void {
+    // Pre-seed the signature so the effect no-ops when rawGraph() updates next.
+    this.signature = this.signatureFor(raw);
+    this.runId++;                 // supersede any in-flight summarization run
+    this.clearWarmupNotice();
+    this.lastModel = null;
+    this.summaryStats.set(null);
+
+    const result = this.cluster(raw.nodes, raw.edges, raw.resolution, raw.maxLevels);
+    const levels = result.levels;
+
+    this.store = new Map();
+    this.rawCommunityMap = new Map();
+
+    if (!levels.length) {
+      this.rawTopLevel.set(-1);
+      this.version.update(v => v + 1);
+      this.progress.set({ done: 0, total: 0 });
+      this.running.set(false);
+      return;
+    }
+
+    const topLvl = levels.length - 1;
+    this.rawTopLevel.set(topLvl);
+
+    const commAtTop = getCommunitiesAtLevel(levels, raw.nodes.length, topLvl);
+    raw.nodes.forEach((node, i) => {
+      this.rawCommunityMap.set(node.paper_id, commAtTop[i]);
+    });
+
+    // The saved summaries are all `done` (export only persists done ones).
+    for (const s of summaries) {
+      this.store.set(`${s.level}:${s.community}`, {
+        title: s.title,
+        summary: s.summary,
+        bullets: s.bullets ?? [],
+        status: 'done',
+      });
+    }
+
+    this.version.update(v => v + 1);
+    const total = this.store.size;
+    this.progress.set({ done: total, total });
+    this.running.set(false);
   }
 
   clear(): void {
@@ -219,9 +331,18 @@ export class ClusterSummaryService {
     nodes.forEach((node, i) => {
       this.rawCommunityMap.set(node.paper_id, commAtTop[i]);
     });
+    // 'all' mode clusters the FULL k-hop graph (retrieved papers + hidden
+    // intermediate connectors) so community ids match the view, but summaries
+    // must describe the RETRIEVED papers only. Exclude hidden (hop > 0) nodes
+    // from every cluster's member set: clusters left with no retained members get
+    // no entry, so they are neither summarized nor counted, and representative /
+    // fingerprint / prompt selection all operate on retrieved-only members.
+    const hideIntermediates = this.okGraphState.hideIntermediates();
+    const isHidden = (i: number): boolean => hideIntermediates && nodes[i].hop > 0;
     const membersAt: Map<number, number[]>[] = commAt.map(comm => {
       const m = new Map<number, number[]>();
       comm.forEach((c, i) => {
+        if (isHidden(i)) return;
         const arr = m.get(c);
         if (arr) arr.push(i); else m.set(c, [i]);
       });

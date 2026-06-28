@@ -36,6 +36,11 @@ class DBProject(Base):
     __tablename__ = "projects"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # Owning user. Nullable on purpose: legacy rows have no owner and the
+    # unauthenticated/guest flow operates on the `user_id IS NULL` bucket.
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), index=True, nullable=True
+    )
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     color: Mapped[str | None] = mapped_column(String)  # hex accent, e.g. #6366f1
@@ -221,6 +226,42 @@ class DBPaperNote(Base):
     paper_identifier: Mapped[str] = mapped_column(String, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
+
+
+class DBGraphSnapshot(Base):
+    """A saved OK-Graph base snapshot (citation graph + Louvain + summaries).
+
+    Ownership is inherited from the project (the `project-ownership-*` series):
+    a snapshot carries only `project_id` and is visible exactly when its project
+    is, so there is no `user_id` here. The pipeline output is persisted as two
+    plain-JSON `Text` blobs (mirrors the `bookshelf_items.paper_json` precedent);
+    `seed_id`/`node_count`/`cluster_count` are denormalised display metadata so
+    the list view never has to unpack the blob. Capped at 3 per project (enforced
+    in the API, subtask 02).
+    """
+
+    __tablename__ = "graph_snapshots"
+    # Per-project unique names keep the list unambiguous (matches the
+    # shelf/bookshelf/notes precedent); rename must 409 on conflict (subtask 02).
+    __table_args__ = (UniqueConstraint("project_id", "name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id"), index=True, nullable=False
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    seed_id: Mapped[str | None] = mapped_column(String)        # display only
+    node_count: Mapped[int | None] = mapped_column(Integer)    # display only
+    cluster_count: Mapped[int | None] = mapped_column(Integer) # top-level, display only
+    # JSON: nodes, edges, seedId, resolution, maxLevels, booleanQuery, keywords,
+    #       prefiltered, initialSeedIds, directionalSplit.
+    graph_json: Mapped[str] = mapped_column(Text, nullable=False)
+    # JSON array of {level, community, title, summary, bullets}.
+    summaries_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_now, onupdate=_now
+    )
 
 
 class DBRetrievalJob(Base):

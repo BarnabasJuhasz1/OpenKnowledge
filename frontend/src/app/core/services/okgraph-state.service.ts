@@ -4,6 +4,9 @@ import { louvain, LouvainResult } from '../../features/citgraph/louvain';
 import { LayoutEdge } from '../../features/okgraph/graph-layout';
 import { Paper } from '../models/paper.model';
 import { compileNodePredicate } from '../../shared/utils/boolean-query';
+// Type-only: the snapshot payload shape lives with the snapshot service. Erased
+// at runtime, so it doesn't create an import cycle (graph-snapshot → this).
+import type { SnapshotGraph } from './graph-snapshot.service';
 
 /** A node placed on the OK-Graph: the representative of a Louvain cluster. */
 export interface PlacedNode {
@@ -29,6 +32,7 @@ export interface HierarchyPayload {
   prefiltered: boolean;       // true → the Cit-Graph already dropped non-matching papers
   initialSeedIds?: string[];  // paper IDs initially selected to construct this graph
   directionalSplit?: boolean; // true → graph built with the v2 "direction-pure cones" construction
+  hideIntermediates?: boolean; // true → 'all' mode: cluster the full k-hop graph but render only retrieved papers (hop 0); hop>0 nodes are hidden
 }
 
 /**
@@ -53,13 +57,26 @@ export class OkGraphStateService {
   readonly links = signal<LayoutEdge[]>([]);
 
   /**
-   * Paper ids the user has permanently removed from this graph (individual nodes
-   * or whole (sub)clusters). Removal is irreversible: candidate generation and
-   * representative selection exclude these, so no expansion or re-seed can bring
-   * them back. Reset only on a new graph (`setHierarchy`) or `clear()`; kept
-   * across `setFilter()` re-clusters since paper ids are stable.
+   * Paper ids excluded from display: NON-DISPLAYABLE base nodes. This covers both
+   * (a) papers the user permanently removed (individual nodes or whole
+   * (sub)clusters), and (b) hidden intermediate connector papers in 'all' mode
+   * (`hideIntermediates` — they cluster but never render). Exclusion is
+   * irreversible within a graph: candidate generation, representative selection
+   * and member counts all skip these, so no expansion or re-seed brings them
+   * back. Reset on a new graph (`setHierarchy`) — then re-seeded with the hidden
+   * intermediates when `hideIntermediates` is set — or `clear()`; kept across
+   * `setFilter()` re-clusters since paper ids are stable.
    */
   readonly removedIds = signal<Set<string>>(new Set());
+
+  /**
+   * True when the current graph was built with the full k-hop graph as the
+   * clustering substrate but only the retrieved papers (hop 0) are rendered
+   * ('all' mode). The hidden intermediate nodes (hop > 0) are seeded into
+   * `removedIds` so the view excludes them everywhere; this flag lets the summary
+   * service filter cluster members to retrieved-only.
+   */
+  readonly hideIntermediates = signal(false);
 
   /** Permanently exclude `ids` from the graph (additive). */
   markRemoved(ids: Iterable<string>): void {
@@ -138,6 +155,7 @@ export class OkGraphStateService {
     }
 
     this.directionalSplit.set(!!p.directionalSplit);
+    this.hideIntermediates.set(!!p.hideIntermediates);
 
     this.nodes.set(p.nodes);
     this.louvain.set(p.louvain);
@@ -152,7 +170,15 @@ export class OkGraphStateService {
     // New dataset → drop any previous exploration; the view re-seeds top reps.
     this.placed.set([]);
     this.links.set([]);
-    this.removedIds.set(new Set());
+    // Reset removals, then (in 'all' mode) seed the hidden intermediate connector
+    // papers (hop > 0) so the view excludes them everywhere it already excludes
+    // user-removed papers. The full graph is still clustered/summarized; only the
+    // retrieved papers (hop 0) are rendered.
+    this.removedIds.set(
+      p.hideIntermediates
+        ? new Set(p.nodes.filter(n => n.hop > 0).map(n => n.paper_id))
+        : new Set(),
+    );
   }
 
   /** Can the OK-Graph filter be toggled at all? */
@@ -199,6 +225,72 @@ export class OkGraphStateService {
     this.links.set([]);
   }
 
+  /**
+   * Serialize the current base graph for a snapshot, or null when nothing is
+   * built. Pairs `rawGraph()` (nodes/edges/seed/Louvain params) with the filter
+   * context so a load can reproduce the identical Louvain run and filter state.
+   */
+  exportSnapshotGraph(): SnapshotGraph | null {
+    const raw = this.rawGraph();
+    if (!raw || !raw.nodes.length) return null;
+    return {
+      nodes: raw.nodes,
+      edges: raw.edges,
+      seedId: raw.seedId,
+      resolution: raw.resolution,
+      maxLevels: raw.maxLevels,
+      booleanQuery: this.booleanQuery(),
+      keywords: this.keywords(),
+      prefiltered: this.prefiltered(),
+      initialSeedIds: [...this.initialSeedIds()],
+      directionalSplit: this.directionalSplit(),
+      hideIntermediates: this.hideIntermediates(),
+    };
+  }
+
+  /**
+   * Reconstruct the base graph from a loaded snapshot (subtask 04). Recomputes
+   * the (deterministic) Louvain hierarchy from the saved nodes/edges + params and
+   * runs it through `setHierarchy` with the saved filter context, so a load lands
+   * on exactly the same base view the snapshot was taken from (placed/links/
+   * removedIds reset). The summary store MUST be hydrated first
+   * (`ClusterSummaryService.hydrate`) so the re-summarization effect no-ops when
+   * `rawGraph` updates here.
+   */
+  loadSnapshotGraph(graph: SnapshotGraph): void {
+    const result = this.recluster(graph.nodes, graph.edges, graph.resolution, graph.maxLevels);
+    this.setHierarchy({
+      nodes: graph.nodes,
+      louvain: result,
+      edges: graph.edges,
+      resolution: graph.resolution,
+      maxLevels: graph.maxLevels,
+      keywords: graph.keywords,
+      booleanQuery: graph.booleanQuery,
+      seedId: graph.seedId,
+      prefiltered: graph.prefiltered,
+      initialSeedIds: graph.initialSeedIds,
+      directionalSplit: graph.directionalSplit,
+      hideIntermediates: graph.hideIntermediates,
+    });
+  }
+
+  /** Run Louvain over the full graph (paper-id edges → index edges). Same
+   *  deterministic mapping the Cit-Graph stage uses, so the hierarchy reproduces
+   *  the community ids the summaries were keyed by. */
+  private recluster(
+    nodes: CitGraphNode[],
+    edges: CitGraphEdge[],
+    resolution: number,
+    maxLevels: number,
+  ): LouvainResult {
+    const indexOf = new Map(nodes.map((n, i) => [n.paper_id, i]));
+    const mapped = edges
+      .map(e => ({ source: indexOf.get(e.source) ?? -1, target: indexOf.get(e.target) ?? -1 }))
+      .filter(e => e.source >= 0 && e.target >= 0);
+    return louvain(nodes.length, mapped, { resolution, maxLevels });
+  }
+
   clear(): void {
     this.nodes.set([]);
     this.louvain.set(null);
@@ -214,6 +306,7 @@ export class OkGraphStateService {
     this.booleanQuery.set('');
     this.initialSeedIds.set(new Set());
     this.directionalSplit.set(false);
+    this.hideIntermediates.set(false);
     this.rawGraph.set(null);
     this.allNodes = [];
     this.allEdges = [];

@@ -1,0 +1,105 @@
+<div class="snapshots">
+  <button
+    class="snapshots__btn"
+    [class.snapshots__btn--active]="open()"
+    (click)="toggle()"
+    title="Snapshots"
+  >
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h3l2-3h4l2 3h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+  </button>
+
+  @if (open()) {
+    <div class="snapshots__backdrop" (click)="close()"></div>
+    <div class="snapshots__panel">
+      <div class="snapshots__header">
+        <span>Snapshots</span>
+        <span class="snapshots__count">{{ snapshots().length }} / {{ MAX }}</span>
+      </div>
+
+      <!-- Save current -->
+      <div class="snapshots__save">
+        <input
+          class="snapshots__input"
+          type="text"
+          placeholder="Snapshot name"
+          [ngModel]="newName()"
+          (ngModelChange)="newName.set($event)"
+          (keyup.enter)="save()"
+          [disabled]="!hasGraph() || !hasProject() || atCap()"
+        />
+        <button
+          class="snapshots__save-btn"
+          (click)="save()"
+          [disabled]="!canSave()"
+        >{{ saving() ? 'Saving…' : 'Save' }}</button>
+      </div>
+
+      @if (!hasProject()) {
+        <div class="snapshots__hint">Select a project to save and load snapshots.</div>
+      } @else if (!hasGraph()) {
+        <div class="snapshots__hint">Build a graph first to save it as a snapshot.</div>
+      } @else if (atCap()) {
+        <div class="snapshots__hint snapshots__hint--warn">
+          Limit of {{ MAX }} reached — delete a snapshot to save a new one.
+        </div>
+      }
+
+      <!-- List -->
+      <div class="snapshots__list">
+        @if (loading()) {
+          <div class="snapshots__empty">Loading…</div>
+        } @else if (!hasProject()) {
+          <!-- handled by the hint above -->
+        } @else if (snapshots().length === 0) {
+          <div class="snapshots__empty">No snapshots saved yet.</div>
+        } @else {
+          @for (s of snapshots(); track s.id) {
+            <div class="snapshots__row" [class.snapshots__row--busy]="busyId() === s.id">
+              @if (renameId() === s.id) {
+                <!-- Inline rename -->
+                <div class="snapshots__rename">
+                  <input
+                    class="snapshots__input"
+                    type="text"
+                    [ngModel]="renameValue()"
+                    (ngModelChange)="renameValue.set($event)"
+                    (keyup.enter)="commitRename(s)"
+                    (keyup.escape)="cancelRename()"
+                  />
+                  <button class="snapshots__icon-btn" title="Save name" (click)="commitRename(s)">✓</button>
+                  <button class="snapshots__icon-btn" title="Cancel" (click)="cancelRename()">✕</button>
+                </div>
+              } @else if (confirmDeleteId() === s.id) {
+                <!-- Delete confirm -->
+                <div class="snapshots__confirm">
+                  <span class="snapshots__confirm-text">Delete “{{ s.name }}”?</span>
+                  <button class="snapshots__icon-btn snapshots__icon-btn--danger" (click)="confirmDelete(s)">Delete</button>
+                  <button class="snapshots__icon-btn" (click)="cancelDelete()">Cancel</button>
+                </div>
+              } @else if (confirmLoadId() === s.id) {
+                <!-- Load confirm (replaces the current graph) -->
+                <div class="snapshots__confirm">
+                  <span class="snapshots__confirm-text">Replace the current graph?</span>
+                  <button class="snapshots__icon-btn snapshots__icon-btn--primary" (click)="confirmLoad(s)">Load</button>
+                  <button class="snapshots__icon-btn" (click)="cancelLoad()">Cancel</button>
+                </div>
+              } @else {
+                <div class="snapshots__meta">
+                  <div class="snapshots__name" [title]="s.name">{{ s.name }}</div>
+                  <div class="snapshots__sub">
+                    {{ s.nodeCount }} papers · {{ s.clusterCount }} clusters · {{ s.createdAt | date:'mediumDate' }}
+                  </div>
+                </div>
+                <div class="snapshots__actions">
+                  <button class="snapshots__icon-btn" title="Load" (click)="requestLoad(s)" [disabled]="busyId() !== null">Load</button>
+                  <button class="snapshots__icon-btn" title="Rename" (click)="startRename(s)" [disabled]="busyId() !== null">Rename</button>
+                  <button class="snapshots__icon-btn snapshots__icon-btn--danger" title="Delete" (click)="requestDelete(s)" [disabled]="busyId() !== null">Delete</button>
+                </div>
+              }
+            </div>
+          }
+        }
+      </div>
+    </div>
+  }
+</div>

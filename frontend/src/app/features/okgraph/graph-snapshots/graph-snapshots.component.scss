@@ -1,0 +1,195 @@
+// Mirrors the OK-Graph header dropdowns (.graph-settings) so the Snapshots
+// control reads as part of the same toolbar. Uses the shared --ok-* tokens.
+.snapshots {
+  position: relative;
+  z-index: 11;
+
+  &__btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--ok-outline-variant);
+    border-radius: var(--ok-radius);
+    background: var(--ok-surface-container-lowest);
+    color: var(--ok-on-surface-variant);
+    cursor: pointer;
+    transition: background var(--ok-transition-fast), color var(--ok-transition-fast);
+    &:hover { background: var(--ok-surface-container-high); color: var(--ok-on-surface); }
+    &--active { color: var(--ok-primary); border-color: rgba(var(--ok-primary-rgb), 0.5); }
+  }
+
+  &__backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 14;
+  }
+
+  &__panel {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    left: auto;
+    z-index: 15;
+    width: 320px;
+    max-height: 70vh;
+    overflow-y: auto;
+    background: var(--ok-glass-bg-floating);
+    backdrop-filter: blur(var(--ok-glass-blur-floating));
+    border: 1px solid var(--ok-glass-border);
+    border-radius: var(--ok-radius-md);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+  }
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.6rem 0.85rem;
+    font-family: var(--ok-font-label);
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--ok-on-surface-variant);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--ok-outline-variant);
+  }
+
+  &__count {
+    font-weight: 600;
+    color: var(--ok-outline);
+  }
+
+  &__save {
+    display: flex;
+    gap: 0.4rem;
+    padding: 0.6rem 0.85rem;
+  }
+
+  &__input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--ok-outline-variant);
+    border-radius: var(--ok-radius);
+    background: var(--ok-surface-container-lowest);
+    color: var(--ok-on-surface);
+    font-size: 0.82rem;
+    &:focus { outline: none; border-color: rgba(var(--ok-primary-rgb), 0.6); }
+    &:disabled { opacity: 0.5; cursor: not-allowed; }
+  }
+
+  &__save-btn {
+    padding: 0.35rem 0.7rem;
+    border: 1px solid rgba(var(--ok-primary-rgb), 0.5);
+    border-radius: var(--ok-radius);
+    background: rgba(var(--ok-primary-rgb), 0.12);
+    color: var(--ok-primary);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background var(--ok-transition-fast);
+    &:hover:not(:disabled) { background: rgba(var(--ok-primary-rgb), 0.2); }
+    &:disabled { opacity: 0.45; cursor: not-allowed; }
+  }
+
+  &__hint {
+    padding: 0 0.85rem 0.6rem;
+    font-size: 0.74rem;
+    color: var(--ok-outline);
+    &--warn { color: #e0a000; }
+  }
+
+  &__list {
+    border-top: 1px solid var(--ok-outline-variant);
+  }
+
+  &__empty {
+    padding: 0.9rem 0.85rem;
+    font-size: 0.8rem;
+    color: var(--ok-outline);
+    text-align: center;
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.55rem 0.85rem;
+    border-bottom: 1px solid var(--ok-outline-variant);
+    &:last-child { border-bottom: none; }
+    &--busy { opacity: 0.55; pointer-events: none; }
+  }
+
+  &__meta {
+    min-width: 0;
+    flex: 1;
+  }
+
+  &__name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--ok-on-surface);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__sub {
+    font-size: 0.7rem;
+    color: var(--ok-outline);
+    margin-top: 0.1rem;
+  }
+
+  &__actions {
+    display: flex;
+    gap: 0.25rem;
+    flex-shrink: 0;
+  }
+
+  &__rename,
+  &__confirm {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    width: 100%;
+  }
+
+  &__confirm-text {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.8rem;
+    color: var(--ok-on-surface);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__icon-btn {
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--ok-outline-variant);
+    border-radius: var(--ok-radius);
+    background: var(--ok-surface-container-lowest);
+    color: var(--ok-on-surface-variant);
+    font-size: 0.74rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background var(--ok-transition-fast), color var(--ok-transition-fast);
+    &:hover:not(:disabled) { background: var(--ok-surface-container-high); color: var(--ok-on-surface); }
+    &:disabled { opacity: 0.4; cursor: not-allowed; }
+    &--primary {
+      color: var(--ok-primary);
+      border-color: rgba(var(--ok-primary-rgb), 0.5);
+      &:hover:not(:disabled) { background: rgba(var(--ok-primary-rgb), 0.15); }
+    }
+    &--danger {
+      &:hover:not(:disabled) {
+        background: rgba(239, 68, 68, 0.12);
+        color: #ef4444;
+        border-color: rgba(239, 68, 68, 0.4);
+      }
+    }
+  }
+}

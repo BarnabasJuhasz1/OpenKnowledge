@@ -100,6 +100,60 @@
     color: var(--ok-on-surface-variant);
   }
 
+  &__yearmode {
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    margin-bottom: 12px;
+    background: var(--ok-surface-container-highest);
+    border-radius: 8px;
+  }
+
+  &__yearmode-tab {
+    flex: 1;
+    padding: 6px 8px;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: var(--ok-on-surface-variant);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+
+    &:hover { color: var(--ok-on-surface); }
+
+    &--active {
+      background: var(--ok-surface-container);
+      color: var(--ok-primary);
+      box-shadow: 0 1px 2px rgba(2, 6, 18, 0.18);
+    }
+  }
+
+  &__context {
+    padding: 4px 0 2px;
+  }
+
+  &__context-rule {
+    font-size: 12px;
+    color: var(--ok-on-surface-variant);
+    margin-bottom: 4px;
+  }
+
+  &__context-windows {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ok-on-surface);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__context-note {
+    margin-top: 4px;
+    font-size: 11px;
+    font-style: italic;
+    color: var(--ok-on-surface-variant);
+  }
+
   &__range-labels {
     display: flex;
     justify-content: space-between;

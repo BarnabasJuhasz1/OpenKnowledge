@@ -401,45 +401,52 @@ export class SearchStateService {
     if (selectedArchs.size === 0 || selectedFields.size === 0) {
       return [];
     }
-    // Scholar mode filters archetypes AND fields of study server-side across the whole match
-    // set; skip the client-side passes so they don't second-guess the already-filtered page.
-    const archetypeFilterClientSide = !this.serverSideArchetypeFilter();
-    const fieldFilterClientSide = archetypeFilterClientSide
-      && selectedFields.size < ALL_SELECTABLE_FIELDS.length;
+    // Scholar mode applies EVERY filter — year, citation, peer-reviewed, open-access,
+    // archetype and field of study — server-side across the whole match set and returns an
+    // already-filtered page. Re-filtering that page client-side is not just redundant, it's
+    // harmful: the client-side pass re-runs the instant a filter changes and mutates the
+    // visible list immediately, while the "filtered to N papers" count (scholarTotal, the
+    // server total) only refreshes after the debounced refetch — so the list would change
+    // while the count stayed frozen. Skipping client-side filtering in Scholar mode keeps the
+    // list and the count moving together on each refetch. The deprecated live/demo modes hold
+    // the full result set in memory, so they keep filtering (and the field-of-study pass is
+    // skipped there too when every field is selected, purely as an optimisation).
+    const clientSideFilter = !this.serverSideArchetypeFilter();
+    const fieldFilterActive = selectedFields.size < ALL_SELECTABLE_FIELDS.length;
 
-    let result = papers.filter(p => {
-      if (f.yearMin != null && (p.year == null || p.year < f.yearMin)) return false;
-      if (f.yearMax != null && (p.year == null || p.year > f.yearMax)) return false;
-      if (f.citationMin != null && (p.citation_count ?? 0) < f.citationMin) return false;
-      if (f.citationMax != null && (p.citation_count ?? 0) > f.citationMax) return false;
-      if (f.codeOnly && !p.has_public_code && !p.code_url) return false;
-      if (f.peerReviewedOnly && !p.is_peer_reviewed) return false;
-      if (f.openAccessOnly && !p.is_open_access) return false;
+    let result = clientSideFilter
+      ? papers.filter(p => {
+          if (f.yearMin != null && (p.year == null || p.year < f.yearMin)) return false;
+          if (f.yearMax != null && (p.year == null || p.year > f.yearMax)) return false;
+          if (f.citationMin != null && (p.citation_count ?? 0) < f.citationMin) return false;
+          if (f.citationMax != null && (p.citation_count ?? 0) > f.citationMax) return false;
+          if (f.codeOnly && !p.has_public_code && !p.code_url) return false;
+          if (f.peerReviewedOnly && !p.is_peer_reviewed) return false;
+          if (f.openAccessOnly && !p.is_open_access) return false;
 
-      // Filter out if the paper has a main or second-tier archetype that is NOT selected.
-      // If it doesn't have an archetype (null, undefined, 'None'), it shouldn't be filtered out.
-      if (archetypeFilterClientSide) {
-        if (p.predicted_main_archetype && p.predicted_main_archetype !== 'None' && !selectedArchs.has(p.predicted_main_archetype)) {
-          return false;
-        }
-        if (p.predicted_second_tier_archetype && p.predicted_second_tier_archetype !== 'None' && !selectedArchs.has(p.predicted_second_tier_archetype)) {
-          return false;
-        }
-      }
+          // Filter out if the paper has a main or second-tier archetype that is NOT selected.
+          // If it doesn't have an archetype (null, undefined, 'None'), it shouldn't be filtered out.
+          if (p.predicted_main_archetype && p.predicted_main_archetype !== 'None' && !selectedArchs.has(p.predicted_main_archetype)) {
+            return false;
+          }
+          if (p.predicted_second_tier_archetype && p.predicted_second_tier_archetype !== 'None' && !selectedArchs.has(p.predicted_second_tier_archetype)) {
+            return false;
+          }
 
-      // Field-of-study filter. A paper with no fields belongs to the synthetic
-      // "Miscellaneous" bucket, so it's kept only when Miscellaneous is selected; a paper
-      // with fields is kept when any of its fields is selected. This mirrors the server-side
-      // Scholar filter so both modes behave the same.
-      if (fieldFilterClientSide) {
-        const fields = p.fields_of_study ?? [];
-        const matched = fields.length > 0
-          ? fields.some(f => selectedFields.has(f))
-          : selectedFields.has(MISC_FIELD);
-        if (!matched) return false;
-      }
-      return true;
-    });
+          // Field-of-study filter. A paper with no fields belongs to the synthetic
+          // "Miscellaneous" bucket, so it's kept only when Miscellaneous is selected; a paper
+          // with fields is kept when any of its fields is selected. This mirrors the server-side
+          // Scholar filter so both modes behave the same.
+          if (fieldFilterActive) {
+            const fields = p.fields_of_study ?? [];
+            const matched = fields.length > 0
+              ? fields.some(f => selectedFields.has(f))
+              : selectedFields.has(MISC_FIELD);
+            if (!matched) return false;
+          }
+          return true;
+        })
+      : papers;
 
     result = [...result].sort((a, b) => {
       switch (sort) {

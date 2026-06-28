@@ -89,6 +89,25 @@ export function subclusterCommunities(
   return [...subs];
 }
 
+/**
+ * Whether base node `idx` should stay visible inside an entered (sub)cluster.
+ *
+ * Inside a drilled cluster the view normally shows only that cluster's members
+ * (`communityAtLevel[idx] === clusterId`). Seed papers are the global anchors the
+ * graph was built around, so when `isSeed` they remain visible inside *any* cluster
+ * the user enters — keeping the origin of the graph on screen no matter how deep
+ * the drill. Callers apply this only in the inner view; the main view shows
+ * everything.
+ */
+export function passesInnerViewFilter(
+  communityAtLevel: readonly number[],
+  clusterId: number,
+  idx: number,
+  isSeed: boolean,
+): boolean {
+  return isSeed || communityAtLevel[idx] === clusterId;
+}
+
 /** Member count of each community in a level's base-node→community assignment. */
 function communitySizes(comm: readonly number[]): Map<number, number> {
   const sizes = new Map<number, number>();

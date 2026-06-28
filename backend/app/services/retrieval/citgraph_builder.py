@@ -164,12 +164,21 @@ def node_matches_filter(node: CitGraphNode, node_filter: object) -> bool:
     ``citation_count`` is treated as 0 (mirrors the client/search semantics).
     """
     nf = node_filter
-    year_min = getattr(nf, "year_min", None)
-    year_max = getattr(nf, "year_max", None)
-    if year_min is not None and (node.year is None or node.year < year_min):
-        return False
-    if year_max is not None and (node.year is None or node.year > year_max):
-        return False
+    year_intervals = getattr(nf, "year_intervals", None)
+    if year_intervals:
+        # Disconnected windows (e.g. multi-seed "around seed papers" mode). Pass iff
+        # the year lands in any [lo, hi]; a null year fails, as with the single bound.
+        if node.year is None or not any(
+            lo <= node.year <= hi for lo, hi in year_intervals
+        ):
+            return False
+    else:
+        year_min = getattr(nf, "year_min", None)
+        year_max = getattr(nf, "year_max", None)
+        if year_min is not None and (node.year is None or node.year < year_min):
+            return False
+        if year_max is not None and (node.year is None or node.year > year_max):
+            return False
     cc = node.citation_count or 0
     citation_min = getattr(nf, "citation_min", None)
     citation_max = getattr(nf, "citation_max", None)

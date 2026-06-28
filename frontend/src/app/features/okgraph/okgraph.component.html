@@ -408,6 +408,9 @@
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
               </button>
 
+              <!-- Snapshots: save / load / rename / delete -->
+              <app-graph-snapshots></app-graph-snapshots>
+
               <!-- Summarization info -->
               <div class="graph-settings">
                 <button
@@ -640,6 +643,21 @@
                         (click)="blobMerging.set(!blobMerging())"
                         role="switch"
                         [attr.aria-checked]="blobMerging()"
+                      >
+                        <span class="graph-settings__knob"></span>
+                      </button>
+                    </label>
+                    <label class="graph-settings__row">
+                      <span class="graph-settings__label">
+                        Voronoi regions
+                        <span class="graph-settings__hint">colour the whole space as a cluster map (replaces blobs)</span>
+                      </span>
+                      <button
+                        class="graph-settings__switch"
+                        [class.graph-settings__switch--on]="voronoiRegions()"
+                        (click)="voronoiRegions.set(!voronoiRegions())"
+                        role="switch"
+                        [attr.aria-checked]="voronoiRegions()"
                       >
                         <span class="graph-settings__knob"></span>
                       </button>
@@ -907,9 +925,21 @@
                     rx="14"
                   />
                 }
+                <!-- Voronoi cluster map: tessellate the whole canvas, each cell tinted
+                     by its cluster. Mutually exclusive with the blob/bridge layer. -->
+                @if (voronoiRegions()) {
+                  @for (cell of voronoiCells(); track $index) {
+                    <path
+                      class="graph-svg__voronoi"
+                      [class.graph-svg__voronoi--transition-fade-out]="isStructureFadedOut()"
+                      [attr.d]="cell.path"
+                      [attr.fill]="cell.color"
+                    />
+                  }
+                }
                 <!-- Merge bridges: join the blobs of clusters connected one level
                      below the current view. Drawn first so blobs/nodes sit on top. -->
-                @if (blobMerging()) {
+                @if (blobMerging() && !voronoiRegions()) {
                   @for (bridge of bridges(); track bridge.key) {
                     <path
                       class="graph-svg__bridge"
@@ -921,8 +951,20 @@
                     />
                   }
                 }
-                <!-- Cluster blobs: one per highest-level cluster, behind nodes -->
+                <!-- Cluster blobs: one per highest-level cluster, behind nodes.
+                     Suppressed in Voronoi mode (the cluster map replaces them). -->
+                @if (!voronoiRegions()) {
                 @for (blob of blobs(); track blob.topCluster) {
+                  @if (blob.connector) {
+                    <path
+                      class="graph-svg__blob-connector"
+                      [class.graph-svg__blob-connector--selected]="isClusterSelected(blob.topCluster)"
+                      [class.graph-svg__blob-connector--transition-fade-out]="isBlobOutsideTransitionTarget(blob)"
+                      [attr.d]="blob.connector"
+                      [attr.stroke]="blob.color"
+                      fill="none"
+                    />
+                  }
                   @if (blobbyShapes()) {
                     <path
                       class="graph-svg__blob"
@@ -961,6 +1003,7 @@
                     >{{ blob.label }}</text>
                   }
                 }
+                }
 
                 @for (div of dividers(); track div.x) {
                   <line
@@ -982,6 +1025,7 @@
                   <line
                     class="graph-svg__seed-line"
                     [class.graph-svg__seed-line--transition-fade-out]="isStructureFadedOut()"
+                    [style.stroke]="line.color"
                     [attr.x1]="line.x"
                     [attr.y1]="TOP_PADDING - 5"
                     [attr.x2]="line.x"
@@ -992,8 +1036,7 @@
                 <!-- Horizontal swimlane info boxes on the left. Hidden at the leaf
                      level (currentTopLevel < 0): there the lanes are individual
                      papers, not clusters, so a cluster card would be meaningless. -->
-                @if (useInGraphCards() && currentTopLevel() >= 0) {
-                  @for (box of laneLayout().laneBoxes; track box.topCluster) {
+                <ng-template #laneCardTpl let-box>
                     <foreignObject
                       [attr.x]="box.cardX"
                       [attr.y]="box.yStart + (box.height - cardHeightFor(box.topCluster)) / 2"
@@ -1004,9 +1047,11 @@
                         #laneBoxEl
                         [attr.data-cluster]="box.topCluster"
                         class="lane-box"
-                        [style.border-left-color]="box.color"
+                        [class.lane-box--right]="box.cardSide === 'right'"
+                        [class.lane-box--compact]="!isClusterSelected(box.topCluster)"
+                        [style.border-left-color]="(box.cardSide !== 'right' || isClusterSelected(box.topCluster)) ? box.color : null"
+                        [style.border-right-color]="(box.cardSide === 'right' || isClusterSelected(box.topCluster)) ? box.color : null"
                         [style.border-top-color]="isClusterSelected(box.topCluster) ? box.color : null"
-                        [style.border-right-color]="isClusterSelected(box.topCluster) ? box.color : null"
                         [style.border-bottom-color]="isClusterSelected(box.topCluster) ? box.color : null"
                         [class.lane-box--selected]="isClusterSelected(box.topCluster)"
                         [class.lane-box--transition-fade-out]="isClusterOutsideTransitionTarget(box.topCluster)"
@@ -1033,6 +1078,10 @@
                           </div>
                         </div>
 
+                        <!-- Body only renders when the cluster is selected: the
+                             compact card is the header alone (title + counts), and
+                             selecting it expands to the full cluster paper view. -->
+                        @if (isClusterSelected(box.topCluster)) {
                         <!-- Card body: bullet points on the left, the action
                              button column sitting on the right next to them. -->
                         <div class="lane-box__main">
@@ -1063,13 +1112,17 @@
                             >
                               <span class="material-symbols-outlined">unfold_more</span>
                             </button>
-                            <button
-                              class="lane-box__expand-btn"
-                              (click)="requestExpandClusterFull(box.topCluster, box.name, $event)"
-                              title="Expand entire cluster (show all papers)"
-                            >
-                              <span class="material-symbols-outlined">select_all</span>
-                            </button>
+                            <!-- "Expand all" and "delete" only appear once the
+                                 card is fully expanded (longer summary visible). -->
+                            @if (isSummaryExpanded(box.topCluster)) {
+                              <button
+                                class="lane-box__expand-btn"
+                                (click)="requestExpandClusterFull(box.topCluster, box.name, $event)"
+                                title="Expand entire cluster (show all papers)"
+                              >
+                                <span class="material-symbols-outlined">select_all</span>
+                              </button>
+                            }
                             @if (!box.isMisc && currentTopLevel() >= 1) {
                               <button
                                 class="lane-box__move-btn"
@@ -1080,13 +1133,15 @@
                                 <span class="material-symbols-outlined">zoom_in</span>
                               </button>
                             }
-                            <button
-                              class="lane-box__delete-btn"
-                              (click)="requestRemoveCluster(box.topCluster, box.name, $event)"
-                              title="Remove this cluster from the graph"
-                            >
-                              <span class="material-symbols-outlined">delete</span>
-                            </button>
+                            @if (isSummaryExpanded(box.topCluster)) {
+                              <button
+                                class="lane-box__delete-btn"
+                                (click)="requestRemoveCluster(box.topCluster, box.name, $event)"
+                                title="Remove this cluster from the graph"
+                              >
+                                <span class="material-symbols-outlined">delete</span>
+                              </button>
+                            }
                           </div>
                         </div>
 
@@ -1108,8 +1163,19 @@
                             }
                           }
                         }
+                        }
                       </div>
                     </foreignObject>
+                </ng-template>
+
+                <!-- Compact (non-selected) cards paint here, behind the nodes. The
+                     selected/expanded card is re-emitted in an overlay AFTER the nodes
+                     (see below) so it sits on top of everything. -->
+                @if (useInGraphCards() && currentTopLevel() >= 0) {
+                  @for (box of laneLayout().laneBoxes; track box.topCluster) {
+                    @if (!isClusterSelected(box.topCluster)) {
+                      <ng-container [ngTemplateOutlet]="laneCardTpl" [ngTemplateOutletContext]="{ $implicit: box }"></ng-container>
+                    }
                   }
                 }
 
@@ -1305,6 +1371,13 @@
                       >{{ edgeLabelText(he) }}</text>
                     </g>
                   }
+                }
+
+                <!-- Expanded cluster card overlay: the selected card is re-emitted
+                     here, LAST in document order, so it paints on top of the other
+                     cards and the nodes (SVG has no z-index). -->
+                @if (useInGraphCards() && currentTopLevel() >= 0 && selectedLaneBox(); as box) {
+                  <ng-container [ngTemplateOutlet]="laneCardTpl" [ngTemplateOutletContext]="{ $implicit: box }"></ng-container>
                 }
               </g>
 

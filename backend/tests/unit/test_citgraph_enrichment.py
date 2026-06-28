@@ -13,7 +13,7 @@ from sqlalchemy import delete
 
 from app.api.citgraph import _enrichment_map, _to_response
 from app.db.database import AsyncSessionLocal
-from app.db.orm_models import DBPaper
+from app.db.orm_models import DBPaper, DBProject
 
 PROJECT_ID = 424242
 
@@ -43,6 +43,10 @@ def _node(paper_id: str, *, doi=None, arxiv_id=None) -> SimpleNamespace:
 async def seeded_papers():
     async with AsyncSessionLocal() as db:
         await db.execute(delete(DBPaper).where(DBPaper.project_id == PROJECT_ID))
+        # _enrichment_map runs an access check, so the project must exist. Put it
+        # in the null/guest bucket so user=None can access it.
+        if await db.get(DBProject, PROJECT_ID) is None:
+            db.add(DBProject(id=PROJECT_ID, name="enrichment-fixture", user_id=None))
         db.add_all([
             DBPaper(
                 project_id=PROJECT_ID, title="coded", doi="10.1/ABC",
@@ -59,13 +63,16 @@ async def seeded_papers():
     yield
     async with AsyncSessionLocal() as db:
         await db.execute(delete(DBPaper).where(DBPaper.project_id == PROJECT_ID))
+        proj = await db.get(DBProject, PROJECT_ID)
+        if proj is not None:
+            await db.delete(proj)
         await db.commit()
 
 
 async def test_enrichment_map_matches_by_doi_case_insensitive(seeded_papers):
     nodes = [_node("n1", doi="10.1/abc")]  # lower-case DOI must still match
     async with AsyncSessionLocal() as db:
-        out = await _enrichment_map(nodes, PROJECT_ID, db)
+        out = await _enrichment_map(nodes, PROJECT_ID, None, db)
     assert out["n1"] == {
         "has_public_code": True,
         "is_peer_reviewed": True,
@@ -77,7 +84,7 @@ async def test_enrichment_map_matches_by_doi_case_insensitive(seeded_papers):
 async def test_enrichment_map_matches_by_arxiv_and_skips_unknown(seeded_papers):
     nodes = [_node("n2", arxiv_id="2101.00001"), _node("n3", doi="10.9/nope")]
     async with AsyncSessionLocal() as db:
-        out = await _enrichment_map(nodes, PROJECT_ID, db)
+        out = await _enrichment_map(nodes, PROJECT_ID, None, db)
     assert out["n2"]["repo_stars"] == 7
     assert "n3" not in out  # no project paper matched → no entry
 
@@ -85,7 +92,39 @@ async def test_enrichment_map_matches_by_arxiv_and_skips_unknown(seeded_papers):
 async def test_enrichment_map_empty_without_project():
     nodes = [_node("n1", doi="10.1/ABC")]
     async with AsyncSessionLocal() as db:
-        assert await _enrichment_map(nodes, None, db) == {}
+        assert await _enrichment_map(nodes, None, None, db) == {}
+
+
+async def test_enrichment_map_rejects_inaccessible_project():
+    """A project the caller can't access 404s instead of leaking its papers."""
+    from fastapi import HTTPException
+
+    from app.db.orm_models import DBUser
+
+    async with AsyncSessionLocal() as db:
+        owner = DBUser(provider="github", provider_account_id="enrich-owner")
+        db.add(owner)
+        await db.flush()
+        proj = DBProject(name="owned", user_id=owner.id)
+        db.add(proj)
+        await db.commit()
+        proj_id, owner_id = proj.id, owner.id
+
+    try:
+        async with AsyncSessionLocal() as db:
+            with pytest.raises(HTTPException) as exc:
+                # user=None (guest) cannot read an owned project's enrichment.
+                await _enrichment_map([_node("n1", doi="10.1/x")], proj_id, None, db)
+            assert exc.value.status_code == 404
+    finally:
+        async with AsyncSessionLocal() as db:
+            p = await db.get(DBProject, proj_id)
+            if p is not None:
+                await db.delete(p)
+            u = await db.get(DBUser, owner_id)
+            if u is not None:
+                await db.delete(u)
+            await db.commit()
 
 
 def test_to_response_folds_enrichment_with_defaults():

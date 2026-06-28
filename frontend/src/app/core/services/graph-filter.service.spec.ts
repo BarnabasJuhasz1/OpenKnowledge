@@ -1,7 +1,13 @@
 import { ApplicationRef } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, it, expect, beforeEach } from 'vitest';
-import { GraphFilterService, NodeLike } from './graph-filter.service';
+import {
+  GraphFilterService,
+  NodeLike,
+  mergeYearIntervals,
+  seedContextIntervals,
+  yearInIntervals,
+} from './graph-filter.service';
 import { ALL_ARCHETYPES, ALL_SELECTABLE_FIELDS, SearchStateService } from './search-state.service';
 
 describe('GraphFilterService', () => {
@@ -136,7 +142,8 @@ describe('GraphFilterService', () => {
       expect(svc.backendNodeFilter()).toBeNull(); // metadataFilterActive still false
       svc.metadataFilterActive.set(true);
       expect(svc.backendNodeFilter()).toEqual({
-        year_min: null, year_max: null, citation_min: 10, citation_max: null,
+        year_min: null, year_max: null, year_intervals: null,
+        citation_min: 10, citation_max: null,
         open_access_only: false, fields: [],
       });
       svc.resetMetadata();
@@ -227,6 +234,91 @@ describe('GraphFilterService', () => {
       const offArch = node({ predicted_main_archetype: 'The Analyst' });
       expect(svc.nodePredicate(true)(offArch)).toBe(false); // seed: enforced
       expect(svc.nodePredicate(false)(offArch)).toBe(true); // expanded: passed through
+    });
+  });
+
+  describe('year-interval helpers', () => {
+    it('mergeYearIntervals merges overlapping/adjacent, keeps disconnected', () => {
+      // 1990 & 2010 each ±2 → two disjoint windows.
+      expect(seedContextIntervals([1990, 2010], 2)).toEqual([[1988, 1992], [2008, 2012]]);
+      // overlapping windows collapse.
+      expect(seedContextIntervals([1990, 1993], 2)).toEqual([[1988, 1995]]);
+      // adjacent (gap of exactly 1 year) collapse — no integer between them.
+      expect(mergeYearIntervals([[1988, 1992], [1993, 1997]])).toEqual([[1988, 1997]]);
+      // a true gap stays split.
+      expect(mergeYearIntervals([[1988, 1992], [1995, 1997]])).toEqual([[1988, 1992], [1995, 1997]]);
+    });
+
+    it('seedContextIntervals: single seed ±3, drops null years, empty when none', () => {
+      expect(seedContextIntervals([2000], 3)).toEqual([[1997, 2003]]);
+      expect(seedContextIntervals([2000, null, undefined], 2)).toEqual([[1998, 2002]]);
+      expect(seedContextIntervals([null, undefined], 3)).toEqual([]);
+    });
+
+    it('yearInIntervals: membership, null fails', () => {
+      const ints: Array<[number, number]> = [[1988, 1992], [2008, 2012]];
+      expect(yearInIntervals(1990, ints)).toBe(true);
+      expect(yearInIntervals(2008, ints)).toBe(true);
+      expect(yearInIntervals(2000, ints)).toBe(false);
+      expect(yearInIntervals(null, ints)).toBe(false);
+    });
+  });
+
+  describe('seed-context year mode (default)', () => {
+    it('defaults to context mode but no-ops until seed windows arrive', () => {
+      expect(svc.yearMode()).toBe('context');
+      expect(svc.effectiveContextIntervals()).toBeNull();
+      expect(svc.yearContextActive()).toBe(false);
+      expect(svc.backendNodeFilter()).toBeNull();
+    });
+
+    it('seed config gates the build via year_intervals, even with metadata off', () => {
+      svc.setAutoYearContext({ mode: 'seed', seedCount: 2, intervals: [[1988, 1992], [2008, 2012]] });
+      expect(svc.yearContextActive()).toBe(true);
+      // Backend payload carries the windows (metadata filter still off).
+      expect(svc.backendNodeFilter()).toEqual({
+        year_min: null, year_max: null, year_intervals: [[1988, 1992], [2008, 2012]],
+        citation_min: null, citation_max: null, open_access_only: false, fields: [],
+      });
+      // Client predicate gates expanded nodes to the windows.
+      const keep = svc.nodePredicate(false);
+      expect(keep({ year: 1990 })).toBe(true);
+      expect(keep({ year: 2009 })).toBe(true);
+      expect(keep({ year: 2000 })).toBe(false); // disconnected gap
+      expect(keep({ year: null })).toBe(false);
+    });
+
+    it('all config is a no-op (reports span but never narrows)', () => {
+      svc.setAutoYearContext({ mode: 'all', seedCount: 0, intervals: [[1995, 2024]] });
+      expect(svc.effectiveContextIntervals()).toBeNull();
+      expect(svc.yearContextActive()).toBe(false);
+      expect(svc.backendNodeFilter()).toBeNull();
+      expect(svc.nodePredicate(false)({ year: null })).toBe(true); // null-year paper kept
+    });
+
+    it('custom range mode ignores the context windows', () => {
+      svc.setAutoYearContext({ mode: 'seed', seedCount: 1, intervals: [[1997, 2003]] });
+      svc.yearMode.set('range');
+      expect(svc.effectiveContextIntervals()).toBeNull();
+      expect(svc.backendNodeFilter()).toBeNull(); // no slider bound set + metadata off
+      expect(svc.nodePredicate(false)({ year: 2030 })).toBe(true);
+    });
+
+    it('context windows supersede the slider year bound in the payload', () => {
+      svc.setAutoYearContext({ mode: 'seed', seedCount: 1, intervals: [[1997, 2003]] });
+      svc.metadataFilterActive.set(true);
+      svc.updateMetadata({ yearMin: 2015, yearMax: 2020, citationMin: 10 });
+      const payload = svc.backendNodeFilter();
+      expect(payload?.year_intervals).toEqual([[1997, 2003]]);
+      expect(payload?.year_min).toBeNull(); // slider bound dropped in favour of windows
+      expect(payload?.year_max).toBeNull();
+      expect(payload?.citation_min).toBe(10); // other metadata still applies
+    });
+
+    it('resetMetadata restores the default context mode', () => {
+      svc.yearMode.set('range');
+      svc.resetMetadata();
+      expect(svc.yearMode()).toBe('context');
     });
   });
 });

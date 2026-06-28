@@ -18,22 +18,49 @@
     <!-- Year range -->
     <section class="gfp__section">
       <h4 class="gfp__label">Year range</h4>
-      <div class="gfp__range-labels">
-        <span>{{ yearMin }}</span>
-        <span>{{ yearMax }}</span>
+
+      <!-- Mode: the default "Around seed papers" auto-window vs a manual range. -->
+      <div class="gfp__yearmode" role="tablist" aria-label="Year filter mode">
+        <button type="button" class="gfp__yearmode-tab"
+          role="tab" [attr.aria-selected]="yearMode === 'context'"
+          [class.gfp__yearmode-tab--active]="yearMode === 'context'"
+          (click)="setYearMode('context')">
+          Around seed papers
+        </button>
+        <button type="button" class="gfp__yearmode-tab"
+          role="tab" [attr.aria-selected]="yearMode === 'range'"
+          [class.gfp__yearmode-tab--active]="yearMode === 'range'"
+          (click)="setYearMode('range')">
+          Custom range
+        </button>
       </div>
-      <div class="gfp__range-row">
-        <div class="gfp__range-rail">
-          <div class="gfp__range-track"></div>
-          <div class="gfp__range-fill" [style.left.%]="yearFill.left" [style.right.%]="yearFill.right"></div>
+
+      @if (yearMode === 'context') {
+        <div class="gfp__context">
+          <div class="gfp__context-rule">{{ contextRule }}</div>
+          <div class="gfp__context-windows">{{ contextIntervalsLabel }}</div>
+          @if (!contextNarrows) {
+            <div class="gfp__context-note">Reports the span only — applies no narrowing.</div>
+          }
         </div>
-        <input type="range" class="gfp__slider"
-          [min]="yearBounds().min" [max]="yearMax"
-          [ngModel]="yearMin" (ngModelChange)="yearMin = $event" />
-        <input type="range" class="gfp__slider"
-          [min]="yearMin" [max]="yearBounds().max"
-          [ngModel]="yearMax" (ngModelChange)="yearMax = $event" />
-      </div>
+      } @else {
+        <div class="gfp__range-labels">
+          <span>{{ yearMin }}</span>
+          <span>{{ yearMax }}</span>
+        </div>
+        <div class="gfp__range-row">
+          <div class="gfp__range-rail">
+            <div class="gfp__range-track"></div>
+            <div class="gfp__range-fill" [style.left.%]="yearFill.left" [style.right.%]="yearFill.right"></div>
+          </div>
+          <input type="range" class="gfp__slider"
+            [min]="yearBounds().min" [max]="yearMax"
+            [ngModel]="yearMin" (ngModelChange)="yearMin = $event" />
+          <input type="range" class="gfp__slider"
+            [min]="yearMin" [max]="yearBounds().max"
+            [ngModel]="yearMax" (ngModelChange)="yearMax = $event" />
+        </div>
+      }
     </section>
 
     <!-- Citation range -->

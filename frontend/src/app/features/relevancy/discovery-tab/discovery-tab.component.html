@@ -40,14 +40,6 @@
       </div>
     }
 
-    @if (!loading() && !hasSearched()) {
-      <div class="discovery__empty">
-        <div class="discovery__empty-icon">⊘</div>
-        <p class="discovery__empty-title">No scored papers yet</p>
-        <p class="discovery__empty-hint">Run a search first to populate papers, then adjust weights here</p>
-      </div>
-    }
-
     @if (!loading() && hasSearched() && papers().length === 0) {
       <div class="discovery__empty">
         <div class="discovery__empty-icon">⊘</div>

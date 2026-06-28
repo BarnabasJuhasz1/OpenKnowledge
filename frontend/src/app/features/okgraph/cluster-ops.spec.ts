@@ -4,6 +4,7 @@ import {
   baseIdsInCluster,
   subclusterCount,
   subclusterCommunities,
+  passesInnerViewFilter,
   ClusterMember,
 } from './cluster-ops';
 
@@ -60,6 +61,30 @@ describe('baseIdsInCluster', () => {
 
   it('returns an empty list for an unknown cluster', () => {
     expect(baseIdsInCluster(communityAtLevel, baseIds, 99)).toEqual([]);
+  });
+});
+
+describe('passesInnerViewFilter', () => {
+  // index:      0    1    2    3    4    5
+  // community:  10   10   11   10   11   12
+  const comm = [10, 10, 11, 10, 11, 12];
+
+  it('keeps only members of the entered cluster for non-seed nodes', () => {
+    // Inside cluster 10: indices 0,1,3 belong; 2,4 (cluster 11) and 5 (12) do not.
+    expect(passesInnerViewFilter(comm, 10, 0, false)).toBe(true);
+    expect(passesInnerViewFilter(comm, 10, 3, false)).toBe(true);
+    expect(passesInnerViewFilter(comm, 10, 2, false)).toBe(false);
+    expect(passesInnerViewFilter(comm, 10, 5, false)).toBe(false);
+  });
+
+  it('keeps a seed visible inside ANY cluster, even a foreign one', () => {
+    // Node 2 belongs to cluster 11, yet as a seed it survives inside cluster 10.
+    expect(passesInnerViewFilter(comm, 10, 2, true)).toBe(true);
+    expect(passesInnerViewFilter(comm, 11, 5, true)).toBe(true);
+  });
+
+  it('keeps a seed that is also a member (no double-exclusion)', () => {
+    expect(passesInnerViewFilter(comm, 10, 0, true)).toBe(true);
   });
 });
 

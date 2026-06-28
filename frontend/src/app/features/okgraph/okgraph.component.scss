@@ -1455,6 +1455,42 @@
     }
   }
 
+  // The "blob line" tendril joining a blob to its seed paper: a thin rounded tube that
+  // morphs out of the blob, crosses to the seed's vertical line and follows it to the
+  // marker. Round caps/joins keep it smooth; it sits behind nodes and is non-interactive.
+  &__blob-connector {
+    fill: none;
+    stroke-width: 11;
+    stroke-opacity: 0.3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    pointer-events: none;
+    transition: stroke-opacity 0.15s, stroke-width 0.15s, opacity 0.4s ease-in-out;
+
+    &--selected {
+      stroke-opacity: 0.6;
+      stroke-width: 13;
+    }
+
+    &--transition-fade-out {
+      opacity: 0 !important;
+    }
+  }
+
+  // Voronoi cluster-map cell: a translucent fill tinted by its cluster. No stroke, so
+  // same-cluster neighbours merge into one seamless region. Non-interactive (nodes and
+  // cards stay clickable on top).
+  &__voronoi {
+    fill-opacity: 0.16;
+    stroke: none;
+    pointer-events: none;
+    transition: opacity 0.4s ease-in-out;
+
+    &--transition-fade-out {
+      opacity: 0 !important;
+    }
+  }
+
   // Merge neck joining two cluster blobs. Slightly stronger fill than a blob so
   // the overlap reads as a deliberate connection rather than a rendering seam.
   &__bridge {
@@ -2395,8 +2431,19 @@
   padding: 0.6rem 0.7rem;
   background: var(--ok-surface-container-low, #fff);
   border: 1px solid var(--ok-outline-variant, #e5e7eb);
-  border-left: 5px solid;
+  // Keep an explicit colour here: the bare `border-left: 5px solid` shorthand
+  // resets border-left-color to `currentColor` (dark text), which leaked through
+  // as a dark left edge on right-side cards (whose inline border-left-color is
+  // not set). Left-aligned cards still override this with the cluster colour.
+  border-left: 5px solid var(--ok-outline-variant, #e5e7eb);
   border-radius: var(--ok-radius-md, 12px);
+
+  // Right-side (v2 "citer") cards sit to the right of their cluster, so the thick
+  // coloured accent moves to the right edge to point back at the cluster blob.
+  &--right {
+    border-left-width: 1px;
+    border-right-width: 5px;
+  }
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   box-sizing: border-box;
   cursor: pointer;
@@ -2410,6 +2457,12 @@
   &--selected {
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
     background: var(--ok-surface-container-high, #fff);
+  }
+
+  // Compact card: header only (title + counts). No body follows, so the header's
+  // bottom margin is dropped to keep the card tight and save vertical space.
+  &--compact &__header {
+    margin-bottom: 0;
   }
 
   &__header {
@@ -2576,9 +2629,8 @@
   &__bullets {
     margin: 0.1rem 0 0.15rem;
     padding-left: 0;
-    // Native markers are disabled and redrawn via li::before: an "outside"
-    // list marker is clipped by the per-row `overflow: hidden` (needed for the
-    // single-line ellipsis), which is why the disc had disappeared.
+    // Native markers are disabled and redrawn via li::before so the disc sits
+    // inside the row's padding gutter (an "outside" marker rendered oddly here).
     list-style: none;
     font-size: 0.7rem;
     line-height: 1.3;
@@ -2588,14 +2640,12 @@
       position: relative;
       margin-top: 0.1rem;
       padding-left: 1rem;
-      // Keep every bullet to a single row; overflow is trimmed with an
-      // ellipsis (full text shows in the expandable summary / hover tooltip).
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      // Show the full bullet text: wrap onto as many rows as needed rather
+      // than trimming with an ellipsis. The card is content-sized, so its
+      // height grows to fit.
+      overflow-wrap: anywhere;
 
-      // Custom disc drawn inside the row's padding gutter so it survives the
-      // `overflow: hidden` clip that an outside list marker would not.
+      // Custom disc drawn inside the row's padding gutter.
       &::before {
         content: '•';
         position: absolute;

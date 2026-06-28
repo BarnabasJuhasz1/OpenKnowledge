@@ -53,6 +53,30 @@ describe('OkGraphStateService', () => {
     expect(service.removedIds().size).toBe(0);
   });
 
+  it('loadSnapshotGraph rebuilds the base view and resets exploration (placed/links/removed)', () => {
+    // Dirty the exploration state as if the user had expanded/removed nodes.
+    service.placed.set([{ paper_id: 'x' } as any]);
+    service.links.set([{ source: 'x', target: 'y' } as any]);
+    service.markRemoved(['gone']);
+    expect(service.placed().length).toBe(1);
+    expect(service.links().length).toBe(1);
+    expect(service.removedIds().size).toBe(1);
+
+    // Loading a snapshot recomputes Louvain from the saved nodes/edges + params
+    // and lands on the base view — v1 snapshots never carry exploration.
+    service.loadSnapshotGraph({
+      nodes: [{ paper_id: 'a' }, { paper_id: 'b' }] as any[],
+      edges: [{ source: 'a', target: 'b' }] as any[],
+      resolution: 1, maxLevels: 10, keywords: [], booleanQuery: '',
+      seedId: 'a', prefiltered: false, initialSeedIds: ['a'], directionalSplit: false,
+    } as any);
+
+    expect(service.nodes().map(n => n.paper_id).sort()).toEqual(['a', 'b']);
+    expect(service.placed()).toEqual([]);
+    expect(service.links()).toEqual([]);
+    expect(service.removedIds().size).toBe(0);
+  });
+
   it('keyword filter toggles on the boolean query and re-clusters matches', () => {
     const nodes = [
       { paper_id: 'seed', title: 'seed paper', abstract: '' },

@@ -12,6 +12,7 @@ from .db.database import init_db
 from .services import archetype
 from .services.archetype.config import load_config as load_archetype_config
 from .api.projects import router as projects_router
+from .api.snapshots import router as snapshots_router
 from .api.keywords import router as keywords_router
 from .api.retrieval import router as retrieval_router
 from .api.scoring import router as scoring_router
@@ -69,6 +70,7 @@ app.add_middleware(
 )
 
 app.include_router(projects_router, prefix="/api")
+app.include_router(snapshots_router, prefix="/api")
 app.include_router(keywords_router, prefix="/api")
 app.include_router(retrieval_router, prefix="/api")
 app.include_router(scoring_router, prefix="/api")

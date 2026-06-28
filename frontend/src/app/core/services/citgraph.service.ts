@@ -50,6 +50,9 @@ export interface CitGraphResponse {
 export interface GraphNodeFilterPayload {
   year_min?: number | null;
   year_max?: number | null;
+  // Disconnected inclusive [lo, hi] year windows. Set by the "around seed papers"
+  // default build mode; supersedes year_min/year_max when present.
+  year_intervals?: number[][] | null;
   citation_min?: number | null;
   citation_max?: number | null;
   open_access_only?: boolean;

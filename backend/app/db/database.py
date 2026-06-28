@@ -40,3 +40,14 @@ def _apply_migrations(conn) -> None:
             conn.execute(text("ALTER TABLE papers ADD COLUMN predicted_main_archetype VARCHAR"))
         if "predicted_second_tier_archetype" not in columns:
             conn.execute(text("ALTER TABLE papers ADD COLUMN predicted_second_tier_archetype VARCHAR"))
+
+    if "projects" in inspector.get_table_names():
+        columns = {col["name"] for col in inspector.get_columns("projects")}
+        if "user_id" not in columns:
+            # SQLite ALTER can't add the FK constraint; the ORM relationship and
+            # app-level access checks enforce ownership. Existing rows keep
+            # user_id NULL (the legacy/guest bucket).
+            conn.execute(text("ALTER TABLE projects ADD COLUMN user_id INTEGER"))
+            conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_projects_user_id ON projects (user_id)")
+            )
