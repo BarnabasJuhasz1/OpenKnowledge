@@ -65,11 +65,12 @@ class CitGraphExploreRequest(BaseModel):
     # traversal continues. Honoured by the hosted `/explore` path only; the demo
     # corpus has no per-edge influence flag, so `/demo/explore` ignores it.
     influential_only: bool = False
-    # v2 ("direction-pure cones") construction. When true AND direction == 'both',
-    # the graph is built as the union of a pure future cone (citations only, every
-    # hop) and a pure past cone (references only, every hop) — no node is reached by
-    # a path that mixes citation and reference hops. False (default) = v1, the mixed
-    # K-hop neighbourhood. No effect for single-direction builds.
+    # Selects the "direction-pure cones" construction. When true AND
+    # direction == 'both', the graph is built as the union of a pure future cone
+    # (citations only, every hop) and a pure past cone (references only, every
+    # hop) — no node is reached by a path that mixes citation and reference hops.
+    # False (default) = the mixed single-frontier K-hop neighbourhood. No effect
+    # for single-direction builds.
     directional_split: bool = False
 
 

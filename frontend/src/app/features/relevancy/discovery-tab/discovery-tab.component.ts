@@ -43,7 +43,6 @@ export class DiscoveryTabComponent implements OnInit, OnDestroy {
   papers = signal<ScoredPaper[]>([]);
   loading = signal(false);
   totalScored = signal(0);
-  hasSearched = signal(false);
 
   /** Shown next to alpha-disabled controls whose backing field isn't backfilled yet. */
   readonly alphaNotice = 'Not available in the Alpha';
@@ -103,12 +102,10 @@ export class DiscoveryTabComponent implements OnInit, OnDestroy {
       next: (res) => {
         this.papers.set(res.papers);
         this.totalScored.set(res.total_scored);
-        this.hasSearched.set(true);
         this.loading.set(false);
       },
       error: () => {
         this.loading.set(false);
-        this.hasSearched.set(true);
       },
     });
   }

@@ -5,6 +5,21 @@
         <img class="top-nav__logo-icon" [src]="themeSvc.theme() === 'light' ? 'openknowledge_icon.svg' : 'openknowledge_icon_white.svg'" alt="" />
         <span class="top-nav__logo-text">OpenKnowledge</span>
       </a>
+
+      <!-- Release-stage badge + info button → Alpha pop-up -->
+      <span class="top-nav__stage">
+        <span class="top-nav__stage-label">{{ appStage }}</span>
+        <button
+          class="top-nav__stage-info"
+          type="button"
+          [attr.aria-label]="appStage + ' release info'"
+          title="About this release"
+          (click)="openAlpha()"
+        >
+          <span class="material-symbols-outlined">info</span>
+        </button>
+      </span>
+
       <span class="top-nav__tagline">A free, open-source, AI-powered tool for researchers.</span>
     </div>
 
@@ -50,3 +65,4 @@
 </nav>
 
 <app-login-modal [open]="loginOpen()" (closed)="closeLogin()" />
+<app-alpha-popup [open]="alphaOpen()" (closed)="closeAlpha()" />

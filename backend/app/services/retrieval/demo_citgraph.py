@@ -289,10 +289,10 @@ class DemoCitGraphStore:
     ) -> CitGraphResult:
         """Explore the demo citation graph.
 
-        When ``directional_split`` (v2) is set and ``direction == 'both'``, the
-        graph is the union of a pure future cone and a pure past cone, so no node
-        is reachable by a path that mixes citation and reference hops (mirrors the
-        hosted builder). Otherwise the single-frontier traversal is used (v1).
+        When ``directional_split`` is set and ``direction == 'both'``, the graph
+        is the union of a pure future cone and a pure past cone, so no node is
+        reachable by a path that mixes citation and reference hops (mirrors the
+        hosted builder). Otherwise the mixed single-frontier traversal is used.
         """
         if directional_split and direction == "both":
             past = await self._explore_single(

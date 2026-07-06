@@ -64,6 +64,51 @@ $brand-light: rgba(var(--ok-primary-rgb), 0.15);
     text-overflow: ellipsis;
   }
 
+  // ── Release-stage badge (e.g. "Alpha") + info button ──
+  &__stage {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+
+  &__stage-label {
+    padding: 2px 8px;
+    border-radius: var(--ok-radius-full);
+    background: $brand-light;
+    color: var(--ok-primary);
+    font-family: var(--ok-font-label);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    line-height: 1.4;
+  }
+
+  &__stage-info {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: var(--ok-radius-full);
+    background: transparent;
+    color: var(--ok-on-surface-variant);
+    cursor: pointer;
+    transition: color var(--ok-transition), background var(--ok-transition);
+
+    &:hover {
+      color: var(--ok-primary);
+      background: var(--ok-hover-overlay);
+    }
+
+    .material-symbols-outlined {
+      font-size: 16px;
+    }
+  }
+
   &__logo-icon {
     width: 28px;
     height: 28px;

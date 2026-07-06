@@ -4,14 +4,18 @@ import { NavigationEnd, Router, RouterLink } from '@angular/router';
 import { filter } from 'rxjs';
 import { AuthService } from '../../../core/services/auth.service';
 import { LoginModalComponent } from '../../../features/auth/login-modal.component';
+import { AlphaPopupComponent } from '../alpha-popup/alpha-popup.component';
 import { ThemeService } from '../../../core/services/theme.service';
 
 const GITHUB_REPO = 'BarnabasJuhasz1/OpenKnowledge';
 
+/** Current release stage — single source of truth for the version badge. */
+export const APP_STAGE = 'Alpha';
+
 @Component({
   selector: 'app-top-nav',
   standalone: true,
-  imports: [RouterLink, LoginModalComponent],
+  imports: [RouterLink, LoginModalComponent, AlphaPopupComponent],
   templateUrl: './top-nav.component.html',
   styleUrl: './top-nav.component.scss',
 })
@@ -21,9 +25,11 @@ export class TopNavComponent implements OnInit {
   protected readonly auth = inject(AuthService);
   protected readonly themeSvc = inject(ThemeService);
 
+  readonly appStage = APP_STAGE;
   readonly repoUrl = `https://github.com/${GITHUB_REPO}`;
   readonly stars = signal<number | null>(null);
   readonly loginOpen = signal(false);
+  readonly alphaOpen = signal(false);
 
   ngOnInit(): void {
     this.http
@@ -53,6 +59,14 @@ export class TopNavComponent implements OnInit {
 
   closeLogin(): void {
     this.loginOpen.set(false);
+  }
+
+  openAlpha(): void {
+    this.alphaOpen.set(true);
+  }
+
+  closeAlpha(): void {
+    this.alphaOpen.set(false);
   }
 
   logout(): void {

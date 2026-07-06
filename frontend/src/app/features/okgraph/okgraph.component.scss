@@ -801,33 +801,6 @@
     }
   }
 
-  // --- Graph construction v2 toggle (seed mode only) ---
-  // A simple, visible checkbox: on by default (v2 direction-pure cones),
-  // uncheck to fall back to the v1 mixed K-hop neighbourhood.
-  .graph-v2-flip {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--ok-space-2);
-    margin-top: var(--ok-space-4);
-    cursor: pointer;
-    user-select: none;
-
-    &__input {
-      width: 16px;
-      height: 16px;
-      margin: 0;
-      accent-color: var(--ok-primary);
-      cursor: pointer;
-    }
-
-    &__label {
-      font-family: var(--ok-font-label);
-      font-size: 0.78rem;
-      letter-spacing: 0.02em;
-      color: var(--ok-on-surface-variant);
-    }
-  }
-
   // --- Explore CTA (continues once a direction is picked) ---
   .explore-cta {
     position: relative;
@@ -2438,7 +2411,7 @@
   border-left: 5px solid var(--ok-outline-variant, #e5e7eb);
   border-radius: var(--ok-radius-md, 12px);
 
-  // Right-side (v2 "citer") cards sit to the right of their cluster, so the thick
+  // Right-side (cones "citer") cards sit to the right of their cluster, so the thick
   // coloured accent moves to the right edge to point back at the cluster blob.
   &--right {
     border-left-width: 1px;

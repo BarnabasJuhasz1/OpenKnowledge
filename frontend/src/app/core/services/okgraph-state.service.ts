@@ -31,7 +31,7 @@ export interface HierarchyPayload {
   seedId: string;             // origin paper — always kept so the filter matches the Cit-Graph stage
   prefiltered: boolean;       // true → the Cit-Graph already dropped non-matching papers
   initialSeedIds?: string[];  // paper IDs initially selected to construct this graph
-  directionalSplit?: boolean; // true → graph built with the v2 "direction-pure cones" construction
+  directionalSplit?: boolean; // true → graph built with the "direction-pure cones" construction
   hideIntermediates?: boolean; // true → 'all' mode: cluster the full k-hop graph but render only retrieved papers (hop 0); hop>0 nodes are hidden
 }
 
@@ -105,10 +105,10 @@ export class OkGraphStateService {
   readonly initialSeedIds = signal<Set<string>>(new Set());
 
   /**
-   * True when the displayed graph was built with the v2 "direction-pure cones"
-   * construction. Gates v2-only layout behaviour (e.g. the seed-year column
-   * split), since the live `graphVersion` toggle reflects the *next* build, not
-   * the graph currently on screen.
+   * True when the displayed graph was built with the "direction-pure cones"
+   * construction (every seed-mode build; false for the 'all' build, which uses
+   * the mixed traversal). Gates the cones-only layout behaviour (e.g. the
+   * seed-year column split) for the graph currently on screen.
    */
   readonly directionalSplit = signal(false);
 

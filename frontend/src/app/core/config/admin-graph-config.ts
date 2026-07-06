@@ -129,24 +129,25 @@ export const ADMIN_GRAPH_CONFIG: Record<GraphBuildMode, AdminGraphConfig> = {
 };
 
 /**
- * Graph-build settings for the **v2** ("direction-pure cones") construction —
- * used in place of `ADMIN_GRAPH_CONFIG` when the v2 flip is on AND the direction
- * is `'both'` (the only case where v2 differs from v1).
+ * Graph-build settings for the **"direction-pure cones"** construction — used in
+ * place of `ADMIN_GRAPH_CONFIG` whenever the direction is `'both'` (the only case
+ * where the cones construction differs from a single-frontier traversal).
  *
- * Why a separate config: v2's `'both'` build runs TWO independent traversals — a
+ * Why a separate config: the `'both'` build runs TWO independent traversals — a
  * pure future cone (citations) and a pure past cone (references) — and each cone
- * receives the per-paper / per-hop caps in full and independently. v1's mixed
+ * receives the per-paper / per-hop caps in full and independently. A single mixed
  * `'both'` traversal instead shares ONE budget across references and citations.
- * So at identical caps v2 hands out roughly DOUBLE the neighbours per paper. To
- * keep the two versions budget-matched (each cone's share == v1's combined
- * share), the values below are the `ADMIN_GRAPH_CONFIG` values halved.
+ * So at identical caps the cones build hands out roughly DOUBLE the neighbours per
+ * paper. To keep them budget-matched (each cone's share == the single-frontier
+ * combined share), the values below are the `ADMIN_GRAPH_CONFIG` values halved.
  *
  * Keep these in sync with `ADMIN_GRAPH_CONFIG` when tuning: `K_HOPS` and
- * `RESOLUTION` should match v1 (they aren't per-direction budgets); `MAX_PER_HOP`
- * and `TOP_K_PER_PAPER` should be the v1 values halved. Only the `seed` entry is
- * ever consulted (v2 is seed-mode only); `all` mirrors v1 for symmetry.
+ * `RESOLUTION` should match (they aren't per-direction budgets); `MAX_PER_HOP`
+ * and `TOP_K_PER_PAPER` should be the base values halved. The `seed` entry drives
+ * seed-mode builds; the `all` entry drives the 'all' build (which still clusters
+ * on the mixed traversal — see `directional_split: false` there).
  */
-export const ADMIN_GRAPH_CONFIG_V2: Record<GraphBuildMode, AdminGraphConfig> = {
+export const ADMIN_GRAPH_CONFIG_CONES: Record<GraphBuildMode, AdminGraphConfig> = {
   seed: {
     K_HOPS: 2,
     MAX_PER_HOP: null,
@@ -157,13 +158,12 @@ export const ADMIN_GRAPH_CONFIG_V2: Record<GraphBuildMode, AdminGraphConfig> = {
     K_HOPS: 2,
     MAX_PER_HOP: null,
     TOP_K_PER_PAPER: [50, 15],
-    // Matches v1: the projection substrate's dense bridge graph needs resolution
-    // >1 to split into granular clusters instead of one blob. See v1 'all'.
+    // The projection substrate's dense bridge graph needs resolution >1 to split
+    // into granular clusters instead of one blob.
     RESOLUTION: 1.2,
-    // The 'all' build picks THIS (v2) config whenever graphVersion is v2 (the
-    // default) and direction is 'both' — which is the normal 'all' path — so the
-    // projection substrate must be set here too, not only on the v1 config, or the
-    // 'all' build silently falls back to 'full-graph'.
+    // The 'all' build picks THIS config whenever direction is 'both' — the normal
+    // 'all' path — so the projection substrate must be set here, not only on
+    // ADMIN_GRAPH_CONFIG, or the 'all' build silently falls back to 'full-graph'.
     ALL_CLUSTER_SUBSTRATE: 'projection',
     PROJECTION_MIN_WEIGHT: 0.3,
     PROJECTION_HUB_DISCOUNT: 'adamic-adar',

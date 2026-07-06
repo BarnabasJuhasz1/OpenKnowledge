@@ -28,7 +28,7 @@ import { SearchModeService } from '../../core/services/search-mode.service';
 import { NotificationService } from '../../core/services/notification.service';
 import { parseQuery } from '../../shared/utils/query-parser';
 import { ProjectContextService } from '../../core/services/project-context.service';
-import { ADMIN_GRAPH_CONFIG, ADMIN_GRAPH_CONFIG_V2, INFLUENTIAL_CITATIONS_ONLY } from '../../core/config/admin-graph-config';
+import { ADMIN_GRAPH_CONFIG, ADMIN_GRAPH_CONFIG_CONES, INFLUENTIAL_CITATIONS_ONLY } from '../../core/config/admin-graph-config';
 import { buildVoronoiCells, VoronoiCell } from './voronoi-cells';
 import { ProjectScoringService } from '../../core/services/project-scoring.service';
 import { BookshelfService, BookshelfItem } from '../../core/services/bookshelf.service';
@@ -109,7 +109,7 @@ interface TransitionState {
 }
 
 const YEAR_GAP = 180;
-const SUBLANE_GAP = 110;       // horizontal gap between sub-columns of a v2 split year
+const SUBLANE_GAP = 110;       // horizontal gap between sub-columns of a cones split year
 const LEFT_PADDING = 80;
 const LANE_NODE_VGAP = 64;     // vertical gap between stacked nodes in one lane
 const LANE_MIN_HEIGHT = 220;
@@ -471,21 +471,6 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     this.selectedDirection.update(cur => (cur === direction ? null : direction));
   }
 
-  /**
-   * Which ok-graph construction to use (seed mode only):
-   *  - 'v1': the current K-hop neighbourhood expanded in every direction each
-   *    hop (citation/reference hops mix along a path).
-   *  - 'v2': direction-pure cones — a pure future cone (citations only, every
-   *    hop) and a pure past cone (references only, every hop), unioned; no node
-   *    is reached by a mixed citation/reference path. Maps to the backend's
-   *    `directional_split` flag. Defaults to v2 (direction-pure cones).
-   */
-  readonly graphVersion = signal<'v1' | 'v2'>('v2');
-
-  selectGraphVersion(version: 'v1' | 'v2'): void {
-    this.graphVersion.set(version);
-  }
-
   /** True once the user can proceed: a direction is chosen and seeds exist. */
   readonly canExplore = computed(() => this.selectedDirection() !== null && this.hasSourcePapers());
 
@@ -607,15 +592,14 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     // is intentionally no UI control or per-project override here. The config
     // is split per construction mode: 'seed' (expand from selected seeds) vs
     // 'all' (build from every retrieved paper).
-    // v2 ('both' only) builds two direction-pure cones, each receiving the
-    // per-paper / per-hop caps in full and independently, whereas v1's mixed
-    // 'both' traversal shares one budget across references and citations. So v2
-    // uses its own budget-matched config (ADMIN_GRAPH_CONFIG_V2 — the v1 caps
+    // The 'both' construction builds two direction-pure cones, each receiving the
+    // per-paper / per-hop caps in full and independently. So it uses its own
+    // budget-matched config (ADMIN_GRAPH_CONFIG_CONES — the single-frontier caps
     // halved) instead of ADMIN_GRAPH_CONFIG. Guard on direction === 'both' to
     // mirror the backend, where directional_split is a no-op for single-direction
-    // builds (v2 === v1, so the v1 config applies).
-    const splitV2 = this.graphVersion() === 'v2' && direction === 'both';
-    const cfg = (splitV2 ? ADMIN_GRAPH_CONFIG_V2 : ADMIN_GRAPH_CONFIG)[
+    // builds (the single-direction config applies there).
+    const directionPureCones = direction === 'both';
+    const cfg = (directionPureCones ? ADMIN_GRAPH_CONFIG_CONES : ADMIN_GRAPH_CONFIG)[
       this.useOnlySelected() ? 'seed' : 'all'
     ];
     const kHops = cfg.K_HOPS;
@@ -683,10 +667,10 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       // shortest paths between retrieved papers, not a citation cone. So:
       //  - force `direction: 'both'` (ignore the seed-mode past/future toggle) so
       //    every paper's references AND citers are fetched, and
-      //  - `directional_split: false` (v1, mixed traversal) so a frontier paper is
+      //  - `directional_split: false` (mixed traversal) so a frontier paper is
       //    expanded in BOTH directions each hop — e.g. you can reach the
-      //    references (past) of a citer (future). v2's direction-pure cones would
-      //    forbid exactly those mixed paths.
+      //    references (past) of a citer (future). The direction-pure cones build
+      //    would forbid exactly those mixed paths.
       // The contraction then walks the citation graph undirected, so co-citation
       // and bibliographic-coupling links surface.
       //
@@ -883,7 +867,7 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
             seedId: '',
             prefiltered: booleanQuery.length > 0,
             initialSeedIds: [],
-            directionalSplit: false, // 'all' build is never v2 (seed-mode only)
+            directionalSplit: false, // 'all' build uses the mixed traversal, not direction-pure cones
             hideIntermediates, // projection: retrieved-only nodes (false); full-graph: hide intermediates (true)
           });
 
@@ -938,10 +922,11 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       max_per_hop: maxPerHop,
       top_k_per_paper: topKPerPaper,
       influential_only: INFLUENTIAL_CITATIONS_ONLY,
-      // v2 construction: union of direction-pure cones (no mixed citation/
-      // reference paths). Only meaningful with direction 'both'; v1 is the
-      // mixed K-hop neighbourhood. Seed mode only — see graphVersion.
-      directional_split: this.graphVersion() === 'v2',
+      // Seed builds always use the direction-pure cones construction: a union of
+      // a pure future cone (citations) and a pure past cone (references), with no
+      // mixed citation/reference paths. Only meaningful with direction 'both'
+      // (a no-op for single-direction builds).
+      directional_split: true,
     };
     const req = this.mode.isDemo()
       ? this.citgraphSvc.exploreDemo(exploreReq)
@@ -1022,7 +1007,7 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
           seedId: res.seed_id || (baseNodes[0]?.paper_id ?? ''),
           prefiltered: booleanQuery.length > 0,
           initialSeedIds: seedIds,
-          directionalSplit: splitV2, // v2 "direction-pure cones" build → enable seed-year split
+          directionalSplit: directionPureCones, // "direction-pure cones" build → enable seed-year split
         });
 
         this.notify.show(`Successfully built surrounding graph with ${baseNodes.length} nodes!`);
@@ -2101,21 +2086,21 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     }
 
-    // v2 ("direction-pure cones") graph: gates the v2-only layout tweaks below
+    // "direction-pure cones" graph: gates the cones-only layout tweaks below
     // (tighter lanes + no bridges when cards are off, all citations as edges, and
     // the seed cluster centred). Reflects the construction of the *displayed*
-    // graph, not the live toggle.
-    const v2 = this.state.directionalSplit();
+    // graph.
+    const cones = this.state.directionalSplit();
 
     // Lanes: ordered to minimise bridge overlap.
     let laneClusters = orderLanesByConnectivity(
       [...sizeOf.keys()], pairWeight, sizeOf, isInner ? null : misc,
     );
 
-    // v2: keep the seed paper(s)' cluster(s) in the middle of the lane stack so
+    // cones: keep the seed paper(s)' cluster(s) in the middle of the lane stack so
     // the origin of the graph reads as its vertical centre. The other lanes are
     // split evenly above/below, preserving their connectivity-derived order.
-    if (v2) {
+    if (cones) {
       const seedClusters = new Set<number>();
       for (const p of placedFiltered) {
         if (seedIds.has(paperId(p.paper))) seedClusters.add(currentComm[p.repIndex]);
@@ -2132,10 +2117,10 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     const leftPad = this.leftPadding();
     const years = [...new Set(placedFiltered.map(p => p.paper.year!))].sort((a, b) => a - b);
 
-    // v2-only seed-year split: a year column holding a seed is widened into ordered
+    // cones-only seed-year split: a year column holding a seed is widened into ordered
     // sub-columns [ other | refs | SEED | citers ] so the seed never overlaps a
     // non-seed paper vertically and same-year neighbours read left→right by
-    // citation direction. Empty (no split) for v1 / non-v2 graphs, so the layout
+    // citation direction. Empty (no split) for non-cones graphs, so the layout
     // below collapses to the original one-x-per-year behaviour.
     const split = this.state.directionalSplit()
       ? computeSeedYearSplit(
@@ -2196,7 +2181,7 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     // Tallest sub-column node count in a (cluster, year) cell → its vertical
-    // node-centre extent. A v2 split year spreads a cell across sub-columns;
+    // node-centre extent. A cones split year spreads a cell across sub-columns;
     // each sub-column stacks independently, so the extent is the tallest one.
     const cellMaxK = new Map<string, number>();
     for (const [key, arr] of cells) {
@@ -2333,7 +2318,7 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     for (const [key, members] of cells) {
       const center = cellCenterY.get(key) ?? absCenterY;
       members.sort((a, b) => (b.paper.ok_score ?? 0) - (a.paper.ok_score ?? 0));
-      // Split a cell's members by their sub-column x (a v2 split year spreads them
+      // Split a cell's members by their sub-column x (a cones split year spreads them
       // across [other|refs|seed|citers]); each sub-column stacks vertically on its
       // own, centred on the cell. Non-split years yield a single group.
       const byX = new Map<number, PlacedNode[]>();
@@ -2453,7 +2438,7 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
         // Group the cell by sub-column x: each sub-column stacks independently, so
         // the band's vertical extent is the tallest sub-column (not the cell total),
         // and its horizontal extent must span from the left-most to the right-most
-        // occupied sub-column (a v2 split year). Empty gap years → a thin centre
+        // occupied sub-column (a cones split year). Empty gap years → a thin centre
         // point (at the cluster's mean centre) so the band stays continuous.
         let xs: number[];
         let maxK = 1;
@@ -2628,9 +2613,9 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     }
 
-    // v2 with cards off draws every citation as a node edge (see below), so the
+    // cones with cards off draws every citation as a node edge (see below), so the
     // inter-cluster blob bridges become redundant clutter — suppress them.
-    const bridges = (this.blobMerging() && !(v2 && !this.useInGraphCards()))
+    const bridges = (this.blobMerging() && !(cones && !this.useInGraphCards()))
       ? this.buildBridges(currentTopLevel, currentComm, clusterCenterY, boxes, nodes, years, yearCenterX)
       : [];
 
@@ -2658,8 +2643,9 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
     //     internal citation structure no matter how its papers were revealed —
     //     the drill-in / "expand whole cluster" paths add no manual links, so
     //     without this their nodes render disconnected. Cross-cluster citation
-    //     edges are left to the blob bridges in v1; in v2 every citation (incl.
-    //     cross-cluster) is drawn as a node link (see the `v2` arg below).
+    //     edges are left to the blob bridges in the mixed build; in the cones build
+    //     every citation (incl. cross-cluster) is drawn as a node link (see the
+    //     `cones` arg below).
     //  2. The manual parent→child links recorded during interactive expansion
     //     (double-click, year-expand). Kept so explicit lineage between a node
     //     and a placed sibling survives even when no direct citation edge joins
@@ -2673,9 +2659,9 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       currentComm,
       (level: number) => this.communitiesAtLevel()(level),
       this.baseNodes().length,
-      // v2: draw every citation between placed nodes, including cross-cluster ones
-      // (v1 keeps cross-cluster links as blob bridges only).
-      v2,
+      // cones: draw every citation between placed nodes, including cross-cluster
+      // ones (the mixed build keeps cross-cluster links as blob bridges only).
+      cones,
     );
     for (const e of edges) {
       const key = e.fromId < e.toId ? `${e.fromId}|${e.toId}` : `${e.toId}|${e.fromId}`;
@@ -2689,7 +2675,7 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       edges.push(e);
     }
 
-    // v2 directional stagger reference points. `seedRefX` is the timeline anchor
+    // cones directional stagger reference points. `seedRefX` is the timeline anchor
     // (mean of the seed lines); a cluster whose representative node sits to its
     // right is a "citer" cluster and gets its card on the right (see cardX below).
     // `nodeById` resolves a cluster's representative paper to its placed node.
@@ -2775,11 +2761,11 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       }
 
       // Staggered placement: sit the card just outside one edge of the cluster
-      // instead of in the shared left-aligned column. In v2 the side mirrors the
-      // cluster's side of the seed — a cluster whose representative paper sits
-      // after the seed on the timeline (a "citer") gets its card on the right,
-      // everything else (refs / v1) keeps the original left placement. Falls back
-      // to the aligned column when the cluster has no drawn nodes.
+      // instead of in the shared left-aligned column. In the cones build the side
+      // mirrors the cluster's side of the seed — a cluster whose representative
+      // paper sits after the seed on the timeline (a "citer") gets its card on the
+      // right, everything else (refs / mixed build) keeps the original left
+      // placement. Falls back to the aligned column when the cluster has no drawn nodes.
       const clusterBox = boxes.get(id);
       const repNode = repIndex >= 0
         ? nodeById.get(this.baseNodes()[repIndex]?.paper_id)
@@ -2787,7 +2773,7 @@ export class OkGraphComponent implements OnInit, AfterViewInit, OnDestroy {
       const repX = repNode
         ? repNode.x
         : (clusterBox ? (clusterBox.minX + clusterBox.maxX) / 2 : null);
-      const afterSeed = v2 && seedRefX != null && repX != null && repX > seedRefX;
+      const afterSeed = cones && seedRefX != null && repX != null && repX > seedRefX;
 
       let cardX: number;
       let cardSide: 'left' | 'right' = 'left';

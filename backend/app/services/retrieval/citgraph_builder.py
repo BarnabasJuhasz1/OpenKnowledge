@@ -89,9 +89,9 @@ class CitGraphResult:
 
 
 def merge_cit_graph_results(*results: CitGraphResult) -> CitGraphResult:
-    """Union the node/edge sets of direction-pure cones into one graph (v2).
+    """Union the node/edge sets of direction-pure cones into one graph.
 
-    Used by the "directional split" (v2) construction, which builds a pure future
+    Used by the "directional split" construction, which builds a pure future
     cone and a pure past cone separately and merges them. Nodes are keyed by
     ``paper_id``; when the same paper appears in more than one cone (a seed at
     hop 0, or a paper that is both a descendant and an ancestor of the seeds) the
@@ -486,15 +486,15 @@ async def explore_citation_graph(
 ) -> CitGraphResult:
     """Expand a citation graph from multiple seeds in a chosen direction, from hosted data.
 
-    When ``directional_split`` (the v2 construction) is set and ``direction`` is
-    ``'both'``, the graph is assembled as the **union of two direction-pure
-    cones**: a pure future cone (citations only, every hop) and a pure past cone
-    (references only, every hop). Because a single-direction traversal cannot mix
-    citation and reference hops, no node in the union is reachable by a path that
-    alternates the two — unlike the default (v1) ``'both'`` traversal, whose
-    single frontier expands in both directions each hop. Per-hop / per-paper caps
-    apply independently within each cone. For a single-direction request v2 is
-    identical to v1, so the split only takes effect for ``'both'``.
+    When ``directional_split`` is set and ``direction`` is ``'both'``, the graph
+    is assembled as the **union of two direction-pure cones**: a pure future cone
+    (citations only, every hop) and a pure past cone (references only, every hop).
+    Because a single-direction traversal cannot mix citation and reference hops,
+    no node in the union is reachable by a path that alternates the two — unlike
+    the mixed ``'both'`` traversal, whose single frontier expands in both
+    directions each hop. Per-hop / per-paper caps apply independently within each
+    cone. For a single-direction request the split is a no-op (the two
+    constructions coincide), so it only takes effect for ``'both'``.
     """
     if directional_split and direction == "both":
         past = await _traverse(

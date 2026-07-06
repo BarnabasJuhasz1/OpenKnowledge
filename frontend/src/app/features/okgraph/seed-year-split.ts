@@ -1,5 +1,5 @@
 /**
- * v2-only ("direction-pure cones") layout helper: split a year column that holds
+ * Cones-only ("direction-pure cones") layout helper: split a year column that holds
  * a seed paper so the seed never shares its vertical column with non-seed papers.
  *
  * A seed's year is divided into ordered sub-columns, read left → right by citation

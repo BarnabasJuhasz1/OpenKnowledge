@@ -30,46 +30,8 @@
   <main class="docs__main">
     <div class="docs__inner">
       @if (activeTab === 'guide') {
-        <header class="docs__header">
-          <h1 class="docs__title">Using OpenKnowledge</h1>
-          <p class="docs__lead">
-            OpenKnowledge is a free, open-source platform for literature
-            reviews — discovering papers across major academic databases, scoring
-            their relevance, and mapping how the research connects.
-          </p>
-        </header>
-
-        <section class="docs__section">
-          <h2 class="docs__section-title">Getting started</h2>
-          <ol class="docs__steps">
-            <li>Open <a routerLink="/dashboard/projects">My Projects</a> from the Dashboard and create a project.</li>
-            <li>Inside your project, pick a feature from the left panel and describe what you are looking for in the search bar.</li>
-            <li>Refine results with the OK-score weights, then save what matters to your Library.</li>
-          </ol>
-        </section>
-
-        <section class="docs__section">
-          <h2 class="docs__section-title">Features</h2>
-          <div class="docs__features">
-            @for (feature of features; track feature.title) {
-              <article class="docs__feature">
-                <span class="material-symbols-outlined docs__feature-icon">{{ feature.icon }}</span>
-                <div>
-                  <h3 class="docs__feature-title">{{ feature.title }}</h3>
-                  <p class="docs__feature-body">{{ feature.body }}</p>
-                </div>
-              </article>
-            }
-          </div>
-        </section>
-
-        <section class="docs__cta">
-          <h2 class="docs__cta-title">Ready to dive in?</h2>
-          <a class="docs__cta-btn" routerLink="/dashboard">
-            Open the Dashboard
-            <span class="material-symbols-outlined">arrow_forward</span>
-          </a>
-        </section>
+        <!-- General Guide copy is maintainer-editable via public/content/docs/guide.md -->
+        <app-markdown class="docs__markdown" src="docs/guide" />
       } @else if (activeTab === 'archetypes') {
         <header class="docs__header">
           <h1 class="docs__title">Contribution Archetypes</h1>

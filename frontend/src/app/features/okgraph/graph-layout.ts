@@ -278,7 +278,7 @@ export interface PlacedRef {
  * in the current view; a citation edge whose two endpoints fall in the SAME
  * current-view cluster becomes one link between those placed nodes. Cross-cluster
  * edges are dropped by default — they are shown as blob bridges, not node links —
- * unless `includeCrossCluster` is set (v2 graphs draw every citation as an edge).
+ * unless `includeCrossCluster` is set (cones graphs draw every citation as an edge).
  * Result is undirected and de-duplicated.
  *
  * @param placed              nodes currently on the canvas (already filtered).
@@ -329,7 +329,7 @@ export function citationLinksBetweenPlaced(
     const u = idxOf.get(e.source);
     const v = idxOf.get(e.target);
     if (u == null || v == null) continue;
-    if (!includeCrossCluster && currentComm[u] !== currentComm[v]) continue;   // intra-cluster only (unless v2)
+    if (!includeCrossCluster && currentComm[u] !== currentComm[v]) continue;   // intra-cluster only (unless cones)
     const fromId = baseToPlaced[u];
     const toId = baseToPlaced[v];
     if (!fromId || !toId || fromId === toId) continue;

@@ -308,24 +308,6 @@
                 </button>
               </div>
 
-              @if (useOnlySelected()) {
-                <!-- v2 = direction-pure cones (pure future + pure past, no mixed
-                     citation/reference path). On by default; uncheck for v1. -->
-                <label
-                  class="graph-v2-flip"
-                  title="v2 builds direction-pure cones (pure future + pure past, no mixed citation/reference path) instead of the v1 mixed K-hop neighbourhood."
-                >
-                  <input
-                    #v2box
-                    type="checkbox"
-                    class="graph-v2-flip__input"
-                    [checked]="graphVersion() === 'v2'"
-                    (change)="selectGraphVersion(v2box.checked ? 'v2' : 'v1')"
-                  />
-                  <span class="graph-v2-flip__label">Use v2 graph</span>
-                </label>
-              }
-
               <div class="explore-cta">
                 <p class="explore-hint">
                   @if (hasSourcePapers() && !selectedDirection()) {

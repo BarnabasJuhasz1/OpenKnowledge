@@ -39,7 +39,7 @@ export class LibraryComponent implements OnInit {
     return getArchetypeIcon(archetype);
   }
 
-  activeTab = signal<LibraryTab>('shelf');
+  activeTab = signal<LibraryTab>('snapshots');
 
   // Query Shelf state
   items = signal<ShelfItem[]>([]);

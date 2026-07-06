@@ -97,10 +97,10 @@ export class CitGraphService {
     // expansion (admin toggle; see INFLUENTIAL_CITATIONS_ONLY in
     // admin-graph-config.ts). Honoured by the hosted seed path only.
     influential_only?: boolean;
-    // v2 ("direction-pure cones") construction. When true AND direction is
+    // Selects the "direction-pure cones" construction. When true AND direction is
     // 'both', the backend builds the graph as the union of a pure future cone
     // and a pure past cone — no node is reached by a path that mixes citation
-    // and reference hops. Omitted/false = v1 (the mixed K-hop neighbourhood).
+    // and reference hops. Omitted/false = the mixed K-hop neighbourhood.
     directional_split?: boolean;
   }): Observable<CitGraphResponse> {
     return this.http.post<CitGraphResponse>(`${this.baseUrl}/explore`, req);
@@ -122,8 +122,8 @@ export class CitGraphService {
     // Accepted for request symmetry; the demo corpus carries no influence flag,
     // so the backend ignores this for demo builds.
     influential_only?: boolean;
-    // v2 ("direction-pure cones") construction — see explore() above. Honoured
-    // by the demo store too.
+    // Selects the "direction-pure cones" construction — see explore() above.
+    // Honoured by the demo store too.
     directional_split?: boolean;
   }): Observable<CitGraphResponse> {
     return this.http.post<CitGraphResponse>(`${this.baseUrl}/demo/explore`, req);
